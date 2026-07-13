@@ -20,5 +20,12 @@ export function describeDbError(error: PostgrestError | null): string | null {
     return "Accesso al database negato dalle policy di sicurezza. Esegui supabase/policies.sql nel SQL editor di Supabase per abilitare il ruolo authenticated.";
   }
 
+  if (
+    /commercial_status/i.test(error.message) &&
+    /does not exist|column/i.test(error.message)
+  ) {
+    return "La colonna commercial_status non esiste ancora nel database. Esegui supabase/migrations/20260713_commercial_status_backfill.sql nel SQL Editor di Supabase.";
+  }
+
   return error.message;
 }

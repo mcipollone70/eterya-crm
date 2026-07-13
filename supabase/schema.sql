@@ -21,6 +21,10 @@ CREATE TYPE company_status AS ENUM (
   'active', 'inactive', 'prospect', 'lead', 'archived'
 );
 
+CREATE TYPE commercial_status AS ENUM (
+  'prospect', 'cliente', 'ex_cliente', 'da_ricontattare', 'non_interessato'
+);
+
 CREATE TYPE geocode_status AS ENUM (
   'not_geocoded', 'geocoded', 'pending', 'failed'
 );
@@ -135,6 +139,7 @@ CREATE TABLE companies (
 
   -- Classificazione commerciale
   status              company_status NOT NULL DEFAULT 'prospect',
+  commercial_status   commercial_status NOT NULL DEFAULT 'prospect',
   category            TEXT,
   subcategory         TEXT,
   sector              TEXT,
@@ -204,6 +209,7 @@ CREATE TABLE companies (
 
 CREATE INDEX idx_companies_assigned_user ON companies (assigned_user_id);
 CREATE INDEX idx_companies_status ON companies (status);
+CREATE INDEX idx_companies_commercial_status ON companies (commercial_status);
 CREATE INDEX idx_companies_vat_number ON companies (vat_number) WHERE vat_number IS NOT NULL;
 CREATE INDEX idx_companies_tax_code ON companies (tax_code) WHERE tax_code IS NOT NULL;
 CREATE INDEX idx_companies_city ON companies (city);

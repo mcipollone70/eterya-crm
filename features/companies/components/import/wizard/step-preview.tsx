@@ -93,12 +93,14 @@ export function StepPreview({ stats, records }: StepPreviewProps) {
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto rounded-lg border border-slate-200">
-            <table className="w-full min-w-[900px] text-left text-sm">
+            <table className="w-full min-w-[1100px] text-left text-sm">
               <thead className="bg-slate-50">
                 <tr>
                   <th className="px-3 py-2 text-xs font-semibold text-slate-500">Ragione sociale</th>
                   <th className="px-3 py-2 text-xs font-semibold text-slate-500">P.IVA</th>
-                  <th className="px-3 py-2 text-xs font-semibold text-slate-500">C.F.</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500">Comune</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500">Provincia</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500">CAP</th>
                   <th className="px-3 py-2 text-xs font-semibold text-slate-500">Indirizzo</th>
                   <th className="px-3 py-2 text-xs font-semibold text-slate-500">Email</th>
                   <th className="px-3 py-2 text-xs font-semibold text-slate-500">Telefono</th>
@@ -110,10 +112,12 @@ export function StepPreview({ stats, records }: StepPreviewProps) {
                   <tr key={record.id} className="border-t border-slate-100">
                     <td className="px-3 py-2.5 font-medium text-slate-900">{record.name || "—"}</td>
                     <td className="px-3 py-2.5 text-slate-700">{record.vatNumber || "—"}</td>
-                    <td className="px-3 py-2.5 text-slate-700">{record.taxCode || "—"}</td>
+                    <td className="px-3 py-2.5 text-slate-700">{record.city || "—"}</td>
+                    <td className="px-3 py-2.5 text-slate-700">{record.province || "—"}</td>
+                    <td className="px-3 py-2.5 text-slate-700">{record.postalCode || "—"}</td>
                     <td className="px-3 py-2.5 text-slate-700">{record.address || "—"}</td>
                     <td className="px-3 py-2.5 text-slate-700">{record.email || "—"}</td>
-                    <td className="px-3 py-2.5 text-slate-700">{record.phone || "—"}</td>
+                    <td className="px-3 py-2.5 font-mono text-slate-700">{record.phone || "—"}</td>
                     <td className="px-3 py-2.5">
                       <Badge variant="warning">NON GEOCODIFICATE</Badge>
                     </td>

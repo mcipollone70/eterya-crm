@@ -16,7 +16,7 @@ import type {
   ImportFileAnalysis,
   ImportPreviewStats,
 } from "../../../types/import";
-import { buildCompanyInsertRows } from "../../../utils/build-db-rows";
+import { buildCompanyInsertRows, type CompanyInsert } from "../../../utils/build-db-rows";
 import { importCompaniesAction } from "../../../actions/import-companies";
 import type { ImportResult } from "../../../services/import.service";
 
@@ -24,6 +24,37 @@ interface StepImportProps {
   analysis: ImportFileAnalysis | null;
   records: CompanyImportRecord[];
   stats: ImportPreviewStats | null;
+}
+
+// Ogni riga porta con sé l'intero payload Excel (import_payload + 76 slot
+// posizionali), quindi l'intero dataset supera facilmente il limite di 10MB
+// del body delle Server Action di Next: il body viene troncato e il JSON.parse
+// lato server fallisce con "Unterminated string in JSON". Spezziamo l'invio in
+// chunk ben sotto il limite in base alla dimensione serializzata reale.
+const MAX_CHUNK_BYTES = 4 * 1024 * 1024;
+const MAX_REPORTED_ERRORS = 20;
+
+function chunkRowsBySize(
+  rows: CompanyInsert[],
+  maxBytes: number
+): CompanyInsert[][] {
+  const chunks: CompanyInsert[][] = [];
+  let current: CompanyInsert[] = [];
+  let currentBytes = 0;
+
+  for (const row of rows) {
+    const rowBytes = JSON.stringify(row).length;
+    if (current.length > 0 && currentBytes + rowBytes > maxBytes) {
+      chunks.push(current);
+      current = [];
+      currentBytes = 0;
+    }
+    current.push(row);
+    currentBytes += rowBytes;
+  }
+
+  if (current.length > 0) chunks.push(current);
+  return chunks;
 }
 
 export function StepImport({ analysis, records, stats }: StepImportProps) {
@@ -37,8 +68,44 @@ export function StepImport({ analysis, records, stats }: StepImportProps) {
     setResult(null);
     startTransition(async () => {
       const rows = buildCompanyInsertRows(analysis, records, analysis.fileName);
-      const importResult = await importCompaniesAction(rows);
-      setResult(importResult);
+      const chunks = chunkRowsBySize(rows, MAX_CHUNK_BYTES);
+
+      const aggregate: ImportResult = {
+        success: false,
+        importedCount: 0,
+        updatedCount: 0,
+        skippedCount: 0,
+        errors: [],
+      };
+
+      for (const chunk of chunks) {
+        try {
+          const chunkResult = await importCompaniesAction(chunk);
+          aggregate.importedCount += chunkResult.importedCount;
+          aggregate.updatedCount += chunkResult.updatedCount;
+          aggregate.skippedCount += chunkResult.skippedCount;
+          if (aggregate.errors.length < MAX_REPORTED_ERRORS) {
+            aggregate.errors.push(
+              ...chunkResult.errors.slice(
+                0,
+                MAX_REPORTED_ERRORS - aggregate.errors.length
+              )
+            );
+          }
+        } catch (err) {
+          if (aggregate.errors.length < MAX_REPORTED_ERRORS) {
+            aggregate.errors.push(
+              err instanceof Error
+                ? err.message
+                : "Errore imprevisto durante l'import."
+            );
+          }
+        }
+      }
+
+      aggregate.success =
+        aggregate.importedCount > 0 || aggregate.updatedCount > 0;
+      setResult(aggregate);
     });
   };
 
@@ -53,16 +120,35 @@ export function StepImport({ analysis, records, stats }: StepImportProps) {
             <CheckCircle2 className="h-8 w-8 text-emerald-600" />
           </div>
           <p className="mt-4 text-sm text-slate-600">
-            Importate{" "}
-            <span className="font-semibold text-slate-900">
-              {result.importedCount.toLocaleString("it-IT")}
-            </span>{" "}
-            aziende nel database
+            {result.importedCount > 0 && (
+              <>
+                <span className="font-semibold text-slate-900">
+                  {result.importedCount.toLocaleString("it-IT")}
+                </span>{" "}
+                {result.importedCount === 1 ? "nuova azienda" : "nuove aziende"}
+              </>
+            )}
+            {result.importedCount > 0 && result.updatedCount > 0 && " · "}
+            {result.updatedCount > 0 && (
+              <>
+                <span className="font-semibold text-slate-900">
+                  {result.updatedCount.toLocaleString("it-IT")}
+                </span>{" "}
+                {result.updatedCount === 1 ? "aggiornata" : "aggiornate"}
+              </>
+            )}
+            {(result.importedCount > 0 || result.updatedCount > 0) && (
+              <> nel database</>
+            )}
+            {result.importedCount === 0 && result.updatedCount === 0 && (
+              <>Nessuna azienda importata nel database</>
+            )}
             {result.skippedCount > 0 && (
               <>
                 {" "}·{" "}
                 <span className="font-semibold text-amber-600">
-                  {result.skippedCount.toLocaleString("it-IT")} saltate
+                  {result.skippedCount.toLocaleString("it-IT")}{" "}
+                  {result.skippedCount === 1 ? "saltata" : "saltate"}
                 </span>
               </>
             )}

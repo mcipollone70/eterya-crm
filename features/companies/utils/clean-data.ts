@@ -165,6 +165,45 @@ export function mergeStreetAndNumber(street: string, streetNumber: string): stri
   return `${via} ${civico}`;
 }
 
+const INVALID_PHONE_LITERALS = new Set([
+  "true",
+  "false",
+  "vero",
+  "falso",
+  "null",
+  "undefined",
+  "si",
+  "sì",
+  "no",
+  "s",
+  "n",
+]);
+
+export function sanitizePhoneValue(value: string): string {
+  const trimmed = removeDoubleSpaces(value);
+  if (!trimmed) return "";
+
+  const normalized = trimmed
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+  if (INVALID_PHONE_LITERALS.has(normalized)) {
+    return "";
+  }
+
+  return trimmed.replace(/\s+/g, "");
+}
+
+export function concatenatePhoneNumber(prefix: string, number: string): string {
+  const cleanPrefix = sanitizePhoneValue(prefix);
+  const cleanNumber = sanitizePhoneValue(number);
+
+  if (!cleanNumber) return "";
+  if (!cleanPrefix) return cleanNumber;
+  return `${cleanPrefix}${cleanNumber}`;
+}
+
 export function cleanTextField(value: string): { value: string; trimmed: boolean; sanitized: boolean } {
   const trimmed = removeDoubleSpaces(value);
   const sanitized = removeStrangeCharacters(trimmed);

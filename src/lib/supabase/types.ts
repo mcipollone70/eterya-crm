@@ -8,6 +8,12 @@ export type Json =
 
 export type GeocodeStatus = "not_geocoded" | "geocoded" | "pending" | "failed";
 export type CompanyStatus = "active" | "inactive" | "prospect" | "lead" | "archived";
+export type CommercialStatus =
+  | "prospect"
+  | "cliente"
+  | "ex_cliente"
+  | "da_ricontattare"
+  | "non_interessato";
 export type UserRole = "super_admin" | "org_admin" | "manager" | "agent" | "viewer";
 export type ActivityStatus = "todo" | "in_progress" | "done" | "cancelled";
 export type ActivityType = "call" | "email" | "task" | "follow_up" | "meeting";
@@ -173,6 +179,7 @@ export interface Database {
           contact_phone: string | null;
           contact_email: string | null;
           status: CompanyStatus;
+          commercial_status: CommercialStatus;
           category: string | null;
           subcategory: string | null;
           sector: string | null;

@@ -32,7 +32,8 @@ export function StepMapping({ mappings, onMappingChange }: StepMappingProps) {
       <CardHeader>
         <CardTitle>Mapping intelligente delle colonne</CardTitle>
         <p className="text-xs text-slate-500">
-          Verifica o modifica l&apos;associazione tra colonne Excel e campi CRM.
+          Ogni colonna è associata al campo CRM in base al nome dell&apos;intestazione Excel.
+          Verifica o modifica le associazioni qui sotto.
         </p>
       </CardHeader>
       <CardContent>

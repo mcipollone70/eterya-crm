@@ -1,6 +1,6 @@
 import { cn } from "@/utils/cn";
 
-type BadgeVariant = "default" | "success" | "warning" | "danger" | "info" | "muted";
+export type BadgeVariant = "default" | "success" | "warning" | "danger" | "info" | "muted";
 
 const variants: Record<BadgeVariant, string> = {
   default: "bg-slate-100 text-slate-700",

@@ -1,14 +1,34 @@
 import * as XLSX from "xlsx";
-import type { DetectedColumn, ImportFileAnalysis } from "../types/import";
+import type { DetectedColumn, ImportFileAnalysis, MappingConfidence } from "../types/import";
 import {
   buildDataRows,
   detectHeaderRow,
   extractHeaders,
   mapHeaderToField,
   normalizeHeader,
+  refineSuggestedField,
 } from "./detect-headers";
 
+const COLUMN_SAMPLE_SIZE = 25;
+
+function getColumnSampleValues(
+  dataRows: string[][],
+  columnIndex: number,
+  sampleSize = COLUMN_SAMPLE_SIZE
+): string[] {
+  return dataRows.slice(0, sampleSize).map((row) => row[columnIndex] ?? "");
+}
+
 const ACCEPTED_EXTENSIONS = [".xls", ".xlsx"];
+
+const PHONE_PREFIX_HEADERS = new Set([
+  "prefisso",
+  "prefisso telefonico",
+  "prefisso tel",
+  "pref tel",
+  "pref",
+  "prefix",
+]);
 
 function getFileExtension(fileName: string): string {
   const dot = fileName.lastIndexOf(".");
@@ -50,19 +70,20 @@ export async function parseExcelFile(file: File): Promise<ImportFileAnalysis> {
   const headerRowIndex = detectHeaderRow(rawRows);
   const headers = extractHeaders(rawRows, headerRowIndex);
   const columnCount = headers.length;
+  const dataRows = buildDataRows(rawRows, headerRowIndex, columnCount);
 
   const columns: DetectedColumn[] = headers.map((header, index) => {
     const { field, confidence } = mapHeaderToField(header);
+    const sampleValues = getColumnSampleValues(dataRows, index);
+    const suggestedField = refineSuggestedField(field, sampleValues);
     return {
       index,
       header,
       normalizedHeader: normalizeHeader(header),
-      suggestedField: field,
-      confidence,
+      suggestedField,
+      confidence: suggestedField === field ? confidence : "low",
     };
   });
-
-  const dataRows = buildDataRows(rawRows, headerRowIndex, columnCount);
 
   return {
     fileName: file.name,
@@ -78,10 +99,61 @@ export async function parseExcelFile(file: File): Promise<ImportFileAnalysis> {
 }
 
 export function createInitialMappings(analysis: ImportFileAnalysis) {
-  return analysis.columns.map((column) => ({
-    columnIndex: column.index,
-    sourceHeader: column.header,
-    mappedField: column.suggestedField,
-    confidence: column.confidence,
-  }));
+  const initial = analysis.columns.map((column) => {
+    const sampleValues = getColumnSampleValues(analysis.dataRows, column.index);
+    let mappedField = refineSuggestedField(column.suggestedField, sampleValues);
+
+    if (
+      mappedField === "phone" &&
+      PHONE_PREFIX_HEADERS.has(normalizeHeader(column.header))
+    ) {
+      mappedField = "phone_prefix";
+    }
+
+    return {
+      columnIndex: column.index,
+      sourceHeader: column.header,
+      mappedField,
+      confidence: mappedField === column.suggestedField ? column.confidence : ("low" as const),
+    };
+  });
+
+  const confidenceScore: Record<MappingConfidence, number> = {
+    high: 3,
+    medium: 2,
+    low: 1,
+    manual: 4,
+  };
+
+  const bestByField = new Map<
+    (typeof initial)[number]["mappedField"],
+    (typeof initial)[number]
+  >();
+
+  for (const mapping of initial) {
+    if (mapping.mappedField === "unknown" || mapping.mappedField === "skip") {
+      continue;
+    }
+
+    const current = bestByField.get(mapping.mappedField);
+    if (
+      !current ||
+      confidenceScore[mapping.confidence] > confidenceScore[current.confidence]
+    ) {
+      bestByField.set(mapping.mappedField, mapping);
+    }
+  }
+
+  return initial.map((mapping) => {
+    if (mapping.mappedField === "unknown" || mapping.mappedField === "skip") {
+      return mapping;
+    }
+
+    const winner = bestByField.get(mapping.mappedField);
+    if (winner && winner.columnIndex !== mapping.columnIndex) {
+      return { ...mapping, mappedField: "unknown" as const, confidence: "low" as const };
+    }
+
+    return mapping;
+  });
 }

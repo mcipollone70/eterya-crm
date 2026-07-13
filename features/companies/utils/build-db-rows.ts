@@ -49,6 +49,7 @@ export function buildCompanyInsertRow(
     latitude: record.latitude,
     longitude: record.longitude,
     geocode_status: record.geocodeStatus,
+    commercial_status: "prospect",
     import_source: "excel_wizard",
     import_file_name: fileName,
     import_row_index: record.rowIndex,

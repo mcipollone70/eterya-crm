@@ -5,6 +5,53 @@ interface HeaderPattern {
   keywords: string[];
 }
 
+/** Intestazioni che non devono mai essere mappate automaticamente a campi CRM. */
+const EXCLUDED_HEADER_PATTERNS = [
+  "micro impresa",
+  "piccola impresa",
+  "media impresa",
+  "grande impresa",
+  "impresa individuale",
+  "non calcolabile",
+  "calcolabile",
+  "classificazione",
+  "dimensione impresa",
+  "tipo impresa",
+  "categoria impresa",
+  "forma giuridica",
+  "stato impresa",
+  "stato attivita",
+  "stato attività",
+  "stato dell attivita",
+  "stato dell attività",
+  "flag",
+  "boolean",
+  "attivo",
+  "inattivo",
+];
+
+/** Keyword troppo corte: consentite solo con match esatto sull'intestazione. */
+const SHORT_KEYWORD_EXACT_ONLY = new Set([
+  "pi",
+  "cf",
+  "tel",
+  "via",
+  "web",
+  "url",
+  "zip",
+  "cap",
+  "mail",
+  "prov",
+  "sede",
+  "n.",
+  "stato",
+  "paese",
+  "name",
+  "fax",
+]);
+
+const MIN_SUBSTRING_KEYWORD_LENGTH = 4;
+
 const HEADER_PATTERNS: HeaderPattern[] = [
   {
     field: "name",
@@ -35,7 +82,7 @@ const HEADER_PATTERNS: HeaderPattern[] = [
   },
   {
     field: "street_number",
-    keywords: ["civico", "n civico", "numero civico", "n.", "numero", "street number"],
+    keywords: ["civico", "n civico", "numero civico", "n.", "street number"],
   },
   {
     field: "address",
@@ -60,6 +107,17 @@ const HEADER_PATTERNS: HeaderPattern[] = [
   {
     field: "email",
     keywords: ["email", "e-mail", "mail", "posta elettronica"],
+  },
+  {
+    field: "phone_prefix",
+    keywords: [
+      "prefisso telefonico",
+      "prefisso tel",
+      "prefisso",
+      "pref tel",
+      "pref.",
+      "prefix",
+    ],
   },
   {
     field: "phone",
@@ -89,13 +147,112 @@ function normalizeHeader(value: string): string {
     .trim();
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function containsKeywordAsPhrase(normalized: string, keyword: string): boolean {
+  if (keyword.length < MIN_SUBSTRING_KEYWORD_LENGTH) {
+    return false;
+  }
+  const pattern = new RegExp(`(^|\\s)${escapeRegExp(keyword)}(\\s|$)`);
+  return pattern.test(normalized);
+}
+
+function isExcludedHeader(normalized: string): boolean {
+  if (/^colonna \d+$/.test(normalized)) {
+    return true;
+  }
+
+  return EXCLUDED_HEADER_PATTERNS.some(
+    (pattern) => normalized.includes(pattern) || pattern.includes(normalized)
+  );
+}
+
+export function isLikelyDataCell(value: string): boolean {
+  const normalized = normalizeHeader(value);
+  if (!normalized) return false;
+
+  if (/^(true|false|si|no|s|n)$/.test(normalized)) {
+    return true;
+  }
+
+  if (/^(micro|piccola|media|grande)\s+impresa$/.test(normalized)) {
+    return true;
+  }
+
+  return normalized === "non calcolabile" || normalized === "calcolabile";
+}
+
+const BOOLEAN_CELL_VALUES = new Set([
+  "true",
+  "false",
+  "vero",
+  "falso",
+  "si",
+  "sì",
+  "no",
+  "s",
+  "n",
+  "y",
+  "yes",
+  "1",
+  "0",
+]);
+
+export function isLikelyBooleanColumn(values: string[]): boolean {
+  const nonEmpty = values
+    .map((value) =>
+      value
+        .trim()
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+    )
+    .filter(Boolean);
+
+  if (nonEmpty.length < 3) {
+    return false;
+  }
+
+  const booleanCount = nonEmpty.filter((value) => BOOLEAN_CELL_VALUES.has(value)).length;
+  return booleanCount / nonEmpty.length >= 0.8;
+}
+
+const BOOLEAN_PROTECTED_FIELDS = new Set<CompanyImportField>([
+  "phone",
+  "phone_prefix",
+  "name",
+  "vat_number",
+  "tax_code",
+]);
+
+export function refineSuggestedField(
+  field: CompanyImportField,
+  sampleValues: string[]
+): CompanyImportField {
+  if (field === "unknown" || field === "skip") {
+    return field;
+  }
+
+  if (isLikelyBooleanColumn(sampleValues) && BOOLEAN_PROTECTED_FIELDS.has(field)) {
+    return "unknown";
+  }
+
+  return field;
+}
+
 function mapHeaderToField(header: string): {
   field: CompanyImportField;
   confidence: "high" | "medium" | "low";
 } {
   const normalized = normalizeHeader(header);
 
-  if (!normalized) {
+  if (!normalized || isExcludedHeader(normalized)) {
+    return { field: "unknown", confidence: "low" };
+  }
+
+  if (normalized.length <= 2) {
     return { field: "unknown", confidence: "low" };
   }
 
@@ -109,7 +266,11 @@ function mapHeaderToField(header: string): {
 
   for (const pattern of HEADER_PATTERNS) {
     for (const keyword of pattern.keywords) {
-      if (normalized.includes(keyword) || keyword.includes(normalized)) {
+      if (SHORT_KEYWORD_EXACT_ONLY.has(keyword)) {
+        continue;
+      }
+
+      if (containsKeywordAsPhrase(normalized, keyword)) {
         return { field: pattern.field, confidence: "medium" };
       }
     }
@@ -143,6 +304,9 @@ function scoreHeaderRow(row: unknown[]): number {
     }
     if (/^\d+([.,]\d+)?$/.test(cell)) {
       score -= 2;
+    }
+    if (isLikelyDataCell(cell)) {
+      score -= 4;
     }
   }
 

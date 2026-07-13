@@ -10,6 +10,7 @@ export type CompanyImportField =
   | "postal_code"
   | "country"
   | "email"
+  | "phone_prefix"
   | "phone"
   | "contact_name"
   | "website"
@@ -115,6 +116,7 @@ export const COMPANY_FIELD_LABELS: Record<CompanyImportField, string> = {
   postal_code: "CAP",
   country: "Nazione",
   email: "Email",
+  phone_prefix: "Prefisso telefono",
   phone: "Telefono",
   contact_name: "Referente",
   website: "Sito web",
@@ -135,6 +137,7 @@ export const MAPPABLE_FIELDS: CompanyImportField[] = [
   "postal_code",
   "country",
   "email",
+  "phone_prefix",
   "phone",
   "contact_name",
   "website",

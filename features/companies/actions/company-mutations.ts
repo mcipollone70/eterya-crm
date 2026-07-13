@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
+import { isCommercialStatus } from "@/lib/constants/commercial-status";
 import {
   flattenFields,
   formDataToRecord,
@@ -10,6 +11,7 @@ import {
   type FormState,
 } from "@/lib/forms";
 import { COMPANY_FORM_SECTIONS } from "../utils/company-fields";
+import type { CommercialStatus } from "@/lib/supabase/types";
 import type { CompanyInsert } from "../utils/build-db-rows";
 import {
   deleteCompanyById,
@@ -29,6 +31,7 @@ function buildCompanyRow(formData: FormData): CompanyInsert {
     ...record,
     name: String(record.name ?? "").trim(),
     status: (record.status as string) || "prospect",
+    commercial_status: (record.commercial_status as CommercialStatus) || "prospect",
     country: (record.country as string) || "IT",
   } as CompanyInsert;
 }
@@ -93,4 +96,29 @@ export async function deleteCompanyAction(
 
   revalidatePath("/companies");
   redirect("/companies");
+}
+
+export async function updateCommercialStatusAction(
+  id: string,
+  commercialStatus: CommercialStatus
+): Promise<{ error?: string }> {
+  if (!isSupabaseConfigured()) {
+    return { error: NOT_CONFIGURED_MESSAGE };
+  }
+
+  if (!isCommercialStatus(commercialStatus)) {
+    return { error: "Stato commerciale non valido." };
+  }
+
+  const { error } = await updateCompanyById(id, {
+    commercial_status: commercialStatus,
+  });
+  if (error) {
+    return { error };
+  }
+
+  revalidatePath("/companies");
+  revalidatePath(`/companies/${id}`);
+  revalidatePath("/");
+  return {};
 }

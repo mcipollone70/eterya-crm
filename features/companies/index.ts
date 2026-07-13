@@ -6,10 +6,13 @@ export {
   createCompanyAction,
   updateCompanyAction,
   deleteCompanyAction,
+  updateCommercialStatusAction,
 } from "./actions/company-mutations";
 export {
   getCompanyById,
   listCompanies,
+  getCommercialStatusCounts,
+  COMPANY_LIST_COLUMNS,
   type Company,
 } from "./services/companies.service";
 export type {

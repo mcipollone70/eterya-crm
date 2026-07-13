@@ -12,6 +12,7 @@ export async function importCompaniesAction(
     return {
       success: false,
       importedCount: 0,
+      updatedCount: 0,
       skippedCount: 0,
       errors: [
         "Supabase non configurato. Aggiungi NEXT_PUBLIC_SUPABASE_URL e NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local e riavvia il server.",
@@ -21,7 +22,7 @@ export async function importCompaniesAction(
 
   try {
     const result = await importCompanyRows(rows);
-    if (result.importedCount > 0) {
+    if (result.importedCount > 0 || result.updatedCount > 0) {
       revalidatePath("/companies");
     }
     return result;
@@ -29,6 +30,7 @@ export async function importCompaniesAction(
     return {
       success: false,
       importedCount: 0,
+      updatedCount: 0,
       skippedCount: 0,
       errors: [
         error instanceof Error ? error.message : "Errore imprevisto durante l'import.",

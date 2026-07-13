@@ -6,6 +6,7 @@ import type {
 } from "../types/import";
 import {
   cleanTextField,
+  concatenatePhoneNumber,
   createEmptyCleaningReport,
   mergeCleaningReports,
   mergeStreetAndNumber,
@@ -13,6 +14,7 @@ import {
   normalizePostalCode,
   normalizeProvince,
 } from "./clean-data";
+import { normalizeHeader } from "./detect-headers";
 
 function generateRecordId(rowIndex: number): string {
   return `import-${rowIndex}-${crypto.randomUUID()}`;
@@ -38,17 +40,119 @@ function evaluateRecord(record: Omit<CompanyImportRecord, "isComplete" | "needsF
   return { issues, isComplete, needsFix };
 }
 
+function buildHeaderIndexMap(headers: string[]): Map<string, number> {
+  const map = new Map<string, number>();
+  headers.forEach((header, index) => {
+    map.set(header, index);
+    map.set(normalizeHeader(header), index);
+  });
+  return map;
+}
+
+function getMappedCellValue(
+  row: string[],
+  mapping: ColumnMapping,
+  headerIndex: Map<string, number>
+): string {
+  const index =
+    headerIndex.get(mapping.sourceHeader) ??
+    headerIndex.get(normalizeHeader(mapping.sourceHeader)) ??
+    mapping.columnIndex;
+
+  return row[index]?.trim() ?? "";
+}
+
+const PHONE_PREFIX_HEADERS = new Set([
+  "prefisso",
+  "prefisso telefonico",
+  "prefisso tel",
+  "pref tel",
+  "pref",
+  "prefix",
+]);
+
+const PHONE_NUMBER_HEADERS = new Set([
+  "telefono",
+  "tel",
+  "phone",
+  "cellulare",
+  "mobile",
+  "fax",
+  "numero telefono",
+  "n telefono",
+]);
+
+function isPhonePrefixHeader(normalized: string): boolean {
+  return PHONE_PREFIX_HEADERS.has(normalized);
+}
+
+function isPhoneNumberHeader(normalized: string): boolean {
+  if (isPhonePrefixHeader(normalized)) return false;
+  if (PHONE_NUMBER_HEADERS.has(normalized)) return true;
+  return normalized.includes("telefono") && !normalized.includes("prefisso");
+}
+
+function getPhoneParts(
+  row: string[],
+  mappings: ColumnMapping[],
+  headerIndex: Map<string, number>,
+  headers: string[]
+): { prefix: string; number: string } {
+  let prefix = "";
+  let number = "";
+
+  headers.forEach((header, index) => {
+    const normalized = normalizeHeader(header);
+    const value = row[index]?.trim() ?? "";
+    if (!value) return;
+
+    if (isPhonePrefixHeader(normalized)) {
+      prefix = value;
+      return;
+    }
+
+    if (isPhoneNumberHeader(normalized)) {
+      number = value;
+    }
+  });
+
+  for (const mapping of mappings) {
+    const value = getMappedCellValue(row, mapping, headerIndex);
+    if (!value) continue;
+
+    const normalizedHeader = normalizeHeader(mapping.sourceHeader);
+
+    if (mapping.mappedField === "phone_prefix") {
+      if (!prefix) prefix = value;
+      continue;
+    }
+
+    if (mapping.mappedField === "phone") {
+      if (isPhonePrefixHeader(normalizedHeader)) {
+        if (!prefix) prefix = value;
+        continue;
+      }
+
+      if (!number) number = value;
+    }
+  }
+
+  return { prefix, number };
+}
+
 function cleanSingleRecord(
   row: string[],
   rowIndex: number,
-  mappings: ColumnMapping[]
+  mappings: ColumnMapping[],
+  headerIndex: Map<string, number>,
+  headers: string[]
 ): { record: CompanyImportRecord; report: CleaningReport } {
   const report = createEmptyCleaningReport();
 
   const rawFields: Record<string, string> = {};
   for (const mapping of mappings) {
     if (mapping.mappedField === "skip" || mapping.mappedField === "unknown") continue;
-    rawFields[mapping.mappedField] = row[mapping.columnIndex]?.trim() ?? "";
+    rawFields[mapping.mappedField] = getMappedCellValue(row, mapping, headerIndex);
   }
 
   const cleanField = (key: string) => {
@@ -85,6 +189,14 @@ function cleanSingleRecord(
     report.normalizedCities++;
   }
 
+  const { prefix: phonePrefix, number: phoneNumber } = getPhoneParts(
+    row,
+    mappings,
+    headerIndex,
+    headers
+  );
+  const phone = concatenatePhoneNumber(phonePrefix, phoneNumber);
+
   const baseRecord = {
     id: generateRecordId(rowIndex),
     rowIndex,
@@ -97,7 +209,7 @@ function cleanSingleRecord(
     postalCode,
     country: cleanField("country") || "IT",
     email: cleanField("email").toLowerCase(),
-    phone: cleanField("phone"),
+    phone,
     contactName: cleanField("contact_name"),
     website: cleanField("website"),
     notes: cleanField("notes"),
@@ -120,9 +232,17 @@ export function buildAndCleanRecords(
 ): { records: CompanyImportRecord[]; report: CleaningReport } {
   let report = createEmptyCleaningReport();
   const records: CompanyImportRecord[] = [];
+  const headers = analysis.columns.map((column) => column.header);
+  const headerIndex = buildHeaderIndexMap(headers);
 
   analysis.dataRows.forEach((row, index) => {
-    const { record, report: rowReport } = cleanSingleRecord(row, index + 1, mappings);
+    const { record, report: rowReport } = cleanSingleRecord(
+      row,
+      index + 1,
+      mappings,
+      headerIndex,
+      headers
+    );
     records.push(record);
     report = mergeCleaningReports(report, rowReport);
   });

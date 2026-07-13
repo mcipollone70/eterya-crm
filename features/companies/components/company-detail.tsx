@@ -14,7 +14,10 @@ import {
 } from "@/components/ui";
 import { deleteCompanyAction } from "../actions/company-mutations";
 import { COMPANY_STATUS_LABELS } from "../utils/company-fields";
+import { CommercialStatusBadge } from "./commercial-status-badge";
+import { CommercialStatusSelect } from "./commercial-status-select";
 import type { Company } from "../services/companies.service";
+import { resolveCompanyDisplayFields } from "../services/companies.service";
 import type { ContactListItem } from "@/features/contacts/services/contacts.service";
 
 interface CompanyDetailProps {
@@ -33,6 +36,7 @@ function formatDate(value: string | null): string {
 
 export function CompanyDetail({ company, contacts }: CompanyDetailProps) {
   const location = [company.city, company.province].filter(Boolean).join(" · ");
+  const display = resolveCompanyDisplayFields(company);
 
   return (
     <div className="space-y-6">
@@ -56,14 +60,21 @@ export function CompanyDetail({ company, contacts }: CompanyDetailProps) {
       />
 
       <Card>
-        <CardHeader className="flex-row items-center justify-between">
+        <CardHeader className="flex-row flex-wrap items-center justify-between gap-3">
           <CardTitle>Anagrafica</CardTitle>
-          <Badge>{COMPANY_STATUS_LABELS[company.status] ?? company.status}</Badge>
+          <div className="flex flex-wrap items-center gap-3">
+            <CommercialStatusSelect companyId={company.id} value={company.commercial_status} />
+            <Badge>{COMPANY_STATUS_LABELS[company.status] ?? company.status}</Badge>
+          </div>
         </CardHeader>
         <CardContent className="pt-4">
           <DescriptionList>
+            <DescriptionItem
+              label="Stato commerciale"
+              value={<CommercialStatusBadge status={company.commercial_status} />}
+            />
             <DescriptionItem label="Denominazione legale" value={company.legal_name} />
-            <DescriptionItem label="Partita IVA" value={company.vat_number} />
+            <DescriptionItem label="Partita IVA" value={display.vat_number} />
             <DescriptionItem label="Codice fiscale" value={company.tax_code} />
             <DescriptionItem label="Categoria" value={company.category} />
             <DescriptionItem label="Settore" value={company.sector} />
@@ -93,14 +104,14 @@ export function CompanyDetail({ company, contacts }: CompanyDetailProps) {
         </CardHeader>
         <CardContent className="pt-4">
           <DescriptionList>
-            <DescriptionItem label="Telefono" value={company.phone} />
+            <DescriptionItem label="Telefono" value={display.phone} />
             <DescriptionItem label="Cellulare" value={company.mobile} />
             <DescriptionItem
               label="Email"
               value={
-                company.email ? (
-                  <a className="text-indigo-600 hover:underline" href={`mailto:${company.email}`}>
-                    {company.email}
+                display.email ? (
+                  <a className="text-indigo-600 hover:underline" href={`mailto:${display.email}`}>
+                    {display.email}
                   </a>
                 ) : null
               }

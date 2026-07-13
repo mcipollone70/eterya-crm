@@ -2,9 +2,16 @@ import "server-only";
 
 import { createServerClient } from "@/lib/supabase/server";
 import { describeDbError } from "@/lib/supabase/errors";
+import {
+  DASHBOARD_COMMERCIAL_STATUSES,
+  normalizeCommercialStatus,
+  type DashboardCommercialStatus,
+} from "@/lib/constants/commercial-status";
 import type {
+  CommercialStatus,
   CompanyStatus,
   GeocodeStatus,
+  Json,
   Tables,
   UpdateTables,
 } from "@/lib/supabase/types";
@@ -23,12 +30,341 @@ export interface CompanyListItem {
   phone: string | null;
   email: string | null;
   status: CompanyStatus;
+  commercial_status: CommercialStatus;
   geocode_status: GeocodeStatus;
   created_at: string;
 }
 
-const LIST_COLUMNS =
-  "id,name,city,province,vat_number,phone,email,status,geocode_status,created_at";
+export type CommercialStatusCounts = Record<DashboardCommercialStatus, number>;
+
+/** Colonne SELECT per l'elenco aziende (incluso import_payload per fallback di lettura). */
+export const COMPANY_LIST_COLUMNS =
+  "id,name,city,province,vat_number,tax_code,phone,email,contact_phone,contact_email,mobile,phone_secondary,pec,status,commercial_status,geocode_status,created_at,import_headers,import_payload";
+
+const COMPANY_LIST_COLUMNS_FALLBACK =
+  "id,name,city,province,vat_number,tax_code,phone,email,contact_phone,contact_email,mobile,phone_secondary,pec,status,geocode_status,created_at,import_headers,import_payload";
+
+const INVALID_DISPLAY_VALUES = new Set(["false", "true", "n", "s", "null", "undefined"]);
+
+const VAT_PAYLOAD_KEYS = [
+  "Partita IVA",
+  "PARTITA IVA",
+  "P.IVA",
+  "P. IVA",
+  "partita iva",
+  "VAT",
+  "vat_number",
+  "Codice Fiscale",
+  "CODICE FISCALE",
+] as const;
+
+const PHONE_PREFIX_PAYLOAD_KEYS = ["Prefisso", "PREFISSO", "prefisso"] as const;
+
+/** Numero telefonico (non il flag booleano TELEFONO presente negli export Infocamere). */
+const PHONE_NUMBER_PAYLOAD_KEYS = [
+  "NUMERO",
+  "Numero",
+  "numero",
+  "Telefono",
+  "Tel",
+  "telefono",
+  "phone",
+  "contact_phone",
+  "Cellulare",
+  "cellulare",
+  "mobile",
+] as const;
+
+const PHONE_FLAG_PAYLOAD_KEYS = ["TELEFONO", "Telefono", "telefono"] as const;
+
+const EMAIL_PAYLOAD_KEYS = [
+  "Email",
+  "E-mail",
+  "EMAIL GENERICA",
+  "email",
+  "contact_email",
+  "Mail",
+  "mail",
+  "PEC",
+  "pec",
+] as const;
+
+function isValidDisplayValue(value: string | null | undefined): boolean {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return false;
+  }
+  return !INVALID_DISPLAY_VALUES.has(trimmed.toLowerCase());
+}
+
+function coerceDisplayValue(value: unknown): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  const asString =
+    typeof value === "string"
+      ? value
+      : typeof value === "number" || typeof value === "boolean"
+        ? String(value)
+        : null;
+  if (!asString || !isValidDisplayValue(asString)) {
+    return null;
+  }
+  return asString.trim();
+}
+
+function normalizePayload(payload: Json | null | undefined): Record<string, unknown> | null {
+  if (payload === null || payload === undefined) {
+    return null;
+  }
+  if (typeof payload === "string") {
+    try {
+      const parsed = JSON.parse(payload) as unknown;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+  if (typeof payload === "object" && !Array.isArray(payload)) {
+    return payload as Record<string, unknown>;
+  }
+  return null;
+}
+
+function payloadField(payload: Json | null | undefined, keys: readonly string[]): string | null {
+  const record = normalizePayload(payload);
+  if (!record) {
+    return null;
+  }
+
+  const normalizedEntries = new Map<string, string>();
+
+  for (const [rawKey, value] of Object.entries(record)) {
+    const trimmed = coerceDisplayValue(value);
+    if (trimmed) {
+      normalizedEntries.set(rawKey.toLowerCase(), trimmed);
+    }
+  }
+
+  for (const key of keys) {
+    const value = normalizedEntries.get(key.toLowerCase());
+    if (value) {
+      return value;
+    }
+  }
+
+  return null;
+}
+
+function payloadFieldByHeaderMatch(
+  payload: Json | null | undefined,
+  headers: string[] | null | undefined,
+  matchers: readonly string[],
+  exact = false
+): string | null {
+  const record = normalizePayload(payload);
+  if (!record || !headers?.length) {
+    return null;
+  }
+
+  for (const header of headers) {
+    const headerLower = header.toLowerCase().trim();
+    const matches = matchers.some((matcher) => {
+      const matcherLower = matcher.toLowerCase();
+      return exact
+        ? headerLower === matcherLower
+        : headerLower === matcherLower || headerLower.includes(matcherLower);
+    });
+    if (!matches) {
+      continue;
+    }
+    const value = coerceDisplayValue(record[header]);
+    if (value) {
+      return value;
+    }
+  }
+
+  return null;
+}
+
+function isPhoneFlagExplicitlyFalse(payload: Json | null | undefined): boolean {
+  const record = normalizePayload(payload);
+  if (!record) {
+    return false;
+  }
+
+  for (const key of PHONE_FLAG_PAYLOAD_KEYS) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim().toLowerCase() === "false") {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function payloadPhone(
+  payload: Json | null | undefined,
+  headers?: string[] | null
+): string | null {
+  if (isPhoneFlagExplicitlyFalse(payload)) {
+    return null;
+  }
+
+  const prefix =
+    payloadField(payload, PHONE_PREFIX_PAYLOAD_KEYS) ??
+    payloadFieldByHeaderMatch(payload, headers, ["prefisso"]);
+  const number =
+    payloadField(payload, PHONE_NUMBER_PAYLOAD_KEYS) ??
+    payloadFieldByHeaderMatch(payload, headers, ["numero"], true) ??
+    payloadFieldByHeaderMatch(payload, headers, ["telefono", "tel", "cellulare", "mobile"]);
+
+  if (prefix && number) {
+    return `${prefix}${number}`;
+  }
+  if (number) {
+    return number;
+  }
+  return null;
+}
+
+function isPrefixOnlyPhoneValue(
+  value: string,
+  payload: Json | null | undefined,
+  headers?: string[] | null
+): boolean {
+  const prefix =
+    payloadField(payload, PHONE_PREFIX_PAYLOAD_KEYS) ??
+    payloadFieldByHeaderMatch(payload, headers, ["prefisso"]);
+  return Boolean(prefix && value === prefix);
+}
+
+function firstNonEmpty(...values: (string | null | undefined)[]): string | null {
+  for (const value of values) {
+    if (isValidDisplayValue(value)) {
+      return value!.trim();
+    }
+  }
+  return null;
+}
+
+function resolveListField(
+  columns: (string | null | undefined)[],
+  payload: Json | null | undefined,
+  keys: readonly string[]
+): string | null {
+  return firstNonEmpty(...columns) ?? payloadField(payload, keys);
+}
+
+type CompanyListRow = {
+  id: string;
+  name: string;
+  city: string | null;
+  province: string | null;
+  vat_number: string | null;
+  tax_code?: string | null;
+  phone: string | null;
+  email: string | null;
+  contact_phone?: string | null;
+  contact_email?: string | null;
+  mobile?: string | null;
+  phone_secondary?: string | null;
+  pec?: string | null;
+  status: CompanyStatus;
+  commercial_status?: CommercialStatus | null;
+  geocode_status: GeocodeStatus;
+  created_at: string;
+  import_headers?: string[] | null;
+  import_payload?: Json | null;
+};
+
+function resolvePhoneField(row: CompanyListRow): string | null {
+  const fromPayload = payloadPhone(row.import_payload, row.import_headers);
+  if (fromPayload) {
+    return fromPayload;
+  }
+
+  const fromColumns = firstNonEmpty(
+    row.phone,
+    row.contact_phone,
+    row.mobile,
+    row.phone_secondary
+  );
+  if (fromColumns && !isPrefixOnlyPhoneValue(fromColumns, row.import_payload, row.import_headers)) {
+    return fromColumns;
+  }
+
+  return null;
+}
+
+function resolveVatField(row: CompanyListRow): string | null {
+  return (
+    resolveListField([row.vat_number, row.tax_code], row.import_payload, VAT_PAYLOAD_KEYS) ??
+    payloadFieldByHeaderMatch(row.import_payload, row.import_headers, [
+      "partita iva",
+      "p.iva",
+      "p iva",
+      "vat",
+    ])
+  );
+}
+
+function resolveEmailField(row: CompanyListRow): string | null {
+  return (
+    resolveListField(
+      [row.email, row.contact_email, row.pec],
+      row.import_payload,
+      EMAIL_PAYLOAD_KEYS
+    ) ??
+    payloadFieldByHeaderMatch(row.import_payload, row.import_headers, [
+      "email",
+      "e-mail",
+      "mail",
+      "pec",
+    ])
+  );
+}
+
+function mapListItems(rows: CompanyListRow[]): CompanyListItem[] {
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    city: row.city,
+    province: row.province,
+    vat_number: resolveVatField(row),
+    phone: resolvePhoneField(row),
+    email: resolveEmailField(row),
+    status: row.status,
+    commercial_status: normalizeCommercialStatus(row.commercial_status),
+    geocode_status: row.geocode_status,
+    created_at: row.created_at,
+  }));
+}
+
+/** Stessi fallback della lista (payload, tax_code, PREFISSO+NUMERO, PEC). Usato dal dettaglio azienda. */
+export function resolveCompanyDisplayFields(company: CompanyListRow): Pick<
+  CompanyListItem,
+  "vat_number" | "phone" | "email"
+> {
+  return {
+    vat_number: resolveVatField(company),
+    phone: resolvePhoneField(company),
+    email: resolveEmailField(company),
+  };
+}
+
+function applyCommercialStatusFilter<T extends { eq: (col: string, val: string) => T; or: (filters: string) => T }>(
+  query: T,
+  commercialStatus: CommercialStatus
+): T {
+  if (commercialStatus === "prospect") {
+    return query.or("commercial_status.eq.prospect,commercial_status.is.null");
+  }
+  return query.eq("commercial_status", commercialStatus);
+}
 
 /**
  * Nota: l'accesso avviene con il client server auth-scoped (`@supabase/ssr`),
@@ -38,20 +374,80 @@ const LIST_COLUMNS =
  */
 
 export async function listCompanies(
-  limit = 100
+  limit = 100,
+  commercialStatus?: CommercialStatus | null
 ): Promise<{ data: CompanyListItem[]; count: number; error: string | null }> {
   const supabase = await createServerClient();
-  const { data, count, error } = await supabase
+  let query = supabase
     .from("companies")
-    .select(LIST_COLUMNS, { count: "exact" })
+    .select(COMPANY_LIST_COLUMNS, { count: "exact" })
     .order("created_at", { ascending: false })
     .limit(limit);
 
+  if (commercialStatus) {
+    query = applyCommercialStatusFilter(query, commercialStatus);
+  }
+
+  let data: CompanyListRow[] | null = null;
+  let count: number | null = null;
+
+  const primary = await query;
+  data = (primary.data ?? null) as CompanyListRow[] | null;
+  count = primary.count;
+  let error = primary.error;
+
+  if (error && /commercial_status/i.test(error.message)) {
+    const fallbackQuery = supabase
+      .from("companies")
+      .select(COMPANY_LIST_COLUMNS_FALLBACK, { count: "exact" })
+      .order("created_at", { ascending: false })
+      .limit(limit);
+
+    if (commercialStatus && commercialStatus !== "prospect") {
+      return { data: [], count: 0, error: describeDbError(error) };
+    }
+
+    const fallback = await fallbackQuery;
+    data = (fallback.data ?? null) as CompanyListRow[] | null;
+    count = fallback.count;
+    error = fallback.error;
+  }
+
   return {
-    data: (data ?? []) as CompanyListItem[],
+    data: mapListItems(data ?? []),
     count: count ?? 0,
     error: describeDbError(error),
   };
+}
+
+export async function getCommercialStatusCounts(): Promise<{
+  data: CommercialStatusCounts | null;
+  error: string | null;
+}> {
+  const supabase = await createServerClient();
+  const results = await Promise.all(
+    DASHBOARD_COMMERCIAL_STATUSES.map(async (status) => {
+      let countQuery = supabase
+        .from("companies")
+        .select("*", { count: "exact", head: true });
+
+      countQuery = applyCommercialStatusFilter(countQuery, status);
+
+      const { count, error } = await countQuery;
+      return { status, count: count ?? 0, error };
+    })
+  );
+
+  const failed = results.find((result) => result.error);
+  if (failed?.error) {
+    return { data: null, error: describeDbError(failed.error) };
+  }
+
+  const data = Object.fromEntries(
+    results.map(({ status, count }) => [status, count])
+  ) as CommercialStatusCounts;
+
+  return { data, error: null };
 }
 
 export async function getCompanyById(
