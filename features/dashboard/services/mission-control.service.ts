@@ -11,10 +11,12 @@ import { analyzeOpportunityRadar } from "@/features/radar/services/opportunity-r
 import { getDistanceKm } from "@/features/maps/utils/geo-distance";
 import { parseAgendaFilters } from "@/lib/constants/agenda";
 import type { DailyVisitSuggestion } from "@/lib/commercial-assistant/types";
+import { OPEN_OPPORTUNITY_STAGES } from "@/lib/constants/opportunity-pipeline";
 import { endOfTodayIso, startOfTodayIso } from "@/lib/last-visit/format";
 import { companyRegisterVisitHref } from "@/lib/constants/visit-workflow";
 import { createServerClient } from "@/lib/supabase/server";
 import { describeDbError } from "@/lib/supabase/errors";
+import { fetchWeatherLabel } from "../utils/weather";
 import type {
   MissionControlAction,
   MissionControlData,
@@ -53,87 +55,93 @@ function buildMissionActions(
   nextVisit: MissionControlNextVisit | null,
   estimatedTourKm: number
 ): MissionControlAction[] {
-  const actions: MissionControlAction[] = [];
+  type ScoredAction = MissionControlAction & { priority: number };
+  const candidates: ScoredAction[] = [];
 
   if (nextVisit) {
     const isDue = new Date(nextVisit.scheduledAt).getTime() <= Date.now();
     if (isDue) {
-      actions.push({
+      candidates.push({
         id: `complete-${nextVisit.visitId}`,
         icon: "check",
         title: `Completa visita · ${nextVisit.companyName}`,
         explanation: `Appuntamento delle ${nextVisit.scheduledLabel}`,
         href: companyRegisterVisitHref(nextVisit.companyId),
         actionLabel: "Completa visita",
+        priority: 100,
       });
     }
   }
 
-  if (estimatedTourKm > 0) {
-    actions.push({
-      id: "plan-tour",
-      icon: "route",
-      title: "Pianifica il giro",
-      explanation: `${estimatedTourKm.toFixed(1)} km stimati tra le visite di oggi`,
-      href: "/routes",
-      actionLabel: "Apri giro",
-    });
-  }
-
   for (const suggestion of suggestions) {
-    if (actions.length >= 5) {
-      break;
-    }
-
     const explanation = suggestion.reasons.join(" · ");
 
     if (suggestion.signals.hasOverdueFollowUp) {
-      actions.push({
+      candidates.push({
         id: `follow-up-${suggestion.companyId}`,
         icon: "calendar",
         title: `Pianifica follow-up · ${suggestion.companyName}`,
         explanation,
         href: `/activities?section=followups&fcompany=${suggestion.companyId}`,
         actionLabel: "Pianifica follow-up",
+        priority: suggestion.score + 15,
       });
       continue;
     }
 
     if (suggestion.signals.openOpportunityCount > 0) {
-      actions.push({
+      candidates.push({
         id: `call-${suggestion.companyId}`,
         icon: "phone",
         title: `Chiama ${suggestion.companyName}`,
         explanation,
         href: `/companies/${suggestion.companyId}`,
         actionLabel: "Apri scheda",
+        priority: suggestion.score + 10,
       });
       continue;
     }
 
     if (suggestion.signals.distanceKm != null && suggestion.signals.distanceKm <= 10) {
-      actions.push({
+      candidates.push({
         id: `nearby-${suggestion.companyId}`,
         icon: "map-pin",
         title: `Visita cliente vicino · ${suggestion.companyName}`,
         explanation,
-        href: `/visits?company=${suggestion.companyId}`,
-        actionLabel: "Pianifica visita",
+        href: `/visits?company=${suggestion.companyId}&briefing=${suggestion.companyId}`,
+        actionLabel: "Apri briefing",
+        priority: suggestion.score + 8,
       });
       continue;
     }
 
-    actions.push({
+    candidates.push({
       id: `visit-${suggestion.companyId}`,
       icon: "target",
       title: `Visita ${suggestion.companyName}`,
       explanation,
       href: `/assistant?briefing=${suggestion.companyId}`,
       actionLabel: "Briefing AI",
+      priority: suggestion.score,
     });
   }
 
-  return actions.slice(0, 5);
+  if (estimatedTourKm > 0) {
+    candidates.push({
+      id: "plan-tour",
+      icon: "route",
+      title: "Pianifica il giro",
+      explanation: `${estimatedTourKm.toFixed(1)} km stimati tra le visite di oggi`,
+      href: "/routes",
+      actionLabel: "Apri giro",
+      priority: 45,
+    });
+  }
+
+  return candidates
+    .sort((left, right) => right.priority - left.priority)
+    .slice(0, 5)
+    .map(({ priority: _priority, ...action }) => action);
 }
 
 async function countVisitsToday(userId: string | null): Promise<number> {
@@ -222,6 +230,27 @@ async function estimateTodayTourKm(userId: string | null): Promise<number> {
   }
 
   return Math.round(total * 10) / 10;
+}
+
+async function countHotOpportunities(userId: string | null): Promise<number> {
+  const supabase = await createServerClient();
+
+  let query = supabase
+    .from("opportunities")
+    .select("id", { count: "exact", head: true })
+    .in("stage", [...OPEN_OPPORTUNITY_STAGES])
+    .gte("probability", 70);
+
+  if (userId) {
+    query = query.eq("user_id", userId);
+  }
+
+  const { count, error } = await query;
+  if (error) {
+    return 0;
+  }
+
+  return count ?? 0;
 }
 
 async function getNextScheduledVisit(userId: string | null): Promise<MissionControlNextVisit | null> {
@@ -363,6 +392,7 @@ export async function getMissionControlData(): Promise<MissionControlData> {
       followUpMetrics,
       opportunityMetrics,
       priorityMetrics,
+      hotOpportunities,
       suggestionsResult,
       nextVisit,
       estimatedTourKm,
@@ -374,6 +404,7 @@ export async function getMissionControlData(): Promise<MissionControlData> {
       getFollowUpDashboardMetrics(),
       getOpportunityDashboardMetrics(),
       getPriorityDashboardMetrics(),
+      countHotOpportunities(userId),
       getDailyVisitSuggestions({ limit: 8, agentId: userId }),
       getNextScheduledVisit(userId),
       estimateTodayTourKm(userId),
@@ -388,11 +419,16 @@ export async function getMissionControlData(): Promise<MissionControlData> {
       getRadarPreview(userId),
     ]);
 
+    const weatherLabel = await fetchWeatherLabel(
+      nextVisit?.latitude ?? 41.8719,
+      nextVisit?.longitude ?? 12.5674
+    );
+
     const suggestions = suggestionsResult.data ?? [];
     const kpis: MissionControlKpis = {
       visitsToday,
       overdueFollowUps: followUpMetrics.data?.overdue ?? 0,
-      openOpportunities: opportunityMetrics.data?.openCount ?? 0,
+      hotOpportunities,
       prospectsToVisit: priorityMetrics.data?.unvisitedProspects ?? 0,
       estimatedTourKm,
       pipelineValue: opportunityMetrics.data?.pipelineValue ?? 0,
@@ -417,7 +453,7 @@ export async function getMissionControlData(): Promise<MissionControlData> {
     return {
       userName,
       dateLabel: formatItalianDate(now),
-      weatherLabel: "Meteo non disponibile",
+      weatherLabel,
       calendar,
       kpis,
       actions,
@@ -435,7 +471,7 @@ export async function getMissionControlData(): Promise<MissionControlData> {
       kpis: {
         visitsToday: 0,
         overdueFollowUps: 0,
-        openOpportunities: 0,
+        hotOpportunities: 0,
         prospectsToVisit: 0,
         estimatedTourKm: 0,
         pipelineValue: 0,

@@ -15,7 +15,7 @@ export type MissionActionIcon =
 export interface MissionControlKpis {
   visitsToday: number;
   overdueFollowUps: number;
-  openOpportunities: number;
+  hotOpportunities: number;
   prospectsToVisit: number;
   estimatedTourKm: number;
   pipelineValue: number;

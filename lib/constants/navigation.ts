@@ -32,7 +32,7 @@ export const MOBILE_FIELD_NAV_ITEMS: NavItem[] = [
 ];
 
 export const PAGE_TITLES: Record<string, string> = {
-  "/": "Dashboard",
+  "/": "Mission Control",
   "/companies/import": "Importa Aziende",
   "/companies": "Aziende",
   "/contacts": "Contatti",
