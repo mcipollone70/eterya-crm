@@ -87,10 +87,49 @@ drop policy if exists "authenticated_all_attachments" on attachments;
 create policy "authenticated_all_attachments" on attachments
   for all to authenticated using (true) with check (true);
 
+DO $$
+BEGIN
+  IF to_regclass('public.follow_ups') IS NOT NULL THEN
+    EXECUTE 'DROP POLICY IF EXISTS "authenticated_all_follow_ups" ON follow_ups';
+    EXECUTE 'CREATE POLICY "authenticated_all_follow_ups" ON follow_ups FOR ALL TO authenticated USING (true) WITH CHECK (true)';
+  END IF;
+
+  IF to_regclass('public.opportunity_stage_history') IS NOT NULL THEN
+    EXECUTE 'DROP POLICY IF EXISTS "authenticated_all_opportunity_stage_history" ON opportunity_stage_history';
+    EXECUTE 'CREATE POLICY "authenticated_all_opportunity_stage_history" ON opportunity_stage_history FOR ALL TO authenticated USING (true) WITH CHECK (true)';
+  END IF;
+
+  IF to_regclass('public.company_product_interests') IS NOT NULL THEN
+    EXECUTE 'DROP POLICY IF EXISTS "authenticated_all_company_product_interests" ON company_product_interests';
+    EXECUTE 'CREATE POLICY "authenticated_all_company_product_interests" ON company_product_interests FOR ALL TO authenticated USING (true) WITH CHECK (true)';
+  END IF;
+
+  IF to_regclass('public.company_product_interest_history') IS NOT NULL THEN
+    EXECUTE 'DROP POLICY IF EXISTS "authenticated_all_company_product_interest_history" ON company_product_interest_history';
+    EXECUTE 'CREATE POLICY "authenticated_all_company_product_interest_history" ON company_product_interest_history FOR ALL TO authenticated USING (true) WITH CHECK (true)';
+  END IF;
+
+  IF to_regclass('public.opportunity_products') IS NOT NULL THEN
+    EXECUTE 'DROP POLICY IF EXISTS "authenticated_all_opportunity_products" ON opportunity_products';
+    EXECUTE 'CREATE POLICY "authenticated_all_opportunity_products" ON opportunity_products FOR ALL TO authenticated USING (true) WITH CHECK (true)';
+  END IF;
+
+  IF to_regclass('public.visit_tours') IS NOT NULL THEN
+    EXECUTE 'DROP POLICY IF EXISTS "authenticated_all_visit_tours" ON visit_tours';
+    EXECUTE 'CREATE POLICY "authenticated_all_visit_tours" ON visit_tours FOR ALL TO authenticated USING (true) WITH CHECK (true)';
+  END IF;
+
+  IF to_regclass('public.dashboard_layouts') IS NOT NULL THEN
+    EXECUTE 'DROP POLICY IF EXISTS "authenticated_own_dashboard_layout" ON dashboard_layouts';
+    EXECUTE 'CREATE POLICY "authenticated_own_dashboard_layout" ON dashboard_layouts FOR ALL TO authenticated USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid())';
+  END IF;
+END $$;
+
 -- -----------------------------------------------------------------------------
--- 5) Verifica (opzionale): dovrebbe elencare `authenticated` con i 4 privilegi.
+-- 6) Re-applica GRANT su tutte le tabelle (incluse quelle create dalle migrazioni).
 -- -----------------------------------------------------------------------------
--- select grantee, privilege_type
--- from information_schema.role_table_grants
--- where table_schema = 'public' and table_name = 'companies'
--- order by grantee, privilege_type;
+grant select, insert, update, delete on all tables in schema public to authenticated;
+grant usage, select on all sequences in schema public to authenticated;
+-- -----------------------------------------------------------------------------
+-- 7) Verifica (opzionale): dovrebbe elencare `authenticated` con i 4 privilegi.
+-- -----------------------------------------------------------------------------

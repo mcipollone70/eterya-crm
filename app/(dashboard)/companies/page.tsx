@@ -9,8 +9,34 @@ export const metadata = {
 export default async function Page({
   searchParams,
 }: {
-  searchParams: Promise<{ commercial_status?: string }>;
+  searchParams: Promise<{
+    commercial_status?: string;
+    priority_tier?: string;
+    last_visit?: string;
+    sort?: string;
+    product_family?: string;
+    interest_level?: string;
+    purchased_product?: string;
+  }>;
 }) {
-  const { commercial_status } = await searchParams;
-  return <CompaniesPage commercialStatus={commercial_status} />;
+  const {
+    commercial_status,
+    priority_tier,
+    last_visit,
+    sort,
+    product_family,
+    interest_level,
+    purchased_product,
+  } = await searchParams;
+  return (
+    <CompaniesPage
+      commercialStatus={commercial_status}
+      priorityTier={priority_tier}
+      lastVisit={last_visit}
+      sort={sort}
+      productFamily={product_family}
+      interestLevel={interest_level}
+      purchasedProduct={purchased_product}
+    />
+  );
 }

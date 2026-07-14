@@ -1,15 +1,20 @@
 import "server-only";
 
 import { cache } from "react";
+import type { User as AuthUser } from "@supabase/supabase-js";
 import { createServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
+import {
+  ensureUserProfile,
+  mapProfileRow,
+} from "./services/user-provisioning.service";
+import type { AppUserProfile } from "./types";
 
 /**
- * Restituisce l'utente autenticato, oppure `null`.
- * Non lancia mai: se Supabase non è configurato o la sessione è assente,
- * la UI degrada senza errori. Memoizzato per render pass con `cache`.
+ * Restituisce l'utente autenticato Supabase Auth, oppure `null`.
+ * Sincronizza anche il profilo in `public.users` (idempotente).
  */
-export const getCurrentUser = cache(async () => {
+export const getCurrentUser = cache(async (): Promise<AuthUser | null> => {
   if (!isSupabaseConfigured()) {
     return null;
   }
@@ -19,7 +24,43 @@ export const getCurrentUser = cache(async () => {
     const {
       data: { user },
     } = await supabase.auth.getUser();
+
+    if (!user) {
+      return null;
+    }
+
+    await ensureUserProfile(supabase, user);
     return user;
+  } catch {
+    return null;
+  }
+});
+
+/**
+ * Profilo applicativo (`public.users`) dell'utente corrente.
+ * Richiede sessione attiva; esegue il provisioning se mancante.
+ */
+export const getCurrentUserProfile = cache(async (): Promise<AppUserProfile | null> => {
+  if (!isSupabaseConfigured()) {
+    return null;
+  }
+
+  try {
+    const supabase = await createServerClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return null;
+    }
+
+    const { profile, error } = await ensureUserProfile(supabase, user);
+    if (error || !profile) {
+      return null;
+    }
+
+    return mapProfileRow(profile);
   } catch {
     return null;
   }

@@ -11,10 +11,19 @@ export const metadata = { title: "Dettaglio azienda" };
 
 export default async function CompanyPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{
+    type?: string;
+    period?: string;
+    operator?: string;
+    q?: string;
+    visit?: string;
+  }>;
 }) {
   const { id } = await params;
+  const { type, period, operator, q, visit } = await searchParams;
 
   if (!isSupabaseConfigured()) {
     return (
@@ -46,5 +55,15 @@ export default async function CompanyPage({
 
   const { data: contacts } = await listContactsByCompany(id);
 
-  return <CompanyDetail company={company} contacts={contacts} />;
+  return (
+    <CompanyDetail
+      company={company}
+      contacts={contacts}
+      historyType={type}
+      historyPeriod={period}
+      historyOperator={operator}
+      historySearch={q}
+      registerVisit={visit === "1"}
+    />
+  );
 }

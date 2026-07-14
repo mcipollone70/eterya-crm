@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Pencil, Plus, UserRound } from "lucide-react";
+import { Pencil, Plus, Route, UserRound } from "lucide-react";
 import {
   Badge,
   Button,
@@ -19,10 +19,21 @@ import { CommercialStatusSelect } from "./commercial-status-select";
 import type { Company } from "../services/companies.service";
 import { resolveCompanyDisplayFields } from "../services/companies.service";
 import type { ContactListItem } from "@/features/contacts/services/contacts.service";
+import { LastVisitSummary } from "@/features/visits/components/last-visit-summary";
+import { RecordVisitForm } from "@/features/visits/components/record-visit-form";
+import { CompanyContactHistorySection } from "@/features/activities/components/company-contact-history-section";
+import { CompanyFollowUpsSection } from "@/features/activities/components/company-follow-ups-section";
+import { CompanyOpportunitiesSection } from "@/features/opportunities/components/company-opportunities-section";
+import { CompanyProductsSection } from "@/features/products/components/company-products-section";
 
 interface CompanyDetailProps {
   company: Company;
   contacts: ContactListItem[];
+  historyType?: string;
+  historyPeriod?: string;
+  historyOperator?: string;
+  historySearch?: string;
+  registerVisit?: boolean;
 }
 
 function formatDate(value: string | null): string {
@@ -34,7 +45,15 @@ function formatDate(value: string | null): string {
   });
 }
 
-export function CompanyDetail({ company, contacts }: CompanyDetailProps) {
+export function CompanyDetail({
+  company,
+  contacts,
+  historyType,
+  historyPeriod,
+  historyOperator,
+  historySearch,
+  registerVisit = false,
+}: CompanyDetailProps) {
   const location = [company.city, company.province].filter(Boolean).join(" · ");
   const display = resolveCompanyDisplayFields(company);
 
@@ -154,6 +173,43 @@ export function CompanyDetail({ company, contacts }: CompanyDetailProps) {
           </CardContent>
         </Card>
       )}
+
+      <CompanyOpportunitiesSection companyId={company.id} contacts={contacts} />
+
+      <CompanyProductsSection companyId={company.id} />
+
+      <CompanyFollowUpsSection companyId={company.id} contacts={contacts} />
+
+      <LastVisitSummary
+        company={company}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <RecordVisitForm companyId={company.id} defaultOpen={registerVisit} />
+            <Link
+              href={`/visits?company=${company.id}`}
+              className="inline-flex h-8 items-center rounded-lg border border-slate-200 px-3 text-xs font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Agenda
+            </Link>
+            <Link
+              href="/routes"
+              className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 px-3 text-xs font-medium text-slate-700 hover:bg-slate-50"
+            >
+              <Route className="h-3.5 w-3.5" />
+              Giro
+            </Link>
+          </div>
+        }
+      />
+
+      <CompanyContactHistorySection
+        companyId={company.id}
+        basePath={`/companies/${company.id}`}
+        type={historyType}
+        period={historyPeriod}
+        operator={historyOperator}
+        search={historySearch}
+      />
 
       <Card>
         <CardHeader className="flex-row items-center justify-between">

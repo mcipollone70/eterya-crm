@@ -6,7 +6,14 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[];
 
-export type GeocodeStatus = "not_geocoded" | "geocoded" | "pending" | "failed";
+export type GeocodeStatus =
+  | "not_geocoded"
+  | "geocoded"
+  | "pending"
+  | "failed"
+  | "processing"
+  | "completed"
+  | "needs_review";
 export type CompanyStatus = "active" | "inactive" | "prospect" | "lead" | "archived";
 export type CommercialStatus =
   | "prospect"
@@ -16,10 +23,38 @@ export type CommercialStatus =
   | "non_interessato";
 export type UserRole = "super_admin" | "org_admin" | "manager" | "agent" | "viewer";
 export type ActivityStatus = "todo" | "in_progress" | "done" | "cancelled";
-export type ActivityType = "call" | "email" | "task" | "follow_up" | "meeting";
+export type FollowUpStatus = "todo" | "completed" | "postponed" | "cancelled";
+export type ActivityPriority = "low" | "medium" | "high";
+export type ActivityType =
+  | "call"
+  | "email"
+  | "task"
+  | "follow_up"
+  | "meeting"
+  | "whatsapp"
+  | "visit"
+  | "quote"
+  | "note";
 export type VisitStatus = "scheduled" | "in_progress" | "completed" | "cancelled" | "no_show";
+export type VisitTourStatus = "draft" | "planned" | "completed" | "cancelled";
 export type VoiceNoteStatus = "recorded" | "transcribing" | "transcribed" | "processed" | "failed";
 export type OpportunityStatus = "draft" | "sent" | "accepted" | "rejected" | "expired" | "cancelled";
+export type OpportunityStage =
+  | "new"
+  | "contact_started"
+  | "site_visit"
+  | "quote_sent"
+  | "negotiation"
+  | "won"
+  | "lost";
+export type ProductFamily =
+  | "zanzariere"
+  | "tapparelle"
+  | "vepa"
+  | "tende_cristal"
+  | "tende_tecniche_rullo";
+export type ProductInterestLevel = "low" | "medium" | "high";
+export type CompanyProductRelation = "interest" | "purchased";
 export type AttachmentEntityType =
   | "company"
   | "contact"
@@ -196,9 +231,22 @@ export interface Database {
           founding_date: string | null;
           notes: string | null;
           internal_notes: string | null;
+          last_visit_at: string | null;
+          last_visit_outcome: string | null;
+          last_visit_notes: string | null;
+          last_visit_duration_minutes: number | null;
+          next_callback_at: string | null;
+          last_contact_at: string | null;
+          last_contact_type: string | null;
+          last_contact_outcome: string | null;
           latitude: number | null;
           longitude: number | null;
           geocode_status: GeocodeStatus;
+          geocoding_accuracy: string | null;
+          geocoding_provider: string | null;
+          geocoded_at: string | null;
+          geocoding_error: string | null;
+          geocoding_normalized_address: string | null;
           import_source: string | null;
           import_file_name: string | null;
           import_row_index: number | null;
@@ -274,6 +322,9 @@ export interface Database {
           priority: string;
           due_at: string | null;
           completed_at: string | null;
+          outcome: string | null;
+          next_follow_up_at: string | null;
+          occurred_at: string | null;
           metadata: Json;
           created_at: string;
           updated_at: string;
@@ -290,11 +341,48 @@ export interface Database {
           priority?: string;
           due_at?: string | null;
           completed_at?: string | null;
+          outcome?: string | null;
+          next_follow_up_at?: string | null;
+          occurred_at?: string | null;
           metadata?: Json;
           created_at?: string;
           updated_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["activities"]["Insert"]>;
+        Relationships: [];
+      };
+      follow_ups: {
+        Row: {
+          id: string;
+          company_id: string;
+          contact_id: string | null;
+          user_id: string;
+          activity_type: string;
+          description: string | null;
+          priority: ActivityPriority;
+          status: FollowUpStatus;
+          scheduled_at: string;
+          postponed_to: string | null;
+          completed_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          company_id: string;
+          contact_id?: string | null;
+          user_id: string;
+          activity_type: string;
+          description?: string | null;
+          priority?: ActivityPriority;
+          status?: FollowUpStatus;
+          scheduled_at: string;
+          postponed_to?: string | null;
+          completed_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["follow_ups"]["Insert"]>;
         Relationships: [];
       };
       visits: {
@@ -307,6 +395,8 @@ export interface Database {
           status: VisitStatus;
           outcome: string | null;
           notes: string | null;
+          duration_minutes: number | null;
+          next_callback_at: string | null;
           check_in_latitude: number | null;
           check_in_longitude: number | null;
           created_at: string;
@@ -321,12 +411,68 @@ export interface Database {
           status?: VisitStatus;
           outcome?: string | null;
           notes?: string | null;
+          duration_minutes?: number | null;
+          next_callback_at?: string | null;
           check_in_latitude?: number | null;
           check_in_longitude?: number | null;
           created_at?: string;
           updated_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["visits"]["Insert"]>;
+        Relationships: [];
+      };
+      visit_tours: {
+        Row: {
+          id: string;
+          user_id: string;
+          tour_date: string;
+          mode: string;
+          origin: Json;
+          destination: Json;
+          constraints: Json;
+          stops: Json;
+          total_distance_km: number | null;
+          estimated_minutes: number | null;
+          deviation_km: number | null;
+          status: VisitTourStatus;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          tour_date?: string;
+          mode?: string;
+          origin: Json;
+          destination: Json;
+          constraints?: Json;
+          stops?: Json;
+          total_distance_km?: number | null;
+          estimated_minutes?: number | null;
+          deviation_km?: number | null;
+          status?: VisitTourStatus;
+          notes?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["visit_tours"]["Insert"]>;
+        Relationships: [];
+      };
+      dashboard_layouts: {
+        Row: {
+          user_id: string;
+          widget_order: string[];
+          hidden_widgets: string[];
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          widget_order?: string[];
+          hidden_widgets?: string[];
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["dashboard_layouts"]["Insert"]>;
         Relationships: [];
       };
       voice_notes: {
@@ -379,6 +525,13 @@ export interface Database {
           sent_at: string | null;
           accepted_at: string | null;
           notes: string | null;
+          contact_id: string | null;
+          product_interest: string | null;
+          probability: number | null;
+          stage: OpportunityStage;
+          opened_at: string;
+          expected_close_at: string | null;
+          product_family: ProductFamily;
           metadata: Json;
           created_at: string;
           updated_at: string;
@@ -396,11 +549,40 @@ export interface Database {
           sent_at?: string | null;
           accepted_at?: string | null;
           notes?: string | null;
+          contact_id?: string | null;
+          product_interest?: string | null;
+          probability?: number | null;
+          stage?: OpportunityStage;
+          opened_at?: string;
+          expected_close_at?: string | null;
+          product_family?: ProductFamily;
           metadata?: Json;
           created_at?: string;
           updated_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["opportunities"]["Insert"]>;
+        Relationships: [];
+      };
+      opportunity_stage_history: {
+        Row: {
+          id: string;
+          opportunity_id: string;
+          from_stage: OpportunityStage | null;
+          to_stage: OpportunityStage;
+          changed_at: string;
+          changed_by: string | null;
+          notes: string | null;
+        };
+        Insert: {
+          id?: string;
+          opportunity_id: string;
+          from_stage?: OpportunityStage | null;
+          to_stage: OpportunityStage;
+          changed_at?: string;
+          changed_by?: string | null;
+          notes?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["opportunity_stage_history"]["Insert"]>;
         Relationships: [];
       };
       products: {
@@ -413,6 +595,10 @@ export interface Database {
           unit_price: number;
           currency: string;
           is_active: boolean;
+          family: ProductFamily;
+          price_range_min: number | null;
+          price_range_max: number | null;
+          notes: string | null;
           metadata: Json;
           created_at: string;
           updated_at: string;
@@ -426,6 +612,10 @@ export interface Database {
           unit_price?: number;
           currency?: string;
           is_active?: boolean;
+          family?: ProductFamily;
+          price_range_min?: number | null;
+          price_range_max?: number | null;
+          notes?: string | null;
           metadata?: Json;
           created_at?: string;
           updated_at?: string;
@@ -457,6 +647,72 @@ export interface Database {
           updated_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["company_products"]["Insert"]>;
+        Relationships: [];
+      };
+      company_product_interests: {
+        Row: {
+          id: string;
+          company_id: string;
+          product_id: string;
+          relation_type: CompanyProductRelation;
+          interest_level: ProductInterestLevel | null;
+          last_interest_at: string | null;
+          commercial_notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          company_id: string;
+          product_id: string;
+          relation_type?: CompanyProductRelation;
+          interest_level?: ProductInterestLevel | null;
+          last_interest_at?: string | null;
+          commercial_notes?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["company_product_interests"]["Insert"]>;
+        Relationships: [];
+      };
+      company_product_interest_history: {
+        Row: {
+          id: string;
+          company_id: string;
+          product_id: string;
+          relation_type: CompanyProductRelation;
+          interest_level: ProductInterestLevel | null;
+          event_type: string;
+          notes: string | null;
+          occurred_at: string;
+          created_by: string | null;
+        };
+        Insert: {
+          id?: string;
+          company_id: string;
+          product_id: string;
+          relation_type: CompanyProductRelation;
+          interest_level?: ProductInterestLevel | null;
+          event_type: string;
+          notes?: string | null;
+          occurred_at?: string;
+          created_by?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["company_product_interest_history"]["Insert"]>;
+        Relationships: [];
+      };
+      opportunity_products: {
+        Row: {
+          opportunity_id: string;
+          product_id: string;
+          created_at: string;
+        };
+        Insert: {
+          opportunity_id: string;
+          product_id: string;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["opportunity_products"]["Insert"]>;
         Relationships: [];
       };
       attachments: {

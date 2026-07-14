@@ -15,6 +15,21 @@ import type {
   Tables,
   UpdateTables,
 } from "@/lib/supabase/types";
+import type { PriorityTier } from "@/lib/commercial-priority/types";
+import type { PriorityFilterValue } from "@/lib/constants/priority-tier";
+import type { LastVisitFilterValue } from "@/lib/constants/last-visit";
+import type { InterestLevel, ProductFamily } from "@/lib/constants/product-catalog";
+import { thresholdIsoDaysAgo } from "@/lib/last-visit/format";
+import {
+  computeCompanyPriorityFields,
+  matchesPriorityFilter,
+} from "@/lib/commercial-priority/compute";
+import type { CompanyPrioritySource } from "@/lib/commercial-priority/types";
+import {
+  buildRowPriorityContext,
+  fetchOpenOpportunityCompanyIds,
+} from "./commercial-priority.service";
+import { resolveCompanyIdsForProductFilters } from "@/features/products/services/company-product-interests.service";
 import type { CompanyInsert } from "../utils/build-db-rows";
 
 export type Company = Tables<"companies">;
@@ -33,16 +48,32 @@ export interface CompanyListItem {
   commercial_status: CommercialStatus;
   geocode_status: GeocodeStatus;
   created_at: string;
+  priority_score: number;
+  priority_tier: PriorityTier;
+  priority_excluded: boolean;
+  last_visit_at: string | null;
 }
+
+export interface ListCompaniesOptions {
+  priorityTier?: PriorityFilterValue | null;
+  sortByPriority?: boolean;
+  lastVisitFilter?: LastVisitFilterValue | null;
+  sortByLastVisit?: boolean;
+  productFamily?: ProductFamily | null;
+  interestLevel?: InterestLevel | null;
+  purchasedProductId?: string | null;
+}
+
+const PRIORITY_LIST_FETCH_LIMIT = 5000;
 
 export type CommercialStatusCounts = Record<DashboardCommercialStatus, number>;
 
 /** Colonne SELECT per l'elenco aziende (incluso import_payload per fallback di lettura). */
 export const COMPANY_LIST_COLUMNS =
-  "id,name,city,province,vat_number,tax_code,phone,email,contact_phone,contact_email,mobile,phone_secondary,pec,status,commercial_status,geocode_status,created_at,import_headers,import_payload";
+  "id,name,city,province,vat_number,tax_code,phone,email,contact_phone,contact_email,mobile,phone_secondary,pec,status,commercial_status,geocode_status,revenue,created_at,last_visit_at,last_contact_at,import_headers,import_payload";
 
 const COMPANY_LIST_COLUMNS_FALLBACK =
-  "id,name,city,province,vat_number,tax_code,phone,email,contact_phone,contact_email,mobile,phone_secondary,pec,status,geocode_status,created_at,import_headers,import_payload";
+  "id,name,city,province,vat_number,tax_code,phone,email,contact_phone,contact_email,mobile,phone_secondary,pec,status,geocode_status,revenue,created_at,last_visit_at,last_contact_at,import_headers,import_payload";
 
 const INVALID_DISPLAY_VALUES = new Set(["false", "true", "n", "s", "null", "undefined"]);
 
@@ -276,7 +307,10 @@ type CompanyListRow = {
   status: CompanyStatus;
   commercial_status?: CommercialStatus | null;
   geocode_status: GeocodeStatus;
+  revenue?: number | null;
   created_at: string;
+  last_visit_at?: string | null;
+  last_contact_at?: string | null;
   import_headers?: string[] | null;
   import_payload?: Json | null;
 };
@@ -328,8 +362,11 @@ function resolveEmailField(row: CompanyListRow): string | null {
   );
 }
 
-function mapListItems(rows: CompanyListRow[]): CompanyListItem[] {
-  return rows.map((row) => ({
+function mapListItem(row: CompanyListRow): Omit<
+  CompanyListItem,
+  "priority_score" | "priority_tier" | "priority_excluded"
+> {
+  return {
     id: row.id,
     name: row.name,
     city: row.city,
@@ -341,7 +378,53 @@ function mapListItems(rows: CompanyListRow[]): CompanyListItem[] {
     commercial_status: normalizeCommercialStatus(row.commercial_status),
     geocode_status: row.geocode_status,
     created_at: row.created_at,
+    last_visit_at: row.last_visit_at ?? null,
+  };
+}
+
+function mapListItems(rows: CompanyListRow[]): CompanyListItem[] {
+  return rows.map((row) => ({
+    ...mapListItem(row),
+    priority_score: 0,
+    priority_tier: "none",
+    priority_excluded: false,
   }));
+}
+
+async function enrichListItemsWithPriority(
+  rows: CompanyListRow[],
+  options?: ListCompaniesOptions
+): Promise<CompanyListItem[]> {
+  const openOpportunityCompanyIds = await fetchOpenOpportunityCompanyIds();
+  const openOpportunitySet = new Set(openOpportunityCompanyIds);
+
+  let items = rows
+    .map((row) => {
+      const base = mapListItem(row);
+      const context = buildRowPriorityContext(
+        row.id,
+        row.last_visit_at ?? null,
+        row.last_contact_at ?? null,
+        openOpportunitySet
+      );
+      const priority = computeCompanyPriorityFields(row as CompanyPrioritySource, context);
+
+      return {
+        ...base,
+        ...priority,
+      };
+    })
+    .filter((item) => !item.priority_excluded);
+
+  if (options?.priorityTier) {
+    items = items.filter((item) => matchesPriorityFilter(item.priority_tier, options.priorityTier!));
+  }
+
+  if (options?.sortByPriority) {
+    items.sort((a, b) => b.priority_score - a.priority_score);
+  }
+
+  return items;
 }
 
 /** Stessi fallback della lista (payload, tax_code, PREFISSO+NUMERO, PEC). Usato dal dettaglio azienda. */
@@ -366,6 +449,25 @@ function applyCommercialStatusFilter<T extends { eq: (col: string, val: string) 
   return query.eq("commercial_status", commercialStatus);
 }
 
+function applyLastVisitFilter<
+  T extends {
+    is: (col: string, val: null) => T;
+    or: (filters: string) => T;
+    lt: (col: string, val: string) => T;
+  },
+>(query: T, lastVisitFilter: LastVisitFilterValue): T {
+  switch (lastVisitFilter) {
+    case "never":
+      return query.is("last_visit_at", null);
+    case "over_30":
+      return query.or(`last_visit_at.is.null,last_visit_at.lt.${thresholdIsoDaysAgo(30)}`);
+    case "over_60":
+      return query.or(`last_visit_at.is.null,last_visit_at.lt.${thresholdIsoDaysAgo(60)}`);
+    case "over_90":
+      return query.or(`last_visit_at.is.null,last_visit_at.lt.${thresholdIsoDaysAgo(90)}`);
+  }
+}
+
 /**
  * Nota: l'accesso avviene con il client server auth-scoped (`@supabase/ssr`),
  * quindi le query girano come ruolo `authenticated` e sono soggette alle policy
@@ -375,17 +477,50 @@ function applyCommercialStatusFilter<T extends { eq: (col: string, val: string) 
 
 export async function listCompanies(
   limit = 100,
-  commercialStatus?: CommercialStatus | null
+  commercialStatus?: CommercialStatus | null,
+  options?: ListCompaniesOptions
 ): Promise<{ data: CompanyListItem[]; count: number; error: string | null }> {
+  const usePriorityProcessing = Boolean(options?.priorityTier || options?.sortByPriority);
   const supabase = await createServerClient();
-  let query = supabase
-    .from("companies")
-    .select(COMPANY_LIST_COLUMNS, { count: "exact" })
-    .order("created_at", { ascending: false })
-    .limit(limit);
+
+  const productFilterResult = await resolveCompanyIdsForProductFilters({
+    productFamily: options?.productFamily,
+    interestLevel: options?.interestLevel,
+    purchasedProductId: options?.purchasedProductId,
+  });
+
+  if (productFilterResult.error) {
+    return { data: [], count: 0, error: productFilterResult.error };
+  }
+
+  if (productFilterResult.companyIds && productFilterResult.companyIds.length === 0) {
+    return { data: [], count: 0, error: null };
+  }
+
+  let query = supabase.from("companies").select(COMPANY_LIST_COLUMNS, { count: "exact" });
+
+  if (options?.sortByLastVisit && !options?.sortByPriority) {
+    query = query.order("last_visit_at", { ascending: false, nullsFirst: true });
+  } else {
+    query = query.order("created_at", { ascending: false });
+  }
+
+  if (!usePriorityProcessing) {
+    query = query.limit(limit);
+  } else {
+    query = query.limit(PRIORITY_LIST_FETCH_LIMIT);
+  }
 
   if (commercialStatus) {
     query = applyCommercialStatusFilter(query, commercialStatus);
+  }
+
+  if (productFilterResult.companyIds) {
+    query = query.in("id", productFilterResult.companyIds);
+  }
+
+  if (options?.lastVisitFilter) {
+    query = applyLastVisitFilter(query, options.lastVisitFilter);
   }
 
   let data: CompanyListRow[] | null = null;
@@ -397,14 +532,30 @@ export async function listCompanies(
   let error = primary.error;
 
   if (error && /commercial_status/i.test(error.message)) {
-    const fallbackQuery = supabase
+    let fallbackQuery = supabase
       .from("companies")
-      .select(COMPANY_LIST_COLUMNS_FALLBACK, { count: "exact" })
-      .order("created_at", { ascending: false })
-      .limit(limit);
+      .select(COMPANY_LIST_COLUMNS_FALLBACK, { count: "exact" });
+
+    if (options?.sortByLastVisit && !options?.sortByPriority) {
+      fallbackQuery = fallbackQuery.order("last_visit_at", { ascending: false, nullsFirst: true });
+    } else {
+      fallbackQuery = fallbackQuery.order("created_at", { ascending: false });
+    }
+
+    fallbackQuery = usePriorityProcessing
+      ? fallbackQuery.limit(PRIORITY_LIST_FETCH_LIMIT)
+      : fallbackQuery.limit(limit);
 
     if (commercialStatus && commercialStatus !== "prospect") {
       return { data: [], count: 0, error: describeDbError(error) };
+    }
+
+    if (options?.lastVisitFilter) {
+      fallbackQuery = applyLastVisitFilter(fallbackQuery, options.lastVisitFilter);
+    }
+
+    if (productFilterResult.companyIds) {
+      fallbackQuery = fallbackQuery.in("id", productFilterResult.companyIds);
     }
 
     const fallback = await fallbackQuery;
@@ -413,10 +564,81 @@ export async function listCompanies(
     error = fallback.error;
   }
 
+  if (error) {
+    if (/last_visit_at/i.test(error.message)) {
+      let legacyQuery = supabase
+        .from("companies")
+        .select(COMPANY_LIST_COLUMNS_FALLBACK.replace(",last_visit_at", ""), { count: "exact" })
+        .order("created_at", { ascending: false });
+
+      legacyQuery = usePriorityProcessing
+        ? legacyQuery.limit(PRIORITY_LIST_FETCH_LIMIT)
+        : legacyQuery.limit(limit);
+
+      if (commercialStatus) {
+        legacyQuery = applyCommercialStatusFilter(legacyQuery, commercialStatus);
+      }
+
+      if (productFilterResult.companyIds) {
+        legacyQuery = legacyQuery.in("id", productFilterResult.companyIds);
+      }
+
+      const legacy = await legacyQuery;
+      if (legacy.error) {
+        return { data: [], count: 0, error: describeDbError(legacy.error) };
+      }
+
+      const legacyRows = ((legacy.data ?? []) as unknown as CompanyListRow[]).map((row) => ({
+        ...row,
+        last_visit_at: null,
+      }));
+
+      if (usePriorityProcessing) {
+        const enriched = await enrichListItemsWithPriority(legacyRows, options);
+        return {
+          data: enriched.slice(0, limit),
+          count: enriched.length,
+          error: null,
+        };
+      }
+
+      return {
+        data: mapListItems(legacyRows),
+        count: legacy.count ?? 0,
+        error: null,
+      };
+    }
+
+    return { data: [], count: 0, error: describeDbError(error) };
+  }
+
+  if (usePriorityProcessing) {
+    const enriched = await enrichListItemsWithPriority(data ?? [], options);
+    const sorted = options?.sortByLastVisit
+      ? [...enriched].sort((a, b) => {
+          if (!a.last_visit_at && !b.last_visit_at) {
+            return 0;
+          }
+          if (!a.last_visit_at) {
+            return 1;
+          }
+          if (!b.last_visit_at) {
+            return -1;
+          }
+          return new Date(b.last_visit_at).getTime() - new Date(a.last_visit_at).getTime();
+        })
+      : enriched;
+    return {
+      data: sorted.slice(0, limit),
+      count: sorted.length,
+      error: null,
+    };
+  }
+
   return {
     data: mapListItems(data ?? []),
     count: count ?? 0,
-    error: describeDbError(error),
+    error: null,
   };
 }
 
@@ -425,11 +647,28 @@ export async function getCommercialStatusCounts(): Promise<{
   error: string | null;
 }> {
   const supabase = await createServerClient();
+
+  const { data: rpcData, error: rpcError } = await supabase.rpc(
+    "get_commercial_status_counts" as never
+  );
+
+  if (!rpcError && rpcData && typeof rpcData === "object") {
+    const row = rpcData as Record<string, unknown>;
+    const data = {
+      prospect: Number(row.prospect ?? 0),
+      cliente: Number(row.cliente ?? 0),
+      ex_cliente: Number(row.ex_cliente ?? 0),
+      da_ricontattare: Number(row.da_ricontattare ?? 0),
+    } as CommercialStatusCounts;
+
+    return { data, error: null };
+  }
+
   const results = await Promise.all(
     DASHBOARD_COMMERCIAL_STATUSES.map(async (status) => {
       let countQuery = supabase
         .from("companies")
-        .select("*", { count: "exact", head: true });
+        .select("id", { count: "exact", head: true });
 
       countQuery = applyCommercialStatusFilter(countQuery, status);
 

@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { createServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
+import { ensureUserProfile } from "../services/user-provisioning.service";
 
 export interface AuthFormState {
   error?: string;
@@ -51,13 +52,27 @@ export async function authenticateAction(
           "Account creato. Controlla l'email per confermare l'indirizzo, poi accedi.",
       };
     }
+
+    if (data.user) {
+      const { error: profileError } = await ensureUserProfile(supabase, data.user);
+      if (profileError) {
+        return { error: profileError };
+      }
+    }
   } else {
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
     if (error) {
       return { error: error.message };
+    }
+
+    if (data.user) {
+      const { error: profileError } = await ensureUserProfile(supabase, data.user);
+      if (profileError) {
+        return { error: profileError };
+      }
     }
   }
 
