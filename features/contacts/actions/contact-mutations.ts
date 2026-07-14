@@ -8,7 +8,10 @@ import { CONTACT_TEXT_FIELDS } from "../utils/contact-fields";
 import type { ContactInsert } from "../services/contacts.service";
 import {
   deleteContactById,
+  getContactById,
   insertContact,
+  unsetOtherPrimaryContacts,
+  clearContactCrossReferences,
   updateContactById,
 } from "../services/contacts.service";
 
@@ -56,6 +59,13 @@ export async function createContactAction(
     return { fieldErrors };
   }
 
+  if (row!.is_primary) {
+    const { error: primaryError } = await unsetOtherPrimaryContacts(row!.company_id);
+    if (primaryError) {
+      return { error: primaryError };
+    }
+  }
+
   const { id, error } = await insertContact(row!);
   if (error || !id) {
     return { error: error ?? "Creazione del contatto non riuscita." };
@@ -80,6 +90,31 @@ export async function updateContactAction(
     return { fieldErrors };
   }
 
+  const { data: existing, error: loadError } = await getContactById(id);
+  if (loadError) {
+    return { error: loadError };
+  }
+  if (!existing) {
+    return { error: "Contatto non trovato." };
+  }
+
+  const previousCompanyId = existing.company_id;
+  const companyChanged = previousCompanyId !== row!.company_id;
+
+  if (companyChanged) {
+    const { error: refsError } = await clearContactCrossReferences(id);
+    if (refsError) {
+      return { error: refsError };
+    }
+  }
+
+  if (row!.is_primary) {
+    const { error: primaryError } = await unsetOtherPrimaryContacts(row!.company_id, id);
+    if (primaryError) {
+      return { error: primaryError };
+    }
+  }
+
   const { error } = await updateContactById(id, row!);
   if (error) {
     return { error };
@@ -88,6 +123,12 @@ export async function updateContactAction(
   revalidatePath("/contacts");
   revalidatePath(`/contacts/${id}`);
   revalidatePath(`/companies/${row!.company_id}`);
+  if (companyChanged) {
+    revalidatePath(`/companies/${previousCompanyId}`);
+    revalidatePath("/opportunities");
+    revalidatePath("/activities");
+    revalidatePath("/agenda");
+  }
   redirect(`/contacts/${id}`);
 }
 

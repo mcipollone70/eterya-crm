@@ -34,7 +34,14 @@ export async function ContactForm({
     );
   }
 
-  const { options, error } = await listCompanyOptions();
+  const includeCompanyId =
+    defaults?.company_id !== null &&
+    defaults?.company_id !== undefined &&
+    String(defaults.company_id).trim() !== ""
+      ? String(defaults.company_id)
+      : undefined;
+
+  const { options, error } = await listCompanyOptions(500, includeCompanyId);
 
   if (error) {
     return (

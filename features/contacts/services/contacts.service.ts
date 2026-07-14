@@ -83,7 +83,8 @@ export async function getContactById(
 
 /** Opzioni azienda per la select del form contatto (elenco limitato per l'MVP). */
 export async function listCompanyOptions(
-  limit = 500
+  limit = 500,
+  includeCompanyId?: string | null
 ): Promise<{ options: SelectOption[]; error: string | null }> {
   const supabase = await createServerClient();
   const { data, error } = await supabase
@@ -92,8 +93,27 @@ export async function listCompanyOptions(
     .order("name", { ascending: true })
     .limit(limit);
 
+  let options = (data ?? []).map((row) => ({ value: row.id, label: row.name }));
+
+  const companyId = includeCompanyId?.trim();
+  if (companyId && !options.some((option) => option.value === companyId)) {
+    const { data: company, error: companyError } = await supabase
+      .from("companies")
+      .select("id,name")
+      .eq("id", companyId)
+      .maybeSingle();
+
+    if (companyError) {
+      return { options, error: describeDbError(companyError) };
+    }
+
+    if (company) {
+      options = [{ value: company.id, label: company.name }, ...options];
+    }
+  }
+
   return {
-    options: (data ?? []).map((row) => ({ value: row.id, label: row.name })),
+    options,
     error: describeDbError(error),
   };
 }
@@ -125,5 +145,41 @@ export async function deleteContactById(
 ): Promise<{ error: string | null }> {
   const supabase = await createServerClient();
   const { error } = await supabase.from("contacts").delete().eq("id", id);
+  return { error: describeDbError(error) };
+}
+
+/** Un solo referente principale per azienda: azzera gli altri prima di impostarne uno. */
+export async function unsetOtherPrimaryContacts(
+  companyId: string,
+  excludeContactId?: string
+): Promise<{ error: string | null }> {
+  const supabase = await createServerClient();
+  let query = supabase
+    .from("contacts")
+    .update({ is_primary: false })
+    .eq("company_id", companyId)
+    .eq("is_primary", true);
+
+  if (excludeContactId) {
+    query = query.neq("id", excludeContactId);
+  }
+
+  const { error } = await query;
+  return { error: describeDbError(error) };
+}
+
+/** Rimuove i riferimenti al contatto da opportunità, follow-up e promemoria agenda. */
+export async function clearContactCrossReferences(
+  contactId: string
+): Promise<{ error: string | null }> {
+  const supabase = await createServerClient();
+
+  const [opportunities, followUps, reminders] = await Promise.all([
+    supabase.from("opportunities").update({ contact_id: null }).eq("contact_id", contactId),
+    supabase.from("follow_ups").update({ contact_id: null }).eq("contact_id", contactId),
+    supabase.from("agenda_reminders").update({ contact_id: null }).eq("contact_id", contactId),
+  ]);
+
+  const error = opportunities.error ?? followUps.error ?? reminders.error;
   return { error: describeDbError(error) };
 }
