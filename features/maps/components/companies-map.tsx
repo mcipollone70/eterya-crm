@@ -14,7 +14,8 @@ import { DEFAULT_MAP_FILTERS } from "../types/map";
 import { filterMapCompanies } from "../utils/map-filters";
 import { MapSidebarFilters } from "./map-sidebar-filters";
 import { MarkerClusterLayer } from "./marker-cluster-layer";
-import { NearbyCompaniesPanel } from "./nearby-companies-panel";
+import { OpportunityRadarPanel } from "@/features/radar/components/opportunity-radar-panel";
+import type { RadarCompanySource } from "@/features/radar/types";
 
 interface CompaniesMapProps {
   companies: MapCompany[];
@@ -198,10 +199,9 @@ export function CompaniesMap({ companies, provinces }: CompaniesMapProps) {
             onChange={setFilters}
             onGoToMyLocation={handleGoToMyLocation}
           />
-          <NearbyCompaniesPanel
-            companies={companies}
-            provinces={provinces}
-            userLocation={userLocation}
+          <OpportunityRadarPanel
+            companies={companies as RadarCompanySource[]}
+            center={userLocation}
             isLocating={isLocating}
             locationError={locationError}
             onRequestLocation={handleRequestNearbyLocation}

@@ -1,10 +1,12 @@
 "use client";
 
-import { useCallback, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { AlertCircle, ExternalLink, Loader2, Navigation, Route } from "lucide-react";
 import { MapContainer } from "react-leaflet";
 import { PageHeader } from "@/components/ui";
 import { DEFAULT_MAP_CENTER, DEFAULT_MAP_ZOOM } from "@/features/maps/constants/map-config";
+import { OpportunityRadarPanel } from "@/features/radar/components/opportunity-radar-panel";
+import type { RadarCompanySource } from "@/features/radar/types";
 import { geocodeDestinationAddressAction } from "../actions/geocode-destination";
 import type {
   GeoPoint,
@@ -70,6 +72,68 @@ export function VisitTourPlanner({ companies }: VisitTourPlannerProps) {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [radarCenter, setRadarCenter] = useState<GeoPoint | null>(null);
+  const [radarLocationError, setRadarLocationError] = useState<string | null>(null);
+  const [isRadarLocating, setIsRadarLocating] = useState(false);
+
+  const radarCompanies = useMemo(
+    () =>
+      companies.map(
+        (company): RadarCompanySource => ({
+          id: company.id,
+          name: company.name,
+          city: company.city,
+          province: company.province,
+          phone: company.phone,
+          latitude: company.latitude,
+          longitude: company.longitude,
+          commercial_status: company.commercial_status,
+        })
+      ),
+    [companies]
+  );
+
+  useEffect(() => {
+    setIsRadarLocating(true);
+    requestCurrentLocation()
+      .then((point) => {
+        setRadarCenter(point);
+        setRadarLocationError(null);
+      })
+      .catch((locationError) => {
+        setRadarLocationError(
+          locationError instanceof Error
+            ? locationError.message
+            : "Impossibile ottenere la posizione corrente."
+        );
+      })
+      .finally(() => setIsRadarLocating(false));
+  }, []);
+
+  useEffect(() => {
+    if (mode === "corridor" && origin) {
+      setRadarCenter(origin);
+    } else if (mode === "optimize" && optimizeOrigin) {
+      setRadarCenter(optimizeOrigin);
+    }
+  }, [mode, origin, optimizeOrigin]);
+
+  const handleRefreshRadarLocation = useCallback(() => {
+    setIsRadarLocating(true);
+    setRadarLocationError(null);
+    requestCurrentLocation()
+      .then((point) => {
+        setRadarCenter(point);
+      })
+      .catch((locationError) => {
+        setRadarLocationError(
+          locationError instanceof Error
+            ? locationError.message
+            : "Impossibile ottenere la posizione corrente."
+        );
+      })
+      .finally(() => setIsRadarLocating(false));
+  }, []);
 
   const sortedCandidates = useMemo(
     () => sortVisitTourCandidates(candidates, sortKey),
@@ -411,6 +475,15 @@ export function VisitTourPlanner({ companies }: VisitTourPlannerProps) {
           </MapContainer>
         </div>
       </div>
+
+      <OpportunityRadarPanel
+        companies={radarCompanies}
+        center={radarCenter}
+        isLocating={isRadarLocating}
+        locationError={radarLocationError}
+        onRequestLocation={handleRefreshRadarLocation}
+        layout="overlay"
+      />
     </div>
   );
 }
