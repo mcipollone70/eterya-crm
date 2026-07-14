@@ -11,6 +11,9 @@ import {
   postponeFollowUp,
   saveFollowUp,
 } from "../services/follow-ups.service";
+import {
+  syncFollowUpCalendar,
+} from "@/features/calendar-sync/sync-hooks";
 
 const NOT_CONFIGURED_MESSAGE =
   "Database non configurato. Aggiungi NEXT_PUBLIC_SUPABASE_URL e NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local e riavvia il server.";
@@ -54,6 +57,8 @@ export async function saveFollowUpAction(input: {
   revalidatePath("/visits");
   revalidatePath(`/companies/${input.companyId}`);
 
+  await syncFollowUpCalendar(followUpId, "upsert");
+
   return { success: true, message: "Follow-up creato." };
 }
 
@@ -72,6 +77,7 @@ export async function completeFollowUpAction(
     revalidatePath("/");
     revalidatePath("/visits");
     revalidatePath(`/companies/${companyId}`);
+    await syncFollowUpCalendar(id, "complete");
   }
   return result;
 }
@@ -92,6 +98,7 @@ export async function postponeFollowUpAction(
     revalidatePath("/");
     revalidatePath("/visits");
     revalidatePath(`/companies/${companyId}`);
+    await syncFollowUpCalendar(id, "upsert");
   }
   return result;
 }
@@ -111,6 +118,7 @@ export async function cancelFollowUpAction(
     revalidatePath("/");
     revalidatePath("/visits");
     revalidatePath(`/companies/${companyId}`);
+    await syncFollowUpCalendar(id, "cancel");
   }
   return result;
 }

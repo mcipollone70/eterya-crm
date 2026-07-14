@@ -16,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { Badge, Button } from "@/components/ui";
+import { CalendarSyncBadge } from "@/features/calendar-sync/components/calendar-sync-badge";
 import {
   AGENDA_KIND_COLORS,
   AGENDA_KIND_LABELS,
@@ -35,6 +36,7 @@ import {
 interface AgendaItemRowProps {
   item: AgendaItem;
   compact?: boolean;
+  calendarSyncStatus?: string;
 }
 
 function toDateTimeLocal(value: string): string {
@@ -42,7 +44,11 @@ function toDateTimeLocal(value: string): string {
   return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 }
 
-export function AgendaItemRow({ item, compact = false }: AgendaItemRowProps) {
+export function AgendaItemRow({
+  item,
+  compact = false,
+  calendarSyncStatus,
+}: AgendaItemRowProps) {
   const router = useRouter();
   const [isEditing, setIsEditing] = useState(false);
   const [showMoreActions, setShowMoreActions] = useState(false);
@@ -126,6 +132,7 @@ export function AgendaItemRow({ item, compact = false }: AgendaItemRowProps) {
             <Badge variant="default">{AGENDA_KIND_LABELS[item.kind]}</Badge>
             <Badge variant="muted">{item.statusLabel}</Badge>
             {item.priority && <Badge variant="warning">{item.priority}</Badge>}
+            <CalendarSyncBadge status={calendarSyncStatus} />
           </div>
 
           <p className="text-slate-700">{formatVisitDate(item.scheduledAt)}</p>

@@ -10,9 +10,14 @@ import { AgendaItemRow } from "./agenda-item-row";
 interface AgendaDayViewProps {
   items: AgendaItem[];
   referenceDate: string;
+  calendarSyncStatuses?: Record<string, string>;
 }
 
-export function AgendaDayView({ items, referenceDate }: AgendaDayViewProps) {
+export function AgendaDayView({
+  items,
+  referenceDate,
+  calendarSyncStatuses = {},
+}: AgendaDayViewProps) {
   const dayItems = items.filter((item) => item.scheduledAt.slice(0, 10) === referenceDate);
 
   return (
@@ -28,7 +33,13 @@ export function AgendaDayView({ items, referenceDate }: AgendaDayViewProps) {
             message="Pianifica una visita, un follow-up o un promemoria con il pulsante Nuovo."
           />
         ) : (
-          dayItems.map((item) => <AgendaItemRow key={item.id} item={item} />)
+          dayItems.map((item) => (
+            <AgendaItemRow
+              key={item.id}
+              item={item}
+              calendarSyncStatus={calendarSyncStatuses[item.id]}
+            />
+          ))
         )}
       </CardContent>
     </Card>
@@ -38,9 +49,14 @@ export function AgendaDayView({ items, referenceDate }: AgendaDayViewProps) {
 interface AgendaWeekViewProps {
   items: AgendaItem[];
   referenceDate: string;
+  calendarSyncStatuses?: Record<string, string>;
 }
 
-export function AgendaWeekView({ items, referenceDate }: AgendaWeekViewProps) {
+export function AgendaWeekView({
+  items,
+  referenceDate,
+  calendarSyncStatuses = {},
+}: AgendaWeekViewProps) {
   const grouped = groupAgendaItemsByDay(items);
   const reference = parseReferenceDate(referenceDate);
   const dayOfWeek = (reference.getDay() + 6) % 7;
@@ -73,7 +89,14 @@ export function AgendaWeekView({ items, referenceDate }: AgendaWeekViewProps) {
               {dayItems.length === 0 ? (
                 <p className="text-xs text-slate-400">—</p>
               ) : (
-                dayItems.map((item) => <AgendaItemRow key={item.id} item={item} compact />)
+                dayItems.map((item) => (
+                  <AgendaItemRow
+                    key={item.id}
+                    item={item}
+                    compact
+                    calendarSyncStatus={calendarSyncStatuses[item.id]}
+                  />
+                ))
               )}
             </CardContent>
           </Card>
@@ -86,9 +109,14 @@ export function AgendaWeekView({ items, referenceDate }: AgendaWeekViewProps) {
 interface AgendaMonthViewProps {
   items: AgendaItem[];
   referenceDate: string;
+  calendarSyncStatuses?: Record<string, string>;
 }
 
-function AgendaMonthList({ items, referenceDate }: AgendaMonthViewProps) {
+function AgendaMonthList({
+  items,
+  referenceDate,
+  calendarSyncStatuses = {},
+}: AgendaMonthViewProps) {
   const grouped = groupAgendaItemsByDay(items);
   const reference = parseReferenceDate(referenceDate);
   const month = reference.getMonth();
@@ -129,7 +157,12 @@ function AgendaMonthList({ items, referenceDate }: AgendaMonthViewProps) {
               </Link>
               <div className="space-y-2">
                 {dayItems.map((item) => (
-                  <AgendaItemRow key={item.id} item={item} compact />
+                  <AgendaItemRow
+                    key={item.id}
+                    item={item}
+                    compact
+                    calendarSyncStatus={calendarSyncStatuses[item.id]}
+                  />
                 ))}
               </div>
             </div>
@@ -140,7 +173,11 @@ function AgendaMonthList({ items, referenceDate }: AgendaMonthViewProps) {
   );
 }
 
-export function AgendaMonthView({ items, referenceDate }: AgendaMonthViewProps) {
+export function AgendaMonthView({
+  items,
+  referenceDate,
+  calendarSyncStatuses = {},
+}: AgendaMonthViewProps) {
   const grouped = groupAgendaItemsByDay(items);
   const reference = parseReferenceDate(referenceDate);
   const month = reference.getMonth();
@@ -160,7 +197,11 @@ export function AgendaMonthView({ items, referenceDate }: AgendaMonthViewProps) 
 
   return (
     <>
-      <AgendaMonthList items={items} referenceDate={referenceDate} />
+      <AgendaMonthList
+        items={items}
+        referenceDate={referenceDate}
+        calendarSyncStatuses={calendarSyncStatuses}
+      />
 
       <Card className="hidden sm:block">
         <CardHeader>

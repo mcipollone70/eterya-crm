@@ -10,6 +10,7 @@ import {
   type SaveVisitInput,
   type ScheduleVisitInput,
 } from "../services/visits.service";
+import { syncVisitCalendar } from "@/features/calendar-sync/sync-hooks";
 
 const NOT_CONFIGURED_MESSAGE =
   "Database non configurato. Aggiungi NEXT_PUBLIC_SUPABASE_URL e NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local e riavvia il server.";
@@ -83,6 +84,8 @@ export async function scheduleVisitAction(
 
   revalidateVisitPaths(input.companyId);
 
+  await syncVisitCalendar(visitId, "upsert");
+
   return { success: true, message: "Visita pianificata." };
 }
 
@@ -113,6 +116,8 @@ export async function completeScheduledVisitAction(
   }
 
   revalidateVisitPaths(companyId);
+
+  await syncVisitCalendar(visitId, "complete");
 
   return { success: true, message: "Visita completata." };
 }

@@ -26,6 +26,11 @@ import {
   updateAgendaReminder,
 } from "../services/agenda-reminders.service";
 import { parseAgendaItemId } from "@/lib/constants/agenda";
+import {
+  syncFollowUpCalendar,
+  syncReminderCalendar,
+  syncVisitCalendar,
+} from "@/features/calendar-sync/sync-hooks";
 
 const NOT_CONFIGURED_MESSAGE =
   "Database non configurato. Aggiungi NEXT_PUBLIC_SUPABASE_URL e NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local e riavvia il server.";
@@ -56,6 +61,7 @@ export async function agendaScheduleVisitAction(input: {
   }
 
   revalidateAgendaPaths(input.companyId);
+  await syncVisitCalendar(visitId, "upsert");
   return { success: true, message: "Visita pianificata." };
 }
 
@@ -89,6 +95,7 @@ export async function agendaSaveFollowUpAction(input: {
   }
 
   revalidateAgendaPaths(input.companyId);
+  await syncFollowUpCalendar(followUpId, "upsert");
   return { success: true, message: "Follow-up creato." };
 }
 
@@ -114,6 +121,7 @@ export async function agendaSaveReminderAction(input: {
   }
 
   revalidateAgendaPaths(input.companyId);
+  await syncReminderCalendar(reminderId, "upsert");
   return { success: true, message: "Promemoria creato." };
 }
 
@@ -142,6 +150,7 @@ export async function agendaCompleteItemAction(
       return { success: false, message: result.error };
     }
     revalidateAgendaPaths(companyId);
+    await syncVisitCalendar(parsed.sourceId, "complete");
     return { success: true, message: "Visita completata." };
   }
 
@@ -151,6 +160,7 @@ export async function agendaCompleteItemAction(
       return result;
     }
     revalidateAgendaPaths(companyId);
+    await syncFollowUpCalendar(parsed.sourceId, "complete");
     return result;
   }
 
@@ -159,6 +169,7 @@ export async function agendaCompleteItemAction(
     return { success: false, message: result.error };
   }
   revalidateAgendaPaths(companyId);
+  await syncReminderCalendar(parsed.sourceId, "complete");
   return { success: true, message: "Promemoria completato." };
 }
 
@@ -182,6 +193,7 @@ export async function agendaCompleteVisitAction(
   }
 
   revalidateAgendaPaths(companyId);
+  await syncVisitCalendar(parsed.sourceId, "complete");
   return { success: true, message: "Visita completata." };
 }
 
@@ -204,6 +216,7 @@ export async function agendaCancelItemAction(
       return { success: false, message: result.error };
     }
     revalidateAgendaPaths(companyId);
+    await syncVisitCalendar(parsed.sourceId, "cancel");
     return { success: true, message: "Visita annullata." };
   }
 
@@ -213,6 +226,7 @@ export async function agendaCancelItemAction(
       return result;
     }
     revalidateAgendaPaths(companyId);
+    await syncFollowUpCalendar(parsed.sourceId, "cancel");
     return result;
   }
 
@@ -221,6 +235,7 @@ export async function agendaCancelItemAction(
     return { success: false, message: result.error };
   }
   revalidateAgendaPaths(companyId);
+  await syncReminderCalendar(parsed.sourceId, "cancel");
   return { success: true, message: "Promemoria annullato." };
 }
 
@@ -244,6 +259,7 @@ export async function agendaPostponeFollowUpAction(
   }
 
   revalidateAgendaPaths(companyId);
+  await syncFollowUpCalendar(parsed.sourceId, "upsert");
   return result;
 }
 
@@ -276,6 +292,7 @@ export async function agendaUpdateItemAction(input: {
       return { success: false, message: result.error };
     }
     revalidateAgendaPaths(input.companyId);
+    await syncVisitCalendar(parsed.sourceId, "upsert");
     return { success: true, message: "Visita aggiornata." };
   }
 
@@ -295,6 +312,7 @@ export async function agendaUpdateItemAction(input: {
       return { success: false, message: result.error };
     }
     revalidateAgendaPaths(input.companyId);
+    await syncFollowUpCalendar(parsed.sourceId, "upsert");
     return { success: true, message: "Follow-up aggiornato." };
   }
 
@@ -309,5 +327,6 @@ export async function agendaUpdateItemAction(input: {
     return { success: false, message: result.error };
   }
   revalidateAgendaPaths(input.companyId);
+  await syncReminderCalendar(parsed.sourceId, "upsert");
   return { success: true, message: "Promemoria aggiornato." };
 }

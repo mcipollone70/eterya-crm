@@ -1,8 +1,10 @@
 import { Suspense } from "react";
 import { CalendarDays } from "lucide-react";
 import { EmptyState, PageHeader, PageLoadingSkeleton } from "@/components/ui";
+import { getCurrentUser } from "@/features/auth/session";
+import { listAgendaCalendarSyncStatuses } from "@/features/calendar-sync/services/sync.service";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
-import { parseAgendaFilters } from "@/lib/constants/agenda";
+import { parseAgendaFilters, parseAgendaItemId } from "@/lib/constants/agenda";
 import { AgendaCreatePanel } from "./components/agenda-create-panel";
 import { AgendaDayView, AgendaMonthView, AgendaWeekView } from "./components/agenda-calendar-views";
 import { AgendaFiltersBar } from "./components/agenda-filters-bar";
@@ -52,6 +54,27 @@ export async function AgendaPage({
   const agents = agentsResult.data ?? [];
   const companies = companiesResult.data ?? [];
 
+  const user = await getCurrentUser();
+  const calendarSyncStatuses =
+    user && itemsResult.data.length > 0
+      ? await listAgendaCalendarSyncStatuses(
+          user.id,
+          itemsResult.data
+            .map((item) => {
+              const parsed = parseAgendaItemId(item.id);
+              if (!parsed) {
+                return null;
+              }
+              return {
+                compositeId: item.id,
+                kind: parsed.kind,
+                entityId: parsed.sourceId,
+              };
+            })
+            .filter((item): item is NonNullable<typeof item> => item !== null)
+        )
+      : {};
+
   return (
     <div className="space-y-4 sm:space-y-6">
       <PageHeader
@@ -87,11 +110,23 @@ export async function AgendaPage({
       {itemsResult.error ? (
         <EmptyState icon={CalendarDays} title="Impossibile caricare l'agenda" message={itemsResult.error} />
       ) : filters.view === "month" ? (
-        <AgendaMonthView items={itemsResult.data} referenceDate={filters.date} />
+        <AgendaMonthView
+          items={itemsResult.data}
+          referenceDate={filters.date}
+          calendarSyncStatuses={calendarSyncStatuses}
+        />
       ) : filters.view === "week" ? (
-        <AgendaWeekView items={itemsResult.data} referenceDate={filters.date} />
+        <AgendaWeekView
+          items={itemsResult.data}
+          referenceDate={filters.date}
+          calendarSyncStatuses={calendarSyncStatuses}
+        />
       ) : (
-        <AgendaDayView items={itemsResult.data} referenceDate={filters.date} />
+        <AgendaDayView
+          items={itemsResult.data}
+          referenceDate={filters.date}
+          calendarSyncStatuses={calendarSyncStatuses}
+        />
       )}
 
       <AgendaCreatePanel companies={companies} fixedOnMobile />

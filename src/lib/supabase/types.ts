@@ -341,6 +341,66 @@ export interface Database {
         Update: Partial<Database["public"]["Tables"]["agenda_reminders"]["Insert"]>;
         Relationships: [];
       };
+      google_calendar_connections: {
+        Row: {
+          user_id: string;
+          google_email: string;
+          access_token: string;
+          refresh_token: string | null;
+          token_expires_at: string;
+          calendar_id: string;
+          sync_enabled: boolean;
+          last_sync_at: string | null;
+          last_sync_error: string | null;
+          connected_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          google_email: string;
+          access_token: string;
+          refresh_token?: string | null;
+          token_expires_at: string;
+          calendar_id?: string;
+          sync_enabled?: boolean;
+          last_sync_at?: string | null;
+          last_sync_error?: string | null;
+          connected_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["google_calendar_connections"]["Insert"]>;
+        Relationships: [];
+      };
+      calendar_external_events: {
+        Row: {
+          id: string;
+          user_id: string;
+          entity_kind: "visit" | "follow_up" | "reminder";
+          entity_id: string;
+          google_event_id: string;
+          google_calendar_id: string;
+          sync_status: "synced" | "pending" | "error" | "deleted";
+          last_synced_at: string | null;
+          last_error: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          entity_kind: "visit" | "follow_up" | "reminder";
+          entity_id: string;
+          google_event_id: string;
+          google_calendar_id: string;
+          sync_status?: "synced" | "pending" | "error" | "deleted";
+          last_synced_at?: string | null;
+          last_error?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["calendar_external_events"]["Insert"]>;
+        Relationships: [];
+      };
       activities: {
         Row: {
           id: string;
