@@ -1,14 +1,31 @@
+import { Suspense } from "react";
 import { BarChart3 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
+import { parseDashboardFilters } from "@/lib/constants/dashboard-filters";
 import {
   getCommercialDashboardData,
+  getDashboardFilterOptions,
   getUserDashboardLayout,
 } from "./services/commercial-dashboard.service";
 import { AdvancedDashboardClient } from "./components/advanced-dashboard-client";
+import { DashboardFiltersBar } from "./components/dashboard-filters-bar";
 
-export async function AdvancedDashboardPage() {
+interface AdvancedDashboardPageProps {
+  agent?: string;
+  province?: string;
+  status?: string;
+  period?: string;
+}
+
+export async function AdvancedDashboardPage({
+  agent,
+  province,
+  status,
+  period,
+}: AdvancedDashboardPageProps) {
   const configured = isSupabaseConfigured();
+  const filters = parseDashboardFilters({ agent, province, status, period });
 
   if (!configured) {
     return (
@@ -31,9 +48,10 @@ export async function AdvancedDashboardPage() {
     );
   }
 
-  const [dashboardResult, layoutResult] = await Promise.all([
-    getCommercialDashboardData(),
+  const [dashboardResult, layoutResult, filterOptionsResult] = await Promise.all([
+    getCommercialDashboardData(filters),
     getUserDashboardLayout(),
+    getDashboardFilterOptions(),
   ]);
 
   if (dashboardResult.error || !dashboardResult.data) {
@@ -51,10 +69,23 @@ export async function AdvancedDashboardPage() {
     );
   }
 
+  const filterOptions = filterOptionsResult.data ?? { agents: [], provinces: [] };
+
   return (
-    <AdvancedDashboardClient
-      data={dashboardResult.data}
-      initialLayout={layoutResult.data}
-    />
+    <div className="space-y-6">
+      <Suspense fallback={null}>
+        <DashboardFiltersBar
+          agents={filterOptions.agents}
+          provinces={filterOptions.provinces}
+          initialFilters={filters}
+        />
+      </Suspense>
+
+      <AdvancedDashboardClient
+        data={dashboardResult.data}
+        initialLayout={layoutResult.data}
+        filters={filters}
+      />
+    </div>
   );
 }

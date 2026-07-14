@@ -15,6 +15,11 @@ import {
 } from "lucide-react";
 import { formatVisitDateShort } from "@/lib/last-visit/format";
 import { formatOpportunityAmount } from "@/lib/constants/opportunity-pipeline";
+import {
+  hasActiveDashboardFilters,
+  type CommercialDashboardFilters,
+} from "@/lib/constants/dashboard-filters";
+import { resolveDashboardPeriodRange } from "../utils/dashboard-period";
 import { saveDashboardLayoutAction } from "../actions/dashboard-layout-actions";
 import { DASHBOARD_WIDGETS } from "../constants/dashboard-widgets";
 import type {
@@ -28,6 +33,7 @@ import { DashboardKpiCard } from "./dashboard-kpi-card";
 interface AdvancedDashboardClientProps {
   data: CommercialDashboardData;
   initialLayout: DashboardLayoutState;
+  filters: CommercialDashboardFilters;
 }
 
 function WidgetShell({
@@ -99,12 +105,38 @@ function ListWidget<T extends { id: string; href: string }>({
   return <ul className="space-y-2">{items.map((item, index) => renderItem(item, index))}</ul>;
 }
 
-export function AdvancedDashboardClient({ data, initialLayout }: AdvancedDashboardClientProps) {
+export function AdvancedDashboardClient({
+  data,
+  initialLayout,
+  filters,
+}: AdvancedDashboardClientProps) {
   const [layout, setLayout] = useState(initialLayout);
   const [customizeMode, setCustomizeMode] = useState(false);
   const [draggingId, setDraggingId] = useState<DashboardWidgetId | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  const periodRange = useMemo(() => resolveDashboardPeriodRange(filters.period), [filters.period]);
+  const filteredView = hasActiveDashboardFilters(filters);
+
+  const kpiTitle = useCallback(
+    (id: DashboardWidgetId, fallback: string) => {
+      if (!filteredView || !periodRange) {
+        return fallback;
+      }
+      if (id === "kpi-visits-week") {
+        return `Visite (${periodRange.label})`;
+      }
+      if (id === "kpi-followups-today") {
+        return `Follow-up (${periodRange.label})`;
+      }
+      if (id === "kpi-open-opportunities") {
+        return `Opportunità aperte (${periodRange.label})`;
+      }
+      return fallback;
+    },
+    [filteredView, periodRange]
+  );
 
   const hiddenSet = useMemo(() => new Set(layout.hiddenWidgets), [layout.hiddenWidgets]);
 
@@ -293,7 +325,7 @@ export function AdvancedDashboardClient({ data, initialLayout }: AdvancedDashboa
       case "kpi-visits-week":
         return wrap(
           <DashboardKpiCard
-            title={definition.title}
+            title={kpiTitle(id, definition.title)}
             value={data.kpis.visitsThisWeek.toLocaleString("it-IT")}
             href="/visits"
             tone="indigo"
@@ -306,7 +338,7 @@ export function AdvancedDashboardClient({ data, initialLayout }: AdvancedDashboa
       case "kpi-followups-today":
         return wrap(
           <DashboardKpiCard
-            title={definition.title}
+            title={kpiTitle(id, definition.title)}
             value={data.kpis.followUpsToday.toLocaleString("it-IT")}
             href="/activities?section=followups&fperiod=today"
             tone="cyan"
@@ -319,7 +351,7 @@ export function AdvancedDashboardClient({ data, initialLayout }: AdvancedDashboa
       case "kpi-open-opportunities":
         return wrap(
           <DashboardKpiCard
-            title={definition.title}
+            title={kpiTitle(id, definition.title)}
             value={data.kpis.openOpportunities.toLocaleString("it-IT")}
             href="/opportunities"
             tone="indigo"
@@ -561,7 +593,8 @@ export function AdvancedDashboardClient({ data, initialLayout }: AdvancedDashboa
             Dashboard Commerciale Avanzata
           </h2>
           <p className="mt-1 text-sm text-slate-500">
-            KPI in tempo reale, grafici e widget operativi.
+            KPI in tempo reale, grafici e widget operativi
+            {filteredView ? " · vista filtrata" : ""}.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
