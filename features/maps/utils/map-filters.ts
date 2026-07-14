@@ -1,6 +1,36 @@
-import type { MapCompany } from "../types/map";
+import type { MapCompaniesStats, MapCompany } from "../types/map";
 import { GEOCODED_MAP_STATUSES } from "../constants/map-config";
 import type { MapFiltersState } from "../types/map";
+
+function formatCount(value: number): string {
+  return value.toLocaleString("it-IT");
+}
+
+export function formatMapPageSubtitle(
+  visibleCount: number,
+  stats: MapCompaniesStats,
+  filters: MapFiltersState
+): string {
+  if (stats.isTruncated) {
+    return `${formatCount(visibleCount)} aziende visualizzate (prime ${formatCount(stats.loadedCount)} caricate su ${formatCount(stats.totalGeocodedConfirmed)} geolocalizzate)`;
+  }
+
+  const hasExtraFilters =
+    filters.commercialStatus !== "" || filters.province !== "" || filters.city !== "";
+
+  if (hasExtraFilters) {
+    const reference = filters.geolocatedOnly
+      ? stats.totalGeocodedConfirmed
+      : stats.totalWithCoordinates;
+    return `${formatCount(visibleCount)} aziende visualizzate con i filtri attivi (su ${formatCount(reference)} nel database)`;
+  }
+
+  if (filters.geolocatedOnly) {
+    return `${formatCount(visibleCount)} aziende geolocalizzate visualizzate su ${formatCount(stats.totalGeocodedConfirmed)} geolocalizzate`;
+  }
+
+  return `${formatCount(visibleCount)} aziende visualizzate su ${formatCount(stats.totalWithCoordinates)} con coordinate`;
+}
 
 const GEOCODED_STATUS_SET = new Set<string>(GEOCODED_MAP_STATUSES);
 

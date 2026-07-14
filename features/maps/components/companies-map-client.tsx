@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import type { MapCompany } from "../types/map";
+import type { MapCompaniesStats, MapCompany } from "../types/map";
 
 const CompaniesMap = dynamic(
   () => import("./companies-map").then((module) => module.CompaniesMap),
@@ -18,8 +18,9 @@ const CompaniesMap = dynamic(
 interface CompaniesMapClientProps {
   companies: MapCompany[];
   provinces: string[];
+  stats: MapCompaniesStats;
 }
 
-export function CompaniesMapClient({ companies, provinces }: CompaniesMapClientProps) {
-  return <CompaniesMap companies={companies} provinces={provinces} />;
+export function CompaniesMapClient({ companies, provinces, stats }: CompaniesMapClientProps) {
+  return <CompaniesMap companies={companies} provinces={provinces} stats={stats} />;
 }

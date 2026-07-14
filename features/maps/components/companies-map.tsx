@@ -9,9 +9,9 @@ import {
   DEFAULT_MAP_ZOOM,
   MAP_VIEWPORT_STORAGE_KEY,
 } from "../constants/map-config";
-import type { MapCompany, MapFiltersState, MapViewportState, UserLocation } from "../types/map";
+import type { MapCompaniesStats, MapCompany, MapFiltersState, MapViewportState, UserLocation } from "../types/map";
 import { DEFAULT_MAP_FILTERS } from "../types/map";
-import { filterMapCompanies } from "../utils/map-filters";
+import { filterMapCompanies, formatMapPageSubtitle } from "../utils/map-filters";
 import { MapSidebarFilters } from "./map-sidebar-filters";
 import { MarkerClusterLayer } from "./marker-cluster-layer";
 import { OpportunityRadarPanel } from "@/features/radar/components/opportunity-radar-panel";
@@ -20,6 +20,7 @@ import type { RadarCompanySource } from "@/features/radar/types";
 interface CompaniesMapProps {
   companies: MapCompany[];
   provinces: string[];
+  stats: MapCompaniesStats;
 }
 
 function readStoredViewport(): MapViewportState | null {
@@ -136,7 +137,7 @@ function requestBrowserLocation(
   );
 }
 
-export function CompaniesMap({ companies, provinces }: CompaniesMapProps) {
+export function CompaniesMap({ companies, provinces, stats }: CompaniesMapProps) {
   const [filters, setFilters] = useState<MapFiltersState>(DEFAULT_MAP_FILTERS);
   const [locateSignal, setLocateSignal] = useState(0);
   const [userLocation, setUserLocation] = useState<UserLocation | null>(null);
@@ -182,12 +183,14 @@ export function CompaniesMap({ companies, provinces }: CompaniesMapProps) {
     requestBrowserLocation(handleLocationFound, () => undefined);
   }, [handleLocationFound]);
 
+  const subtitle = useMemo(
+    () => formatMapPageSubtitle(filteredCompanies.length, stats, filters),
+    [filteredCompanies.length, stats, filters]
+  );
+
   return (
     <div className="space-y-4">
-      <PageHeader
-        title="Mappa"
-        subtitle={`${filteredCompanies.length.toLocaleString("it-IT")} aziende geolocalizzate visualizzate su ${companies.length.toLocaleString("it-IT")} totali.`}
-      />
+      <PageHeader title="Mappa" subtitle={subtitle} />
 
       <div className="flex flex-col gap-4 lg:h-[calc(100vh-12rem)] lg:flex-row">
         <div className="flex w-full flex-col gap-4 lg:w-72 lg:shrink-0 lg:overflow-y-auto">

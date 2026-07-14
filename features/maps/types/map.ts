@@ -2,6 +2,17 @@ import type { CommercialStatus, GeocodeStatus } from "@/lib/supabase/types";
 import type { NearbyRadiusKm } from "../constants/map-config";
 import { NEARBY_COMMERCIAL_STATUS_FILTERS } from "../constants/map-config";
 
+export interface MapCompaniesStats {
+  /** Aziende con coordinate nel database (qualsiasi stato geocoding). */
+  totalWithCoordinates: number;
+  /** Aziende geocoded/completed con coordinate (allineato alla pagina Aziende). */
+  totalGeocodedConfirmed: number;
+  /** Righe effettivamente caricate dal server. */
+  loadedCount: number;
+  /** true se il caricamento non ha recuperato tutte le aziende con coordinate. */
+  isTruncated: boolean;
+}
+
 export interface MapCompany {
   id: string;
   name: string;

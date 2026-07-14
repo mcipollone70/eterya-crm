@@ -11,6 +11,9 @@ export const COMMERCIAL_STATUS_MARKER_COLORS: Record<CommercialStatus, string> =
 
 export const GEOCODED_MAP_STATUSES = ["geocoded", "completed"] as const;
 
+/** PostgREST restituisce al massimo 1000 righe per richiesta. */
+export const MAP_FETCH_PAGE_SIZE = 1000;
+
 export const MAP_VIEWPORT_STORAGE_KEY = "eterya-map-viewport";
 
 export const DEFAULT_MAP_CENTER: [number, number] = [41.8719, 12.5674];

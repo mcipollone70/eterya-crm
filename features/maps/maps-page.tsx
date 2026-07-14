@@ -21,7 +21,7 @@ export async function MapsPage() {
     );
   }
 
-  const { data: companies, error } = await listMapCompanies();
+  const { data: companies, stats, error } = await listMapCompanies();
   const { provinces } = getMapFilterOptions(companies);
 
   if (error) {
@@ -33,5 +33,5 @@ export async function MapsPage() {
     );
   }
 
-  return <CompaniesMapClient companies={companies} provinces={provinces} />;
+  return <CompaniesMapClient companies={companies} provinces={provinces} stats={stats} />;
 }

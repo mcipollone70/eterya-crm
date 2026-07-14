@@ -6,7 +6,8 @@ import { describeDbError } from "@/lib/supabase/errors";
 import type { CommercialStatus, GeocodeStatus, Json } from "@/lib/supabase/types";
 import { resolveCompanyDisplayFields } from "@/features/companies/services/companies.service";
 import { buildFullAddress } from "@/features/companies/utils/build-full-address";
-import type { MapCompany } from "../types/map";
+import { GEOCODED_MAP_STATUSES, MAP_FETCH_PAGE_SIZE } from "../constants/map-config";
+import type { MapCompaniesStats, MapCompany } from "../types/map";
 
 const MAP_COMPANY_COLUMNS =
   "id,name,city,province,latitude,longitude,commercial_status,geocode_status,address,street,street_number,postal_code,country,phone,contact_phone,mobile,phone_secondary,import_headers,import_payload,geocoding_normalized_address";
@@ -32,6 +33,13 @@ type MapCompanyRow = {
   import_headers: string[] | null;
   import_payload: Json | null;
   geocoding_normalized_address: string | null;
+};
+
+const EMPTY_MAP_STATS: MapCompaniesStats = {
+  totalWithCoordinates: 0,
+  totalGeocodedConfirmed: 0,
+  loadedCount: 0,
+  isTruncated: false,
 };
 
 function mapMapCompany(row: MapCompanyRow): MapCompany | null {
@@ -72,28 +80,110 @@ function mapMapCompany(row: MapCompanyRow): MapCompany | null {
   };
 }
 
+async function fetchMapCompanyCounts(supabase: Awaited<ReturnType<typeof createServerClient>>): Promise<{
+  totalWithCoordinates: number;
+  totalGeocodedConfirmed: number;
+  error: string | null;
+}> {
+  const [withCoordsRes, geocodedConfirmedRes] = await Promise.all([
+    supabase
+      .from("companies")
+      .select("id", { count: "exact", head: true })
+      .not("latitude", "is", null)
+      .not("longitude", "is", null),
+    supabase
+      .from("companies")
+      .select("id", { count: "exact", head: true })
+      .in("geocode_status", [...GEOCODED_MAP_STATUSES])
+      .not("latitude", "is", null)
+      .not("longitude", "is", null),
+  ]);
+
+  const firstError = withCoordsRes.error ?? geocodedConfirmedRes.error;
+  if (firstError) {
+    return { totalWithCoordinates: 0, totalGeocodedConfirmed: 0, error: describeDbError(firstError) };
+  }
+
+  return {
+    totalWithCoordinates: withCoordsRes.count ?? 0,
+    totalGeocodedConfirmed: geocodedConfirmedRes.count ?? 0,
+    error: null,
+  };
+}
+
+async function fetchAllMapCompanyRows(
+  supabase: Awaited<ReturnType<typeof createServerClient>>
+): Promise<{ rows: MapCompanyRow[]; error: string | null }> {
+  const allRows: MapCompanyRow[] = [];
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await supabase
+      .from("companies")
+      .select(MAP_COMPANY_COLUMNS)
+      .not("latitude", "is", null)
+      .not("longitude", "is", null)
+      .order("name", { ascending: true })
+      .range(from, from + MAP_FETCH_PAGE_SIZE - 1);
+
+    if (error) {
+      return { rows: [], error: describeDbError(error) };
+    }
+
+    const page = (data ?? []) as MapCompanyRow[];
+    if (page.length === 0) {
+      break;
+    }
+
+    allRows.push(...page);
+
+    if (page.length < MAP_FETCH_PAGE_SIZE) {
+      break;
+    }
+
+    from += MAP_FETCH_PAGE_SIZE;
+  }
+
+  return { rows: allRows, error: null };
+}
+
 export async function listMapCompanies(): Promise<{
   data: MapCompany[];
+  stats: MapCompaniesStats;
   error: string | null;
 }> {
   const supabase = await createServerClient();
 
-  const { data, error } = await supabase
-    .from("companies")
-    .select(MAP_COMPANY_COLUMNS)
-    .not("latitude", "is", null)
-    .not("longitude", "is", null)
-    .order("name", { ascending: true });
+  const [countsResult, rowsResult] = await Promise.all([
+    fetchMapCompanyCounts(supabase),
+    fetchAllMapCompanyRows(supabase),
+  ]);
 
-  if (error) {
-    return { data: [], error: describeDbError(error) };
+  if (countsResult.error) {
+    return { data: [], stats: EMPTY_MAP_STATS, error: countsResult.error };
   }
 
-  const companies = (data ?? [])
-    .map((row) => mapMapCompany(row as MapCompanyRow))
+  if (rowsResult.error) {
+    return { data: [], stats: EMPTY_MAP_STATS, error: rowsResult.error };
+  }
+
+  const companies = rowsResult.rows
+    .map((row) => mapMapCompany(row))
     .filter((company): company is MapCompany => company !== null);
 
-  return { data: companies, error: null };
+  const loadedCount = companies.length;
+  const totalWithCoordinates = countsResult.totalWithCoordinates;
+
+  return {
+    data: companies,
+    stats: {
+      totalWithCoordinates,
+      totalGeocodedConfirmed: countsResult.totalGeocodedConfirmed,
+      loadedCount,
+      isTruncated: loadedCount < totalWithCoordinates,
+    },
+    error: null,
+  };
 }
 
 export function getMapFilterOptions(companies: MapCompany[]): {
