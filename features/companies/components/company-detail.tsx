@@ -186,6 +186,12 @@ export function CompanyDetail({
           <div className="flex flex-wrap items-center gap-2">
             <RecordVisitForm companyId={company.id} defaultOpen={registerVisit} />
             <Link
+              href={`/voice?company=${company.id}`}
+              className="inline-flex h-8 items-center rounded-lg border border-indigo-200 bg-indigo-50 px-3 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
+            >
+              Dettatura vocale
+            </Link>
+            <Link
               href={`/visits?company=${company.id}`}
               className="inline-flex h-8 items-center rounded-lg border border-slate-200 px-3 text-xs font-medium text-slate-700 hover:bg-slate-50"
             >

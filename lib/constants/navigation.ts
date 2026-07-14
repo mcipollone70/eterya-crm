@@ -32,7 +32,7 @@ export const PAGE_TITLES: Record<string, string> = {
   "/visits": "Visite",
   "/maps": "Mappa",
   "/routes": "Giro Visite",
-  "/voice": "Promemoria vocali",
+  "/voice": "Funzioni vocali",
   "/opportunities": "Opportunità",
   "/products": "Prodotti",
   "/reports": "Dashboard Commerciale Avanzata",

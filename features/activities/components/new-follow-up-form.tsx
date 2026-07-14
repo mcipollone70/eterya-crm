@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { CalendarClock, Loader2, Plus } from "lucide-react";
 import { Button } from "@/components/ui";
+import { VoiceNotesInput } from "@/features/voice/components/voice-notes-input";
 import { CONTACT_HISTORY_TYPE_OPTIONS } from "@/lib/constants/contact-history";
 import { FOLLOW_UP_PRIORITY_OPTIONS } from "@/lib/constants/follow-up";
 import type { ActivityPriority } from "@/lib/supabase/types";
@@ -16,6 +17,7 @@ interface NewFollowUpFormProps {
 }
 
 export function NewFollowUpForm({ companyId, contacts = [] }: NewFollowUpFormProps) {
+  const [description, setDescription] = useState("");
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -35,7 +37,7 @@ export function NewFollowUpForm({ companyId, contacts = [] }: NewFollowUpFormPro
         companyId,
         contactId: String(formData.get("contact_id") ?? "") || null,
         activityType: String(formData.get("activity_type") ?? "call"),
-        description: String(formData.get("description") ?? "") || null,
+        description: description.trim() || null,
         priority: (String(formData.get("priority") ?? "medium") as ActivityPriority) || "medium",
         scheduledAt: scheduledRaw
           ? new Date(scheduledRaw).toISOString()
@@ -119,15 +121,13 @@ export function NewFollowUpForm({ companyId, contacts = [] }: NewFollowUpFormPro
         )}
       </div>
 
-      <label className="block text-sm">
-        <span className="mb-1 block font-medium text-slate-700">Descrizione</span>
-        <textarea
-          name="description"
-          rows={3}
-          placeholder="Cosa fare nel follow-up..."
-          className="w-full rounded-lg border border-slate-200 px-3 py-2"
-        />
-      </label>
+      <VoiceNotesInput
+        label="Descrizione"
+        value={description}
+        onChange={setDescription}
+        rows={3}
+        placeholder="Cosa fare nel follow-up..."
+      />
 
       {error && <p className="text-sm text-rose-700">{error}</p>}
       {message && <p className="text-sm text-emerald-700">{message}</p>}

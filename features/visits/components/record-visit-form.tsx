@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Plus } from "lucide-react";
 import { Button } from "@/components/ui";
+import { VoiceNotesInput } from "@/features/voice/components/voice-notes-input";
 import { VISIT_OUTCOME_OPTIONS } from "@/lib/constants/last-visit";
 import { saveVisitAction } from "@/features/visits/actions/visit-mutations";
 
@@ -13,6 +14,7 @@ interface RecordVisitFormProps {
 }
 
 export function RecordVisitForm({ companyId, defaultOpen = false }: RecordVisitFormProps) {
+  const [notes, setNotes] = useState("");
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const [message, setMessage] = useState<string | null>(null);
@@ -36,7 +38,7 @@ export function RecordVisitForm({ companyId, defaultOpen = false }: RecordVisitF
           ? new Date(completedAtRaw).toISOString()
           : new Date().toISOString(),
         outcome: String(formData.get("outcome") ?? "") || null,
-        notes: String(formData.get("notes") ?? "") || null,
+        notes: notes.trim() || null,
         durationMinutes: durationRaw ? Number(durationRaw) : null,
         nextCallbackAt: nextCallbackRaw ? new Date(nextCallbackRaw).toISOString() : null,
       });
@@ -117,15 +119,13 @@ export function RecordVisitForm({ companyId, defaultOpen = false }: RecordVisitF
         </label>
       </div>
 
-      <label className="block text-sm">
-        <span className="mb-1 block font-medium text-slate-700">Note visita</span>
-        <textarea
-          name="notes"
-          rows={3}
-          placeholder="Appunti sulla visita..."
-          className="w-full rounded-lg border border-slate-200 px-3 py-2"
-        />
-      </label>
+      <VoiceNotesInput
+        label="Note visita"
+        value={notes}
+        onChange={setNotes}
+        rows={3}
+        placeholder="Appunti sulla visita..."
+      />
 
       {error && <p className="text-sm text-rose-700">{error}</p>}
       {message && <p className="text-sm text-emerald-700">{message}</p>}

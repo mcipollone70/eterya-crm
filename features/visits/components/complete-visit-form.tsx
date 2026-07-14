@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui";
+import { VoiceNotesInput } from "@/features/voice/components/voice-notes-input";
 import { VISIT_OUTCOME_OPTIONS } from "@/lib/constants/last-visit";
 import { completeScheduledVisitAction } from "../actions/visit-mutations";
 
@@ -27,6 +28,7 @@ export function CompleteVisitForm({
   defaultNotes,
   compact = false,
 }: CompleteVisitFormProps) {
+  const [notes, setNotes] = useState(defaultNotes ?? "");
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(compact);
   const [error, setError] = useState<string | null>(null);
@@ -47,7 +49,7 @@ export function CompleteVisitForm({
           ? new Date(completedAtRaw).toISOString()
           : new Date().toISOString(),
         outcome: String(formData.get("outcome") ?? "") || null,
-        notes: String(formData.get("notes") ?? "") || null,
+        notes: notes.trim() || null,
         durationMinutes: durationRaw ? Number(durationRaw) : null,
         nextCallbackAt: nextCallbackRaw ? new Date(nextCallbackRaw).toISOString() : null,
       });
@@ -120,15 +122,13 @@ export function CompleteVisitForm({
           />
         </label>
       </div>
-      <label className="block text-sm">
-        <span className="mb-1 block font-medium text-slate-700">Note</span>
-        <textarea
-          name="notes"
-          rows={2}
-          defaultValue={defaultNotes ?? ""}
-          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-        />
-      </label>
+      <VoiceNotesInput
+        label="Note visita"
+        value={notes}
+        onChange={setNotes}
+        rows={2}
+        placeholder="Note sulla visita..."
+      />
       {error && <p className="text-sm text-rose-700">{error}</p>}
       <div className="flex flex-wrap gap-2">
         <Button type="submit" size="sm" disabled={isPending}>
