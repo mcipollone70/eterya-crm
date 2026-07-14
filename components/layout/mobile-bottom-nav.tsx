@@ -7,6 +7,7 @@ import {
   MapPin,
   Menu,
   Mic,
+  Search,
   Sparkles,
   type LucideIcon,
 } from "lucide-react";
@@ -19,13 +20,15 @@ const iconMap: Record<string, LucideIcon> = {
   Sparkles,
   Mic,
   Menu,
+  Search,
 };
 
 interface MobileBottomNavProps {
   onMenuClick: () => void;
+  onSearchClick?: () => void;
 }
 
-export function MobileBottomNav({ onMenuClick }: MobileBottomNavProps) {
+export function MobileBottomNav({ onMenuClick, onSearchClick }: MobileBottomNavProps) {
   const pathname = usePathname();
 
   return (
@@ -34,6 +37,16 @@ export function MobileBottomNav({ onMenuClick }: MobileBottomNavProps) {
       aria-label="Navigazione rapida"
     >
       <div className="flex items-stretch justify-around">
+        {onSearchClick ? (
+          <button
+            type="button"
+            onClick={onSearchClick}
+            className="flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 px-1 text-[10px] font-medium text-slate-500"
+          >
+            <Search className="h-5 w-5" />
+            Cerca
+          </button>
+        ) : null}
         {MOBILE_FIELD_NAV_ITEMS.map((item) => {
           const Icon = iconMap[item.icon];
           const isActive =

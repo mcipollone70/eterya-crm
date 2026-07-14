@@ -5,13 +5,15 @@ import { Menu } from "lucide-react";
 import { PAGE_TITLES } from "@/lib/constants/navigation";
 import { Avatar } from "@/components/ui";
 import { SignOutButton } from "@/features/auth/components/sign-out-button";
+import { SearchTrigger } from "./command-palette";
 
 interface HeaderProps {
   onMenuClick?: () => void;
+  onSearchClick?: () => void;
   userEmail?: string | null;
 }
 
-export function Header({ onMenuClick, userEmail }: HeaderProps) {
+export function Header({ onMenuClick, onSearchClick, userEmail }: HeaderProps) {
   const pathname = usePathname();
   const title = PAGE_TITLES[pathname] ?? "Eterya CRM";
 
@@ -23,8 +25,8 @@ export function Header({ onMenuClick, userEmail }: HeaderProps) {
   }).format(new Date());
 
   return (
-    <header className="flex h-16 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-4 lg:px-6">
-      <div className="flex items-center gap-3">
+    <header className="flex h-16 shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 lg:px-6">
+      <div className="flex min-w-0 items-center gap-3">
         <button
           type="button"
           onClick={onMenuClick}
@@ -33,25 +35,34 @@ export function Header({ onMenuClick, userEmail }: HeaderProps) {
         >
           <Menu className="h-5 w-5" />
         </button>
-        <div>
-          <h1 className="text-lg font-semibold text-slate-900">{title}</h1>
+        <div className="min-w-0">
+          <h1 className="truncate text-lg font-semibold text-slate-900">{title}</h1>
           <p className="hidden text-xs capitalize text-slate-500 sm:block">
             {today}
           </p>
         </div>
       </div>
 
-      {userEmail && (
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <Avatar name={userEmail} size="sm" />
-            <span className="hidden max-w-[180px] truncate text-sm text-slate-600 sm:inline">
-              {userEmail}
-            </span>
-          </div>
-          <SignOutButton />
-        </div>
-      )}
+      <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+        {onSearchClick ? (
+          <>
+            <SearchTrigger onClick={onSearchClick} className="hidden sm:inline-flex" />
+            <SearchTrigger onClick={onSearchClick} compact className="sm:hidden" />
+          </>
+        ) : null}
+
+        {userEmail && (
+          <>
+            <div className="hidden items-center gap-2 md:flex">
+              <Avatar name={userEmail} size="sm" />
+              <span className="hidden max-w-[180px] truncate text-sm text-slate-600 lg:inline">
+                {userEmail}
+              </span>
+            </div>
+            <SignOutButton />
+          </>
+        )}
+      </div>
     </header>
   );
 }
