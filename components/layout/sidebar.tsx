@@ -21,6 +21,7 @@ import {
   Sparkles,
   FileUp,
   Car,
+  Bot,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/utils/cn";
@@ -43,6 +44,7 @@ const iconMap: Record<string, LucideIcon> = {
   FileUp,
   Sparkles,
   Car,
+  Bot,
 };
 
 function isNavActive(pathname: string, href: string): boolean {
