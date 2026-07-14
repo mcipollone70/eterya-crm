@@ -9,18 +9,17 @@ import {
   DEFAULT_MAP_ZOOM,
   MAP_VIEWPORT_STORAGE_KEY,
 } from "../constants/map-config";
-import type { MapCompaniesStats, MapCompany, MapFiltersState, MapViewportState, UserLocation } from "../types/map";
+import type { MapFiltersState, MapViewportState, UserLocation } from "../types/map";
 import { DEFAULT_MAP_FILTERS } from "../types/map";
 import { filterMapCompanies, formatMapPageSubtitle } from "../utils/map-filters";
 import { MapSidebarFilters } from "./map-sidebar-filters";
 import { MarkerClusterLayer } from "./marker-cluster-layer";
 import { OpportunityRadarPanel } from "@/features/radar/components/opportunity-radar-panel";
 import type { RadarCompanySource } from "@/features/radar/types";
+import { useMapCompanies } from "./map-companies-provider";
 
 interface CompaniesMapProps {
-  companies: MapCompany[];
   provinces: string[];
-  stats: MapCompaniesStats;
 }
 
 function readStoredViewport(): MapViewportState | null {
@@ -71,6 +70,37 @@ function MapViewportPersistence() {
       map.off("zoomend", persistViewport);
     };
   }, [map]);
+
+  return null;
+}
+
+function MapViewportLoader({ filters }: { filters: MapFiltersState }) {
+  const map = useMap();
+  const { loadForBounds } = useMapCompanies();
+
+  useEffect(() => {
+    const report = () => {
+      const bounds = map.getBounds();
+      void loadForBounds(
+        {
+          north: bounds.getNorth(),
+          south: bounds.getSouth(),
+          east: bounds.getEast(),
+          west: bounds.getWest(),
+        },
+        filters
+      );
+    };
+
+    report();
+    map.on("moveend", report);
+    map.on("zoomend", report);
+
+    return () => {
+      map.off("moveend", report);
+      map.off("zoomend", report);
+    };
+  }, [filters, loadForBounds, map]);
 
   return null;
 }
@@ -137,7 +167,8 @@ function requestBrowserLocation(
   );
 }
 
-export function CompaniesMap({ companies, provinces, stats }: CompaniesMapProps) {
+export function CompaniesMap({ provinces }: CompaniesMapProps) {
+  const { companies, stats, loadForCenter } = useMapCompanies();
   const [filters, setFilters] = useState<MapFiltersState>(DEFAULT_MAP_FILTERS);
   const [locateSignal, setLocateSignal] = useState(0);
   const [userLocation, setUserLocation] = useState<UserLocation | null>(null);
@@ -156,11 +187,15 @@ export function CompaniesMap({ companies, provinces, stats }: CompaniesMapProps)
     [companies, filters]
   );
 
-  const handleLocationFound = useCallback((location: UserLocation) => {
-    setUserLocation(location);
-    setLocationError(null);
-    setIsLocating(false);
-  }, []);
+  const handleLocationFound = useCallback(
+    (location: UserLocation) => {
+      setUserLocation(location);
+      setLocationError(null);
+      setIsLocating(false);
+      void loadForCenter(location, filters, undefined, true);
+    },
+    [filters, loadForCenter]
+  );
 
   const handleLocationError = useCallback((message: string) => {
     setLocationError(message);
@@ -195,7 +230,6 @@ export function CompaniesMap({ companies, provinces, stats }: CompaniesMapProps)
       <div className="flex flex-col gap-4 lg:h-[calc(100vh-12rem)] lg:flex-row">
         <div className="flex w-full flex-col gap-4 lg:w-72 lg:shrink-0 lg:overflow-y-auto">
           <MapSidebarFilters
-            companies={companies}
             provinces={provinces}
             filters={filters}
             visibleCount={filteredCompanies.length}
@@ -223,6 +257,7 @@ export function CompaniesMap({ companies, provinces, stats }: CompaniesMapProps)
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
             <MapViewportPersistence />
+            <MapViewportLoader filters={filters} />
             <MapLocateController
               locateSignal={locateSignal}
               onLocationFound={handleLocationFound}

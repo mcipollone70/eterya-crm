@@ -14,6 +14,21 @@ export const GEOCODED_MAP_STATUSES = ["geocoded", "completed"] as const;
 /** PostgREST restituisce al massimo 1000 righe per richiesta. */
 export const MAP_FETCH_PAGE_SIZE = 1000;
 
+/** Numero massimo di aziende per pagina nelle query per viewport. */
+export const MAP_VIEWPORT_FETCH_PAGE_SIZE = 500;
+
+/** Limite totale per singola area geografica (evita timeout su zone dense). */
+export const MAP_MAX_FETCH_PER_BOUNDS = 1500;
+
+/** Raggio iniziale attorno al centro mappa o posizione utente (km). */
+export const MAP_INITIAL_RADIUS_KM = 60;
+
+/** Padding extra sui bounds mappa per precaricare l'area adiacente. */
+export const MAP_BOUNDS_PADDING_RATIO = 0.12;
+
+/** Debounce ricaricamento al pan/zoom mappa (ms). */
+export const MAP_BOUNDS_DEBOUNCE_MS = 400;
+
 export const MAP_VIEWPORT_STORAGE_KEY = "eterya-map-viewport";
 
 export const DEFAULT_MAP_CENTER: [number, number] = [41.8719, 12.5674];

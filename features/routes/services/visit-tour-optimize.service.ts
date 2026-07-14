@@ -1,5 +1,6 @@
 import "server-only";
 
+import { cache } from "react";
 import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/features/auth/session";
 import { fetchPriorityContext } from "@/features/companies/services/commercial-priority.service";
@@ -32,7 +33,7 @@ export interface SaveVisitTourInput {
   notes?: string | null;
 }
 
-export async function fetchVisitTourOptimizeContext(): Promise<VisitTourOptimizeContext> {
+export const fetchVisitTourOptimizeContext = cache(async (): Promise<VisitTourOptimizeContext> => {
   const supabase = await createServerClient();
   const todayStart = startOfTodayIso();
 
@@ -78,7 +79,7 @@ export async function fetchVisitTourOptimizeContext(): Promise<VisitTourOptimize
     visitedTodayCompanyIds: [...visitedTodayCompanyIds],
     overdueFollowUpCompanyIds: [...overdueFollowUpCompanyIds],
   };
-}
+});
 
 export async function saveVisitTour(
   input: SaveVisitTourInput

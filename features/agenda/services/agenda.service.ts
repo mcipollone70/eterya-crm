@@ -1,5 +1,6 @@
 import "server-only";
 
+import { cache } from "react";
 import {
   CONTACT_HISTORY_TYPE_LABELS,
   isContactHistoryType,
@@ -15,7 +16,9 @@ import {
   type AgendaFilters,
   type AgendaItem,
   type AgendaItemKind,
+  type AgendaKindFilter,
   type AgendaStatusFilter,
+  type AgendaView,
 } from "@/lib/constants/agenda";
 import { resolveAgendaRange } from "@/lib/agenda/calendar";
 import { createServerClient } from "@/lib/supabase/server";
@@ -273,7 +276,7 @@ function applyReminderStatusToQuery<T extends { in: (col: string, vals: string[]
   return query;
 }
 
-export async function listAgendaItems(
+async function listAgendaItemsUncached(
   filters: AgendaFilters
 ): Promise<{ data: AgendaItem[]; rangeLabel: string; error: string | null }> {
   const supabase = await createServerClient();
@@ -406,6 +409,29 @@ export async function listAgendaItems(
   items.sort((left, right) => left.scheduledAt.localeCompare(right.scheduledAt));
 
   return { data: items, rangeLabel: range.label, error: null };
+}
+
+const cachedListAgendaItems = cache(
+  async (
+    view: AgendaView,
+    date: string,
+    agentId: string | null,
+    kind: AgendaKindFilter,
+    status: AgendaStatusFilter
+  ): Promise<{ data: AgendaItem[]; rangeLabel: string; error: string | null }> =>
+    listAgendaItemsUncached({ view, date, agentId, kind, status })
+);
+
+export async function listAgendaItems(
+  filters: AgendaFilters
+): Promise<{ data: AgendaItem[]; rangeLabel: string; error: string | null }> {
+  return cachedListAgendaItems(
+    filters.view,
+    filters.date,
+    filters.agentId,
+    filters.kind,
+    filters.status
+  );
 }
 
 export async function listAgendaAgents(): Promise<{

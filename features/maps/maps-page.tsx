@@ -2,10 +2,7 @@ import { Building2 } from "lucide-react";
 import { EmptyState, PageHeader } from "@/components/ui";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { CompaniesMapClient } from "./components/companies-map-client";
-import {
-  getMapFilterOptions,
-  listMapCompanies,
-} from "./services/map-companies.service";
+import { getMapPageBootstrap } from "./services/map-companies.service";
 
 export async function MapsPage() {
   if (!isSupabaseConfigured()) {
@@ -21,8 +18,7 @@ export async function MapsPage() {
     );
   }
 
-  const { data: companies, stats, error } = await listMapCompanies();
-  const { provinces } = getMapFilterOptions(companies);
+  const { stats, provinces, error } = await getMapPageBootstrap();
 
   if (error) {
     return (
@@ -33,5 +29,5 @@ export async function MapsPage() {
     );
   }
 
-  return <CompaniesMapClient companies={companies} provinces={provinces} stats={stats} />;
+  return <CompaniesMapClient provinces={provinces} stats={stats} />;
 }

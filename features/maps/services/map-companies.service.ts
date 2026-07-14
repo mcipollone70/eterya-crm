@@ -6,8 +6,20 @@ import { describeDbError } from "@/lib/supabase/errors";
 import type { CommercialStatus, GeocodeStatus, Json } from "@/lib/supabase/types";
 import { resolveCompanyDisplayFields } from "@/features/companies/services/companies.service";
 import { buildFullAddress } from "@/features/companies/utils/build-full-address";
-import { GEOCODED_MAP_STATUSES, MAP_FETCH_PAGE_SIZE } from "../constants/map-config";
-import type { MapCompaniesStats, MapCompany } from "../types/map";
+import {
+  GEOCODED_MAP_STATUSES,
+  MAP_FETCH_PAGE_SIZE,
+  MAP_MAX_FETCH_PER_BOUNDS,
+  MAP_VIEWPORT_FETCH_PAGE_SIZE,
+} from "../constants/map-config";
+import type {
+  MapCompaniesFetchResult,
+  MapCompaniesStats,
+  MapCompany,
+  MapFiltersState,
+  MapGeoBounds,
+  MapPageBootstrap,
+} from "../types/map";
 
 const MAP_COMPANY_COLUMNS =
   "id,name,city,province,latitude,longitude,commercial_status,geocode_status,address,street,street_number,postal_code,country,phone,contact_phone,mobile,phone_secondary,import_headers,import_payload,geocoding_normalized_address";
@@ -80,6 +92,37 @@ function mapMapCompany(row: MapCompanyRow): MapCompany | null {
   };
 }
 
+function mapMapCompanies(rows: MapCompanyRow[]): MapCompany[] {
+  return rows
+    .map((row) => mapMapCompany(row))
+    .filter((company): company is MapCompany => company !== null);
+}
+
+function applyMapFiltersQuery<T extends {
+  in: (column: string, values: readonly string[]) => T;
+  eq: (column: string, value: string) => T;
+}>(query: T, filters: MapFiltersState): T {
+  let nextQuery = query;
+
+  if (filters.geolocatedOnly) {
+    nextQuery = nextQuery.in("geocode_status", [...GEOCODED_MAP_STATUSES]);
+  }
+
+  if (filters.commercialStatus) {
+    nextQuery = nextQuery.eq("commercial_status", filters.commercialStatus);
+  }
+
+  if (filters.province) {
+    nextQuery = nextQuery.eq("province", filters.province);
+  }
+
+  if (filters.city) {
+    nextQuery = nextQuery.eq("city", filters.city);
+  }
+
+  return nextQuery;
+}
+
 async function fetchMapCompanyCounts(supabase: Awaited<ReturnType<typeof createServerClient>>): Promise<{
   totalWithCoordinates: number;
   totalGeocodedConfirmed: number;
@@ -111,31 +154,37 @@ async function fetchMapCompanyCounts(supabase: Awaited<ReturnType<typeof createS
   };
 }
 
-async function fetchAllMapCompanyRows(
+async function fetchDistinctProvinces(
   supabase: Awaited<ReturnType<typeof createServerClient>>
-): Promise<{ rows: MapCompanyRow[]; error: string | null }> {
-  const allRows: MapCompanyRow[] = [];
+): Promise<{ provinces: string[]; error: string | null }> {
+  const provinces = new Set<string>();
   let from = 0;
 
   while (true) {
     const { data, error } = await supabase
       .from("companies")
-      .select(MAP_COMPANY_COLUMNS)
+      .select("province")
       .not("latitude", "is", null)
       .not("longitude", "is", null)
-      .order("name", { ascending: true })
+      .not("province", "is", null)
+      .order("province", { ascending: true })
       .range(from, from + MAP_FETCH_PAGE_SIZE - 1);
 
     if (error) {
-      return { rows: [], error: describeDbError(error) };
+      return { provinces: [], error: describeDbError(error) };
     }
 
-    const page = (data ?? []) as MapCompanyRow[];
+    const page = data ?? [];
     if (page.length === 0) {
       break;
     }
 
-    allRows.push(...page);
+    for (const row of page) {
+      const province = row.province?.trim();
+      if (province) {
+        provinces.add(province);
+      }
+    }
 
     if (page.length < MAP_FETCH_PAGE_SIZE) {
       break;
@@ -144,45 +193,137 @@ async function fetchAllMapCompanyRows(
     from += MAP_FETCH_PAGE_SIZE;
   }
 
-  return { rows: allRows, error: null };
+  return {
+    provinces: Array.from(provinces).sort((a, b) => a.localeCompare(b, "it")),
+    error: null,
+  };
 }
 
-export async function listMapCompanies(): Promise<{
-  data: MapCompany[];
-  stats: MapCompaniesStats;
-  error: string | null;
-}> {
+export async function getMapPageBootstrap(): Promise<MapPageBootstrap> {
   const supabase = await createServerClient();
 
-  const [countsResult, rowsResult] = await Promise.all([
+  const [countsResult, provincesResult] = await Promise.all([
     fetchMapCompanyCounts(supabase),
-    fetchAllMapCompanyRows(supabase),
+    fetchDistinctProvinces(supabase),
   ]);
 
   if (countsResult.error) {
-    return { data: [], stats: EMPTY_MAP_STATS, error: countsResult.error };
+    return { stats: EMPTY_MAP_STATS, provinces: [], error: countsResult.error };
   }
 
-  if (rowsResult.error) {
-    return { data: [], stats: EMPTY_MAP_STATS, error: rowsResult.error };
+  if (provincesResult.error) {
+    return { stats: EMPTY_MAP_STATS, provinces: [], error: provincesResult.error };
   }
 
-  const companies = rowsResult.rows
-    .map((row) => mapMapCompany(row))
-    .filter((company): company is MapCompany => company !== null);
+  return {
+    stats: {
+      totalWithCoordinates: countsResult.totalWithCoordinates,
+      totalGeocodedConfirmed: countsResult.totalGeocodedConfirmed,
+      loadedCount: 0,
+      isTruncated: countsResult.totalWithCoordinates > 0,
+    },
+    provinces: provincesResult.provinces,
+    error: null,
+  };
+}
 
-  const loadedCount = companies.length;
-  const totalWithCoordinates = countsResult.totalWithCoordinates;
+export async function getMapFilterCities(province: string): Promise<{
+  cities: string[];
+  error: string | null;
+}> {
+  const trimmedProvince = province.trim();
+  if (!trimmedProvince) {
+    return { cities: [], error: null };
+  }
+
+  const supabase = await createServerClient();
+  const cities = new Set<string>();
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await supabase
+      .from("companies")
+      .select("city")
+      .eq("province", trimmedProvince)
+      .not("latitude", "is", null)
+      .not("longitude", "is", null)
+      .not("city", "is", null)
+      .order("city", { ascending: true })
+      .range(from, from + MAP_FETCH_PAGE_SIZE - 1);
+
+    if (error) {
+      return { cities: [], error: describeDbError(error) };
+    }
+
+    const page = data ?? [];
+    if (page.length === 0) {
+      break;
+    }
+
+    for (const row of page) {
+      const city = row.city?.trim();
+      if (city) {
+        cities.add(city);
+      }
+    }
+
+    if (page.length < MAP_FETCH_PAGE_SIZE) {
+      break;
+    }
+
+    from += MAP_FETCH_PAGE_SIZE;
+  }
+
+  return {
+    cities: Array.from(cities).sort((a, b) => a.localeCompare(b, "it")),
+    error: null,
+  };
+}
+
+export async function getMapCompaniesInBounds(
+  bounds: MapGeoBounds,
+  filters: MapFiltersState,
+  offset = 0
+): Promise<MapCompaniesFetchResult> {
+  const supabase = await createServerClient();
+  const safeOffset = Math.max(0, offset);
+
+  if (safeOffset >= MAP_MAX_FETCH_PER_BOUNDS) {
+    return { data: [], error: null, hasMore: false, loadedCount: 0 };
+  }
+
+  const pageSize = Math.min(
+    MAP_VIEWPORT_FETCH_PAGE_SIZE,
+    MAP_MAX_FETCH_PER_BOUNDS - safeOffset
+  );
+
+  let query = supabase
+    .from("companies")
+    .select(MAP_COMPANY_COLUMNS)
+    .not("latitude", "is", null)
+    .not("longitude", "is", null)
+    .gte("latitude", bounds.south)
+    .lte("latitude", bounds.north)
+    .gte("longitude", bounds.west)
+    .lte("longitude", bounds.east);
+
+  query = applyMapFiltersQuery(query, filters);
+
+  const { data, error } = await query
+    .order("name", { ascending: true })
+    .range(safeOffset, safeOffset + pageSize - 1);
+
+  if (error) {
+    return { data: [], error: describeDbError(error), hasMore: false, loadedCount: 0 };
+  }
+
+  const companies = mapMapCompanies((data ?? []) as MapCompanyRow[]);
 
   return {
     data: companies,
-    stats: {
-      totalWithCoordinates,
-      totalGeocodedConfirmed: countsResult.totalGeocodedConfirmed,
-      loadedCount,
-      isTruncated: loadedCount < totalWithCoordinates,
-    },
     error: null,
+    hasMore: companies.length === pageSize,
+    loadedCount: companies.length,
   };
 }
 

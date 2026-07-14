@@ -1,12 +1,11 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { COMMERCIAL_STATUS_OPTIONS } from "@/lib/constants/commercial-status";
-import type { MapCompany } from "../types/map";
 import { DEFAULT_MAP_FILTERS, type MapFiltersState } from "../types/map";
-import { getCitiesForProvince } from "../utils/map-filters";
+import { fetchMapFilterCitiesAction } from "../actions/map-actions";
 
 interface MapSidebarFiltersProps {
-  companies: MapCompany[];
   provinces: string[];
   filters: MapFiltersState;
   visibleCount: number;
@@ -15,17 +14,37 @@ interface MapSidebarFiltersProps {
 }
 
 export function MapSidebarFilters({
-  companies,
   provinces,
   filters,
   visibleCount,
   onChange,
   onGoToMyLocation,
 }: MapSidebarFiltersProps) {
-  const cityOptions = getCitiesForProvince(
-    companies,
-    filters.province
-  );
+  const [cityOptions, setCityOptions] = useState<string[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadCities() {
+      if (!filters.province) {
+        setCityOptions([]);
+        return;
+      }
+
+      const result = await fetchMapFilterCitiesAction(filters.province);
+      if (cancelled) {
+        return;
+      }
+
+      setCityOptions(result.error ? [] : result.cities);
+    }
+
+    void loadCities();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [filters.province]);
 
   function updateFilters(partial: Partial<MapFiltersState>) {
     onChange({ ...filters, ...partial });

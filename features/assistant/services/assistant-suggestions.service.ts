@@ -141,14 +141,9 @@ function mapSuggestionCompany(row: SuggestionCompanyRow): VisitTourCompanyLike |
   };
 }
 
-export async function getDailyVisitSuggestions(options?: {
-  limit?: number;
-  agentId?: string | null;
-}): Promise<{ data: DailyVisitSuggestion[]; error: string | null }> {
-  const limit = options?.limit ?? 15;
-  const user = await getCurrentUser();
-  const agentId = options?.agentId ?? user?.id ?? null;
-
+const cachedGetDailyVisitSuggestions = cache(async (
+  agentId: string | null
+): Promise<{ data: DailyVisitSuggestion[]; error: string | null }> => {
   const supabase = await createServerClient();
 
   let query = supabase
@@ -239,7 +234,23 @@ export async function getDailyVisitSuggestions(options?: {
 
   suggestions.sort((left, right) => right.score - left.score);
 
-  return { data: suggestions.slice(0, limit), error: null };
+  return { data: suggestions, error: null };
+});
+
+export async function getDailyVisitSuggestions(options?: {
+  limit?: number;
+  agentId?: string | null;
+}): Promise<{ data: DailyVisitSuggestion[]; error: string | null }> {
+  const limit = options?.limit ?? 15;
+  const user = await getCurrentUser();
+  const agentId = options?.agentId ?? user?.id ?? null;
+
+  const result = await cachedGetDailyVisitSuggestions(agentId);
+  if (result.error) {
+    return result;
+  }
+
+  return { data: result.data.slice(0, limit), error: null };
 }
 
 export async function listAssistantAgents(): Promise<{

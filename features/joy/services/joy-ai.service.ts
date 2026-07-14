@@ -11,8 +11,10 @@ import { getOpportunityDashboardMetrics, listOpportunities } from "@/features/op
 import { resolveCompanyIdsForProductFilters } from "@/features/products/services/company-product-interests.service";
 import { analyzeOpportunityRadar } from "@/features/radar/services/opportunity-radar.service";
 import { listVisits, getVisitDashboardMetrics } from "@/features/visits/services/visits.service";
-import { describeDbError } from "@/lib/supabase/errors";
-import { getDistanceKm } from "@/features/maps/utils/geo-distance";
+import {
+  countVisitsToday,
+  estimateTodayTourKm,
+} from "@/features/visits/services/visit-today-metrics.service";
 import { parseAgendaFilters } from "@/lib/constants/agenda";
 import type { ProductFamily } from "@/lib/constants/product-catalog";
 import { endOfTodayIso, startOfTodayIso } from "@/lib/last-visit/format";
@@ -43,83 +45,7 @@ function resolveDisplayName(fullName: string | null | undefined, email: string |
   return "Agente";
 }
 
-async function estimateTodayTourKm(userId: string | null): Promise<number> {
-  const supabase = await createServerClient();
-  const todayStart = startOfTodayIso();
-  const todayEnd = endOfTodayIso();
-
-  let query = supabase
-    .from("visits")
-    .select("scheduled_at,companies(latitude,longitude)")
-    .in("status", ["scheduled", "in_progress"])
-    .gte("scheduled_at", todayStart)
-    .lte("scheduled_at", todayEnd)
-    .order("scheduled_at", { ascending: true });
-
-  if (userId) {
-    query = query.eq("user_id", userId);
-  }
-
-  const { data, error } = await query;
-  if (error || !data) {
-    return 0;
-  }
-
-  type VisitTourRow = {
-    companies:
-      | { latitude: number | null; longitude: number | null }
-      | Array<{ latitude: number | null; longitude: number | null }>
-      | null;
-  };
-
-  const points: Array<{ lat: number; lng: number }> = [];
-  for (const row of data as VisitTourRow[]) {
-    const company = Array.isArray(row.companies) ? row.companies[0] : row.companies;
-    if (company?.latitude != null && company?.longitude != null) {
-      points.push({ lat: company.latitude, lng: company.longitude });
-    }
-  }
-
-  if (points.length < 2) {
-    return 0;
-  }
-
-  let total = 0;
-  for (let index = 1; index < points.length; index += 1) {
-    total += getDistanceKm(
-      points[index - 1].lat,
-      points[index - 1].lng,
-      points[index].lat,
-      points[index].lng
-    );
-  }
-
-  return Math.round(total * 10) / 10;
-}
-
-export async function countUserVisitsToday(userId: string | null): Promise<number> {
-  const supabase = await createServerClient();
-  const todayStart = startOfTodayIso();
-  const todayEnd = endOfTodayIso();
-
-  let query = supabase
-    .from("visits")
-    .select("id", { count: "exact", head: true })
-    .or(
-      `and(status.in.(scheduled,in_progress),scheduled_at.gte.${todayStart},scheduled_at.lte.${todayEnd}),and(status.eq.completed,completed_at.gte.${todayStart},completed_at.lte.${todayEnd})`
-    );
-
-  if (userId) {
-    query = query.eq("user_id", userId);
-  }
-
-  const { count, error } = await query;
-  if (error) {
-    throw new Error(describeDbError(error) ?? "Conteggio visite non riuscito.");
-  }
-
-  return count ?? 0;
-}
+export { countVisitsToday as countUserVisitsToday };
 
 export async function countUserCompletedVisitsToday(userId: string | null): Promise<number> {
   const supabase = await createServerClient();
@@ -231,7 +157,7 @@ export async function getJoyData(): Promise<JoyData> {
     ] = await Promise.all([
       getDailyVisitSuggestions({ limit: 20, agentId: userId }),
       getUserScopedTodayVisitPlan(userId),
-      countUserVisitsToday(userId),
+      countVisitsToday(userId),
       listVisits({ period: "overdue", limit: 20 }),
       listAgendaItems(
         parseAgendaFilters({

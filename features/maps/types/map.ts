@@ -32,6 +32,26 @@ export interface MapViewportState {
   zoom: number;
 }
 
+export interface MapGeoBounds {
+  north: number;
+  south: number;
+  east: number;
+  west: number;
+}
+
+export interface MapCompaniesFetchResult {
+  data: MapCompany[];
+  error: string | null;
+  hasMore: boolean;
+  loadedCount: number;
+}
+
+export interface MapPageBootstrap {
+  stats: MapCompaniesStats;
+  provinces: string[];
+  error: string | null;
+}
+
 export interface MapFiltersState {
   commercialStatus: CommercialStatus | "";
   province: string;
