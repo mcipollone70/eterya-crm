@@ -21,8 +21,8 @@ export async function JoyChatPage() {
   return (
     <div className="space-y-4 sm:space-y-6">
       <PageHeader
-        title="Joy Chat"
-        subtitle="Chiedi a Joy visite, clienti, opportunità e azioni rapide sul CRM."
+        title="Joy Chat & Copilot"
+        subtitle="Chiedi informazioni o esegui azioni operative nel CRM con conferma."
         actions={
           <Link
             href="/joy"

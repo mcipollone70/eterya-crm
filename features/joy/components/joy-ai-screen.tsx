@@ -56,7 +56,7 @@ export function JoyAiScreen({ data }: JoyAiScreenProps) {
             <Link href="/joy/chat" className="mt-4 inline-block">
               <Button size="sm" className="min-h-10 gap-2 bg-violet-600 hover:bg-violet-700">
                 <Sparkles className="h-4 w-4" />
-                Apri Joy Chat
+                Apri Joy Copilot
               </Button>
             </Link>
           </div>

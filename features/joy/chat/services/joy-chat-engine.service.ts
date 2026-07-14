@@ -31,6 +31,7 @@ import {
   buildPageAction,
 } from "../utils/joy-chat-action-builders";
 import { parseJoyIntent, type JoyIntent } from "../utils/parse-joy-intent";
+import { processJoyCopilotCommand } from "./joy-copilot.service";
 
 const LIST_LIMIT = 12;
 
@@ -904,15 +905,18 @@ async function handleContactsSummary(): Promise<JoyChatResponse> {
 function handleHelp(): JoyChatResponse {
   return {
     message: assistantMessage(
-      `Ciao! Sono **Joy**, il tuo assistente sul campo. Puoi chiedermi ad esempio:\n\n` +
+      `Ciao! Sono **Joy**, il tuo assistente e copilot sul campo.\n\n` +
+        `**Domande operative:**\n` +
         `• "Chi devo visitare oggi?"\n` +
         `• "Quali clienti non vedo da un anno?"\n` +
-        `• "Quante opportunità sopra 10.000 € ho?"\n` +
-        `• "Chi è interessato alle VEPA?"\n` +
-        `• "Organizzami il giro migliore"\n` +
-        `• "Mostrami i clienti vicino a Latina"\n` +
-        `• "Apri Rossi Serramenti"\n\n` +
-        `Interrogo aziende, contatti, visite, follow-up, agenda, opportunità, radar, prodotti e Google Calendar.`,
+        `• "Quante opportunità sopra 10.000 € ho?"\n\n` +
+        `**Azioni Copilot (con conferma):**\n` +
+        `• "Pianifica una visita da Rossi domani alle 15"\n` +
+        `• "Sposta la visita di Bianchi a venerdì"\n` +
+        `• "Crea un follow-up da Rossi tra 20 giorni"\n` +
+        `• "Apri l'azienda Rossi"\n` +
+        `• "Organizza il mio giro di domani"\n` +
+        `• "Fammi vedere le opportunità oltre 15.000 euro"`,
       {
         actions: [
           buildPageAction("joy-dashboard", "Dashboard Joy", "/joy"),
@@ -971,6 +975,11 @@ export async function processJoyChatMessage(userMessage: string): Promise<JoyCha
   const trimmed = userMessage.trim();
   if (!trimmed) {
     return { message: assistantMessage("Scrivi una domanda per iniziare.") };
+  }
+
+  const copilotResponse = await processJoyCopilotCommand(trimmed);
+  if (copilotResponse) {
+    return copilotResponse;
   }
 
   const user = await getCurrentUser();

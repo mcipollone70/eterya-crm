@@ -2,11 +2,14 @@ import Link from "next/link";
 import {
   Briefcase,
   CalendarPlus,
+  CheckCircle2,
   ExternalLink,
+  Loader2,
   MapPin,
   MessageSquare,
   Phone,
   Sparkles,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui";
 import type { JoyChatActionButton, JoyChatMessage } from "../types/joy-chat";
@@ -36,10 +39,22 @@ function renderMessageContent(content: string) {
 
 interface JoyChatMessageBubbleProps {
   message: JoyChatMessage;
+  executingCopilotId?: string | null;
+  onConfirmCopilot?: (messageId: string) => void;
+  onCancelCopilot?: (messageId: string) => void;
 }
 
-export function JoyChatMessageBubble({ message }: JoyChatMessageBubbleProps) {
+export function JoyChatMessageBubble({
+  message,
+  executingCopilotId,
+  onConfirmCopilot,
+  onCancelCopilot,
+}: JoyChatMessageBubbleProps) {
   const isUser = message.role === "user";
+  const pending = message.pendingAction;
+  const isExecuting = pending && executingCopilotId === pending.id;
+  const showCopilotConfirm =
+    pending?.status === "pending" && onConfirmCopilot && onCancelCopilot;
 
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
@@ -59,6 +74,55 @@ export function JoyChatMessageBubble({ message }: JoyChatMessageBubbleProps) {
             {isUser ? message.content : renderMessageContent(message.content)}
           </div>
         </div>
+
+        {!isUser && pending && pending.status === "executed" ? (
+          <div className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800">
+            <CheckCircle2 className="h-4 w-4" />
+            Azione completata
+          </div>
+        ) : null}
+
+        {!isUser && pending && pending.status === "cancelled" ? (
+          <div className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+            <X className="h-4 w-4" />
+            Azione annullata
+          </div>
+        ) : null}
+
+        {!isUser && showCopilotConfirm ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-3 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-wide text-amber-800">
+              Conferma azione Copilot
+            </p>
+            <p className="mt-1 text-sm font-medium text-slate-900">{pending.title}</p>
+            <p className="mt-0.5 text-xs text-slate-600">{pending.description}</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button
+                type="button"
+                size="sm"
+                disabled={Boolean(isExecuting)}
+                onClick={() => onConfirmCopilot(message.id)}
+                className="bg-emerald-600 hover:bg-emerald-700"
+              >
+                {isExecuting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="h-4 w-4" />
+                )}
+                Conferma
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={Boolean(isExecuting)}
+                onClick={() => onCancelCopilot(message.id)}
+              >
+                Annulla
+              </Button>
+            </div>
+          </div>
+        ) : null}
 
         {!isUser && message.items && message.items.length > 0 && (
           <ul className="space-y-1.5 rounded-xl border border-slate-100 bg-slate-50/80 p-3">
