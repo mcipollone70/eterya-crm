@@ -120,7 +120,12 @@ export function GeocodingReviewItem({ company }: GeocodingReviewItemProps) {
           <button
             type="button"
             onClick={handleConfirm}
-            disabled={isPending}
+            disabled={isPending || !mapsUrl}
+            title={
+              mapsUrl
+                ? undefined
+                : "Coordinate mancanti: correggi l'indirizzo e rigeocodifica prima di confermare."
+            }
             className="inline-flex h-9 items-center gap-2 rounded-lg bg-emerald-600 px-3 text-sm font-medium text-white hover:bg-emerald-700 disabled:bg-slate-300"
           >
             {isPending ? (

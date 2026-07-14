@@ -534,7 +534,7 @@ export async function confirmGeocodePosition(
 
   const { data: company, error: fetchError } = await supabase
     .from("companies")
-    .select("id,geocode_status")
+    .select("id,geocode_status,latitude,longitude")
     .eq("id", companyId)
     .maybeSingle();
 
@@ -548,6 +548,18 @@ export async function confirmGeocodePosition(
 
   if (company.geocode_status !== "needs_review") {
     return { success: false, message: "L'azienda non è in stato da verificare." };
+  }
+
+  if (
+    company.latitude === null ||
+    company.longitude === null ||
+    (company.latitude === 0 && company.longitude === 0)
+  ) {
+    return {
+      success: false,
+      message:
+        "Impossibile confermare: coordinate mancanti. Correggi l'indirizzo e rigeocodifica.",
+    };
   }
 
   const saveError = await saveGeocodeResult(companyId, {

@@ -12,7 +12,7 @@ export function formatMapPageSubtitle(
   filters: MapFiltersState
 ): string {
   if (stats.isTruncated) {
-    return `${formatCount(visibleCount)} aziende visualizzate (prime ${formatCount(stats.loadedCount)} caricate su ${formatCount(stats.totalGeocodedConfirmed)} geolocalizzate)`;
+    return `${formatCount(visibleCount)} aziende visualizzate (prime ${formatCount(stats.loadedCount)} caricate su ${formatCount(stats.totalWithCoordinates)} con coordinate)`;
   }
 
   const hasExtraFilters =

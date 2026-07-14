@@ -40,6 +40,7 @@ export async function geocodeCompaniesAction(): Promise<GeocodeCompaniesActionRe
   const result = await runCompanyGeocodingBatch();
 
   revalidatePath("/companies");
+  revalidatePath("/maps");
 
   return {
     success: result.processed > 0 && result.failed < result.processed,

@@ -12,6 +12,7 @@ import type { AddressCorrectionInput } from "../types/geocoding";
 function revalidateGeocodingPaths() {
   revalidatePath("/companies");
   revalidatePath("/companies/geocoding/review");
+  revalidatePath("/maps");
 }
 
 export async function confirmGeocodePositionAction(

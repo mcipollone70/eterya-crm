@@ -203,7 +203,7 @@ export function CompaniesMap({ companies, provinces, stats }: CompaniesMapProps)
             onGoToMyLocation={handleGoToMyLocation}
           />
           <OpportunityRadarPanel
-            companies={companies as RadarCompanySource[]}
+            companies={filteredCompanies as RadarCompanySource[]}
             center={userLocation}
             isLocating={isLocating}
             locationError={locationError}
