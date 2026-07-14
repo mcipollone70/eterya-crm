@@ -1,10 +1,8 @@
 import "server-only";
 
-import { getCurrentUser } from "@/features/auth/session";
 import { listFollowUps } from "@/features/activities/services/follow-ups.service";
 import {
   getMissionControlData,
-  getUserScopedTodayVisitPlan,
 } from "@/features/dashboard/services/mission-control.service";
 import { buildAutonomousDecisions } from "@/features/joy/autonomous/utils/build-autonomous-decisions";
 import { buildAutonomousNotifications } from "@/features/joy/autonomous/utils/build-autonomous-notifications";
@@ -88,19 +86,18 @@ async function fetchMapCompaniesForIds(companyIds: string[]): Promise<MapCompany
 
 export async function getCommandCenterData(): Promise<CommandCenterData> {
   const now = new Date();
-  const user = await getCurrentUser();
-  const userId = user?.id ?? null;
 
   try {
-    const [missionData, joyData, userDayPlan, overdueFollowUpsResult, overdueVisitsResult, opportunitiesResult] =
+    const [missionData, joyData, overdueFollowUpsResult, overdueVisitsResult, opportunitiesResult] =
       await Promise.all([
         getMissionControlData(),
         getJoyData(),
-        getUserScopedTodayVisitPlan(userId),
         listFollowUps({ period: "overdue", limit: 12 }),
         listVisits({ period: "overdue", limit: 12 }),
         listOpportunities({ limit: 100 }),
       ]);
+
+    const userDayPlan = joyData.dayPlan;
 
     const openOpportunities = (opportunitiesResult.data ?? [])
       .filter((item) => isOpenOpportunityStage(item.stage))

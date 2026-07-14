@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { revalidateDashboardPaths } from "@/lib/revalidate/dashboard-paths";
 import { redirect } from "next/navigation";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { isOpportunityStage, type OpportunityStage } from "@/lib/constants/opportunity-pipeline";
@@ -20,12 +21,11 @@ const NOT_CONFIGURED_MESSAGE =
 function revalidateOpportunityPaths(opportunityId: string, companyId: string) {
   revalidatePath("/opportunities");
   revalidatePath(`/opportunities/${opportunityId}`);
-  revalidatePath("/");
-  revalidatePath("/command-center");
   revalidatePath("/reports");
   revalidatePath(`/companies/${companyId}`);
   revalidatePath("/companies");
   revalidatePath("/activities");
+  revalidateDashboardPaths();
 }
 
 export async function saveOpportunityAction(

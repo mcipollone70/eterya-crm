@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { revalidateDashboardPaths } from "@/lib/revalidate/dashboard-paths";
 import { redirect } from "next/navigation";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { isCommercialStatus } from "@/lib/constants/commercial-status";
@@ -55,6 +56,7 @@ export async function createCompanyAction(
   }
 
   revalidatePath("/companies");
+  revalidateDashboardPaths();
   redirect(`/companies/${id}`);
 }
 
@@ -79,6 +81,7 @@ export async function updateCompanyAction(
 
   revalidatePath("/companies");
   revalidatePath(`/companies/${id}`);
+  revalidateDashboardPaths();
   redirect(`/companies/${id}`);
 }
 
@@ -95,6 +98,7 @@ export async function deleteCompanyAction(
   }
 
   revalidatePath("/companies");
+  revalidateDashboardPaths();
   redirect("/companies");
 }
 
@@ -119,6 +123,6 @@ export async function updateCommercialStatusAction(
 
   revalidatePath("/companies");
   revalidatePath(`/companies/${id}`);
-  revalidatePath("/");
+  revalidateDashboardPaths();
   return {};
 }

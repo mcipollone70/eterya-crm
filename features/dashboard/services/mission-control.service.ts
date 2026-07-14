@@ -1,5 +1,6 @@
 import "server-only";
 
+import { cache } from "react";
 import { getCurrentUser, getCurrentUserProfile } from "@/features/auth/session";
 import { getGoogleCalendarConnectionView } from "@/features/calendar-sync/services/connection.service";
 import { listAgendaItems } from "@/features/agenda/services/agenda.service";
@@ -151,7 +152,7 @@ async function countVisitsToday(userId: string | null): Promise<number> {
 
   let query = supabase
     .from("visits")
-    .select("id")
+    .select("id", { count: "exact", head: true })
     .or(
       `and(status.in.(scheduled,in_progress),scheduled_at.gte.${todayStart},scheduled_at.lte.${todayEnd}),and(status.eq.completed,completed_at.gte.${todayStart},completed_at.lte.${todayEnd})`
     );
@@ -160,17 +161,17 @@ async function countVisitsToday(userId: string | null): Promise<number> {
     query = query.eq("user_id", userId);
   }
 
-  const { data, error } = await query;
+  const { count, error } = await query;
   if (error) {
     throw new Error(describeDbError(error) ?? "Conteggio visite non riuscito.");
   }
 
-  return new Set((data ?? []).map((row) => row.id)).size;
+  return count ?? 0;
 }
 
-export async function getUserScopedTodayVisitPlan(
+export const getUserScopedTodayVisitPlan = cache(async (
   userId: string | null
-): Promise<JoyDayPlanItem[]> {
+): Promise<JoyDayPlanItem[]> => {
   const supabase = await createServerClient();
   const todayStart = startOfTodayIso();
   const todayEnd = endOfTodayIso();
@@ -241,7 +242,7 @@ export async function getUserScopedTodayVisitPlan(
       notes: row.notes,
     };
   });
-}
+});
 
 async function estimateTodayTourKm(userId: string | null): Promise<number> {
   const supabase = await createServerClient();

@@ -104,7 +104,7 @@ export async function countUserVisitsToday(userId: string | null): Promise<numbe
 
   let query = supabase
     .from("visits")
-    .select("id")
+    .select("id", { count: "exact", head: true })
     .or(
       `and(status.in.(scheduled,in_progress),scheduled_at.gte.${todayStart},scheduled_at.lte.${todayEnd}),and(status.eq.completed,completed_at.gte.${todayStart},completed_at.lte.${todayEnd})`
     );
@@ -113,12 +113,12 @@ export async function countUserVisitsToday(userId: string | null): Promise<numbe
     query = query.eq("user_id", userId);
   }
 
-  const { data, error } = await query;
+  const { count, error } = await query;
   if (error) {
     throw new Error(describeDbError(error) ?? "Conteggio visite non riuscito.");
   }
 
-  return new Set((data ?? []).map((row) => row.id)).size;
+  return count ?? 0;
 }
 
 export async function countUserCompletedVisitsToday(userId: string | null): Promise<number> {

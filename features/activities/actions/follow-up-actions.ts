@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { revalidateDashboardPaths } from "@/lib/revalidate/dashboard-paths";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { isContactHistoryType } from "@/lib/constants/contact-history";
 import type { ContactHistoryType } from "@/lib/constants/contact-history";
@@ -52,11 +53,8 @@ export async function saveFollowUpAction(input: {
   }
 
   revalidatePath("/activities");
-  revalidatePath("/agenda");
-  revalidatePath("/");
-  revalidatePath("/visits");
-  revalidatePath("/auto");
   revalidatePath(`/companies/${input.companyId}`);
+  revalidateDashboardPaths();
 
   await syncFollowUpCalendar(followUpId, "upsert");
 
@@ -74,11 +72,8 @@ export async function completeFollowUpAction(
   const result = await completeFollowUp(id);
   if (result.success) {
     revalidatePath("/activities");
-    revalidatePath("/agenda");
-    revalidatePath("/");
-    revalidatePath("/visits");
-    revalidatePath("/auto");
     revalidatePath(`/companies/${companyId}`);
+    revalidateDashboardPaths();
     await syncFollowUpCalendar(id, "complete");
   }
   return result;
@@ -96,11 +91,8 @@ export async function postponeFollowUpAction(
   const result = await postponeFollowUp(id, postponedTo);
   if (result.success) {
     revalidatePath("/activities");
-    revalidatePath("/agenda");
-    revalidatePath("/");
-    revalidatePath("/visits");
-    revalidatePath("/auto");
     revalidatePath(`/companies/${companyId}`);
+    revalidateDashboardPaths();
     await syncFollowUpCalendar(id, "upsert");
   }
   return result;
@@ -117,11 +109,8 @@ export async function cancelFollowUpAction(
   const result = await cancelFollowUp(id);
   if (result.success) {
     revalidatePath("/activities");
-    revalidatePath("/agenda");
-    revalidatePath("/");
-    revalidatePath("/visits");
-    revalidatePath("/auto");
     revalidatePath(`/companies/${companyId}`);
+    revalidateDashboardPaths();
     await syncFollowUpCalendar(id, "cancel");
   }
   return result;

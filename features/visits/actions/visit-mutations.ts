@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { revalidateDashboardPaths } from "@/lib/revalidate/dashboard-paths";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import {
   completeScheduledVisit,
@@ -18,9 +19,9 @@ const NOT_CONFIGURED_MESSAGE =
 function revalidateVisitPaths(companyId?: string) {
   revalidatePath("/visits");
   revalidatePath("/agenda");
-  revalidatePath("/");
   revalidatePath("/auto");
   revalidatePath("/companies");
+  revalidateDashboardPaths();
   if (companyId) {
     revalidatePath(`/companies/${companyId}`);
   }

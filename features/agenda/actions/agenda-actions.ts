@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { revalidateDashboardPaths } from "@/lib/revalidate/dashboard-paths";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { isContactHistoryType } from "@/lib/constants/contact-history";
 import type { ContactHistoryType } from "@/lib/constants/contact-history";
@@ -39,8 +40,8 @@ function revalidateAgendaPaths(companyId?: string | null) {
   revalidatePath("/agenda");
   revalidatePath("/visits");
   revalidatePath("/activities");
-  revalidatePath("/");
   revalidatePath("/companies");
+  revalidateDashboardPaths();
   if (companyId) {
     revalidatePath(`/companies/${companyId}`);
   }

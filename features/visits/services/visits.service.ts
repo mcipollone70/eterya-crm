@@ -594,7 +594,8 @@ export async function listVisitsByCompany(companyId: string): Promise<{
     .select(VISIT_LIST_SELECT)
     .eq("company_id", companyId)
     .order("completed_at", { ascending: false, nullsFirst: false })
-    .order("scheduled_at", { ascending: false });
+    .order("scheduled_at", { ascending: false })
+    .limit(200);
 
   if (error) {
     return { data: [], error: describeDbError(error) };

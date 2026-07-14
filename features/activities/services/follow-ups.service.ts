@@ -1,5 +1,6 @@
 import "server-only";
 
+import { cache } from "react";
 import { getCurrentUser } from "@/features/auth/session";
 import {
   saveContactHistoryActivity,
@@ -182,6 +183,45 @@ function applyFollowUpPeriod(
   });
 }
 
+function applyFollowUpPeriodToQuery<T extends { in: Function; or: Function }>(
+  query: T,
+  period: FollowUpPeriod
+): T {
+  const todayStart = startOfTodayIso();
+  const todayEnd = endOfTodayIso();
+  const next7End = endOfNext7DaysIso();
+  const weekStart = startOfWeekIso();
+
+  switch (period) {
+    case "overdue":
+      return query
+        .in("status", ["todo", "postponed"])
+        .or(
+          `and(status.eq.todo,scheduled_at.lt.${todayStart}),and(status.eq.postponed,postponed_to.not.is.null,postponed_to.lt.${todayStart}),and(status.eq.postponed,postponed_to.is.null,scheduled_at.lt.${todayStart})`
+        ) as T;
+    case "today":
+      return query
+        .in("status", ["todo", "postponed"])
+        .or(
+          `and(status.eq.todo,scheduled_at.gte.${todayStart},scheduled_at.lte.${todayEnd}),and(status.eq.postponed,postponed_to.not.is.null,postponed_to.gte.${todayStart},postponed_to.lte.${todayEnd}),and(status.eq.postponed,postponed_to.is.null,scheduled_at.gte.${todayStart},scheduled_at.lte.${todayEnd})`
+        ) as T;
+    case "next7":
+      return query
+        .in("status", ["todo", "postponed"])
+        .or(
+          `and(status.eq.todo,scheduled_at.gte.${todayStart},scheduled_at.lte.${next7End}),and(status.eq.postponed,postponed_to.not.is.null,postponed_to.gte.${todayStart},postponed_to.lte.${next7End}),and(status.eq.postponed,postponed_to.is.null,scheduled_at.gte.${todayStart},scheduled_at.lte.${next7End})`
+        ) as T;
+    case "week":
+      return query
+        .in("status", ["todo", "postponed"])
+        .or(
+          `and(status.eq.todo,scheduled_at.gte.${weekStart},scheduled_at.lte.${todayEnd}),and(status.eq.postponed,postponed_to.not.is.null,postponed_to.gte.${weekStart},postponed_to.lte.${todayEnd}),and(status.eq.postponed,postponed_to.is.null,scheduled_at.gte.${weekStart},scheduled_at.lte.${todayEnd})`
+        ) as T;
+    default:
+      return query;
+  }
+}
+
 export async function listFollowUps(
   filters: ListFollowUpsFilters = {}
 ): Promise<{ data: FollowUpListItem[]; error: string | null }> {
@@ -191,8 +231,7 @@ export async function listFollowUps(
   let query = supabase
     .from("follow_ups")
     .select(FOLLOW_UP_SELECT)
-    .order("scheduled_at", { ascending: true })
-    .limit(limit);
+    .order("scheduled_at", { ascending: true });
 
   if (filters.companyId) {
     query = query.eq("company_id", filters.companyId);
@@ -206,6 +245,12 @@ export async function listFollowUps(
     query = query.eq("priority", filters.priority);
   }
 
+  if (filters.period) {
+    query = applyFollowUpPeriodToQuery(query, filters.period);
+  }
+
+  query = query.limit(limit);
+
   const { data, error } = await query;
   if (error) {
     return { data: [], error: describeDbError(error) };
@@ -215,7 +260,42 @@ export async function listFollowUps(
     .map((row) => mapFollowUpRow(row as FollowUpRow))
     .filter((item): item is FollowUpListItem => item !== null);
 
-  items = applyFollowUpPeriod(items, filters.period);
+  return { data: items, error: null };
+}
+
+async function fetchOpenFollowUpsForMetrics(): Promise<{
+  data: FollowUpListItem[];
+  error: string | null;
+}> {
+  const supabase = await createServerClient();
+  const items: FollowUpListItem[] = [];
+  let offset = 0;
+  const batchSize = 1000;
+
+  while (true) {
+    const { data, error } = await supabase
+      .from("follow_ups")
+      .select(FOLLOW_UP_SELECT)
+      .in("status", ["todo", "postponed"])
+      .order("scheduled_at", { ascending: true })
+      .range(offset, offset + batchSize - 1);
+
+    if (error) {
+      return { data: [], error: describeDbError(error) };
+    }
+
+    const batch = (data ?? [])
+      .map((row) => mapFollowUpRow(row as FollowUpRow))
+      .filter((item): item is FollowUpListItem => item !== null);
+
+    items.push(...batch);
+
+    if (batch.length < batchSize) {
+      break;
+    }
+
+    offset += batchSize;
+  }
 
   return { data: items, error: null };
 }
@@ -439,10 +519,10 @@ export async function cancelFollowUp(
   return { success: true, message: "Follow-up annullato." };
 }
 
-export async function getFollowUpDashboardMetrics(): Promise<{
+export const getFollowUpDashboardMetrics = cache(async (): Promise<{
   data: FollowUpDashboardMetrics | null;
   error: string | null;
-}> {
+}> => {
   const supabase = await createServerClient();
   const todayStart = startOfTodayIso();
   const todayEnd = endOfTodayIso();
@@ -470,7 +550,7 @@ export async function getFollowUpDashboardMetrics(): Promise<{
     };
   }
 
-  const { data, error } = await listFollowUps({ limit: 1000 });
+  const { data, error } = await fetchOpenFollowUpsForMetrics();
   if (error) {
     return { data: null, error };
   }
@@ -508,6 +588,6 @@ export async function getFollowUpDashboardMetrics(): Promise<{
     data: { today, overdue, next7Days, highPriority },
     error: null,
   };
-}
+});
 
 export { groupFollowUpItemsByDay as groupFollowUpsByDay };

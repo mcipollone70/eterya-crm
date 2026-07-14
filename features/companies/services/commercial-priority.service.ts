@@ -27,23 +27,37 @@ const OPEN_OPPORTUNITY_STAGES = [
 /** ID aziende con opportunità aperta — memoizzato per richiesta. */
 export const fetchOpenOpportunityCompanyIds = cache(async (): Promise<string[]> => {
   const supabase = await createServerClient();
-  const { data, error } = await supabase
-    .from("opportunities")
-    .select("company_id")
-    .in("stage", [...OPEN_OPPORTUNITY_STAGES])
-    .not("company_id", "is", null);
+  const companyIds = new Set<string>();
+  let offset = 0;
+  const batchSize = 1000;
 
-  if (error) {
-    return [];
+  while (true) {
+    const { data, error } = await supabase
+      .from("opportunities")
+      .select("company_id")
+      .in("stage", [...OPEN_OPPORTUNITY_STAGES])
+      .not("company_id", "is", null)
+      .range(offset, offset + batchSize - 1);
+
+    if (error) {
+      return [];
+    }
+
+    const rows = data ?? [];
+    for (const row of rows) {
+      if (row.company_id) {
+        companyIds.add(row.company_id);
+      }
+    }
+
+    if (rows.length < batchSize) {
+      break;
+    }
+
+    offset += batchSize;
   }
 
-  return [
-    ...new Set(
-      (data ?? [])
-        .map((row) => row.company_id)
-        .filter((companyId): companyId is string => Boolean(companyId))
-    ),
-  ];
+  return [...companyIds];
 });
 
 /**
@@ -51,13 +65,33 @@ export const fetchOpenOpportunityCompanyIds = cache(async (): Promise<string[]> 
  */
 export const fetchPriorityContext = cache(async (): Promise<PriorityContext> => {
   const supabase = await createServerClient();
+  const companyRows: Array<{ id: string; last_visit_at: string | null; last_contact_at: string | null }> =
+    [];
+  let offset = 0;
+  const batchSize = 1000;
 
-  const [companiesRes, openOpportunityCompanies] = await Promise.all([
-    supabase.from("companies").select("id,last_visit_at,last_contact_at"),
-    fetchOpenOpportunityCompanyIds(),
-  ]);
+  while (true) {
+    const { data, error } = await supabase
+      .from("companies")
+      .select("id,last_visit_at,last_contact_at")
+      .range(offset, offset + batchSize - 1);
 
-  const maps = buildPriorityContextMaps(companiesRes.data ?? [], openOpportunityCompanies);
+    if (error) {
+      break;
+    }
+
+    const batch = data ?? [];
+    companyRows.push(...batch);
+
+    if (batch.length < batchSize) {
+      break;
+    }
+
+    offset += batchSize;
+  }
+
+  const openOpportunityCompanies = await fetchOpenOpportunityCompanyIds();
+  const maps = buildPriorityContextMaps(companyRows, openOpportunityCompanies);
 
   return {
     ...maps,
@@ -65,69 +99,82 @@ export const fetchPriorityContext = cache(async (): Promise<PriorityContext> => 
   };
 });
 
-export async function getPriorityDashboardMetrics(): Promise<{
+export const getPriorityDashboardMetrics = cache(async (): Promise<{
   data: PriorityDashboardMetrics | null;
   error: string | null;
-}> {
+}> => {
   const supabase = await createServerClient();
-
-  const [{ data, error }, openOpportunityCompanies] = await Promise.all([
-    supabase
-      .from("companies")
-      .select(
-        "id,name,status,commercial_status,revenue,import_payload,last_visit_at,last_contact_at"
-      ),
-    fetchOpenOpportunityCompanyIds(),
-  ]);
-
-  if (error) {
-    return { data: null, error: describeDbError(error) };
-  }
-
+  const openOpportunityCompanies = await fetchOpenOpportunityCompanyIds();
   const openOpportunitySet = new Set(openOpportunityCompanies);
 
   let highPriority = 0;
   let contactToday = 0;
   let inactiveClients90Days = 0;
   let unvisitedProspects = 0;
+  let offset = 0;
+  const batchSize = 1000;
 
-  for (const row of data ?? []) {
-    const company = row as CompanyPrioritySource & {
-      last_visit_at: string | null;
-      last_contact_at: string | null;
-    };
-    const commercialStatus = normalizeCommercialStatus(company.commercial_status);
-    const lastVisitAt = company.last_visit_at ?? null;
-    const context = buildRowPriorityContext(
-      company.id,
-      lastVisitAt,
-      company.last_contact_at ?? null,
-      openOpportunitySet
-    );
-    const priority = computeCompanyPriorityFields(company, context);
+  while (true) {
+    const { data, error } = await supabase
+      .from("companies")
+      .select(
+        "id,name,status,commercial_status,revenue,import_payload,last_visit_at,last_contact_at"
+      )
+      .range(offset, offset + batchSize - 1);
 
-    if (priority.priority_excluded) {
-      continue;
+    if (error) {
+      return { data: null, error: describeDbError(error) };
     }
 
-    if (priority.priority_tier === "high") {
-      highPriority += 1;
+    const batch = data ?? [];
+    if (batch.length === 0) {
+      break;
     }
 
-    if (commercialStatus === "da_ricontattare" && priority.priority_score >= 40) {
-      contactToday += 1;
-    }
+    for (const row of batch) {
+      const company = row as CompanyPrioritySource & {
+        last_visit_at: string | null;
+        last_contact_at: string | null;
+      };
+      const commercialStatus = normalizeCommercialStatus(company.commercial_status);
+      const lastVisitAt = company.last_visit_at ?? null;
+      const context = buildRowPriorityContext(
+        company.id,
+        lastVisitAt,
+        company.last_contact_at ?? null,
+        openOpportunitySet
+      );
+      const priority = computeCompanyPriorityFields(company, context);
 
-    if (commercialStatus === "cliente") {
-      const visitDays = daysSince(lastVisitAt);
-      if (visitDays === null || visitDays > 90) {
-        inactiveClients90Days += 1;
+      if (priority.priority_excluded) {
+        continue;
+      }
+
+      if (priority.priority_tier === "high") {
+        highPriority += 1;
+      }
+
+      if (commercialStatus === "da_ricontattare" && priority.priority_score >= 40) {
+        contactToday += 1;
+      }
+
+      if (commercialStatus === "cliente") {
+        const visitDays = daysSince(lastVisitAt);
+        if (visitDays === null || visitDays > 90) {
+          inactiveClients90Days += 1;
+        }
+      }
+
+      if (commercialStatus === "prospect" && !lastVisitAt) {
+        unvisitedProspects += 1;
       }
     }
 
-    if (commercialStatus === "prospect" && !lastVisitAt) {
-      unvisitedProspects += 1;
+    if (batch.length < batchSize) {
+      break;
     }
+
+    offset += batchSize;
   }
 
   return {
@@ -139,6 +186,6 @@ export async function getPriorityDashboardMetrics(): Promise<{
     },
     error: null,
   };
-}
+});
 
 export { buildRowPriorityContext };

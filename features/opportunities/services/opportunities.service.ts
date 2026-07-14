@@ -1,5 +1,6 @@
 import "server-only";
 
+import { cache } from "react";
 import { getCurrentUser } from "@/features/auth/session";
 import { saveContactHistoryActivity } from "@/features/activities/services/contact-history.service";
 import {
@@ -659,10 +660,10 @@ export async function updateOpportunityStage(
   return { success: true, message: `Fase aggiornata a ${toLabel}.` };
 }
 
-export async function getOpportunityDashboardMetrics(): Promise<{
+export const getOpportunityDashboardMetrics = cache(async (): Promise<{
   data: OpportunityDashboardMetrics | null;
   error: string | null;
-}> {
+}> => {
   const supabase = await createServerClient();
 
   const { data: rpcData, error: rpcError } = await supabase.rpc(
@@ -736,7 +737,7 @@ export async function getOpportunityDashboardMetrics(): Promise<{
     },
     error: null,
   };
-}
+});
 
 export { groupOpportunityItemsByStage as groupOpportunitiesByStage };
 export { OPEN_OPPORTUNITY_STAGES };
