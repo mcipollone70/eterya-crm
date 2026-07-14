@@ -86,6 +86,7 @@ export function VisitTourPlanner({ agents }: VisitTourPlannerProps) {
   const [route, setRoute] = useState<VisitTourRoute | null>(null);
   const [candidates, setCandidates] = useState<VisitTourCandidate[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectionOrder, setSelectionOrder] = useState<string[]>([]);
   const [sortKey, setSortKey] = useState<VisitTourSortKey>("distance");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -179,8 +180,10 @@ export function VisitTourPlanner({ agents }: VisitTourPlannerProps) {
       const next = new Set(current);
       if (next.has(companyId)) {
         next.delete(companyId);
+        setSelectionOrder((order) => order.filter((id) => id !== companyId));
       } else {
         next.add(companyId);
+        setSelectionOrder((order) => [...order, companyId]);
       }
       return next;
     });
@@ -238,6 +241,7 @@ export function VisitTourPlanner({ agents }: VisitTourPlannerProps) {
         setRoute(nextRoute);
         setCandidates(foundCandidates);
         setSelectedIds(new Set());
+        setSelectionOrder([]);
         setMessage(
           `Percorso calcolato (${nextRoute.distanceKm.toFixed(1)} km). Trovate ${foundCandidates.length} aziende entro 2 km.`
         );
@@ -269,12 +273,20 @@ export function VisitTourPlanner({ agents }: VisitTourPlannerProps) {
     });
   }, [addressInput]);
 
+  const selectedWaypoints = useMemo(() => {
+    const candidateById = new Map(candidates.map((company) => [company.id, company]));
+    return selectionOrder
+      .filter((id) => selectedIds.has(id))
+      .map((id) => candidateById.get(id))
+      .filter((company): company is VisitTourCandidate => company !== undefined);
+  }, [candidates, selectedIds, selectionOrder]);
+
   const googleMapsTourUrl =
     origin && destination
       ? buildGoogleMapsTourUrl(
           origin,
           destination.point,
-          selectedCandidates.map((company) => ({
+          selectedWaypoints.map((company) => ({
             lat: company.latitude,
             lng: company.longitude,
           }))

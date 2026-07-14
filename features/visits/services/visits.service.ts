@@ -441,6 +441,10 @@ export async function cancelVisit(visitId: string): Promise<{ error: string | nu
     return { error: "Visita già completata." };
   }
 
+  if (visit.status === "cancelled") {
+    return { error: "Visita già annullata." };
+  }
+
   const { error } = await supabase
     .from("visits")
     .update({ status: "cancelled" })
@@ -528,6 +532,24 @@ export async function listVisits(
       .gt("scheduled_at", endOfTodayIso())
       .order("scheduled_at", { ascending: true })
       .limit(limit);
+  } else if (period === "today") {
+    const todayStart = startOfTodayIso();
+    const todayEnd = endOfTodayIso();
+    query = query
+      .or(
+        `and(status.in.(scheduled,in_progress),scheduled_at.gte.${todayStart},scheduled_at.lte.${todayEnd}),and(status.eq.completed,completed_at.gte.${todayStart},completed_at.lte.${todayEnd})`
+      )
+      .order("scheduled_at", { ascending: true })
+      .limit(limit);
+  } else if (period === "week") {
+    const weekStart = startOfWeekIso();
+    const todayEnd = endOfTodayIso();
+    query = query
+      .or(
+        `and(status.in.(scheduled,in_progress),scheduled_at.gte.${weekStart},scheduled_at.lte.${todayEnd}),and(status.eq.completed,completed_at.gte.${weekStart},completed_at.lte.${todayEnd})`
+      )
+      .order("scheduled_at", { ascending: true })
+      .limit(limit);
   } else {
     query = query
       .in("status", ["scheduled", "in_progress", "completed"])
@@ -584,7 +606,9 @@ export async function listVisitsByCompany(companyId: string): Promise<{
   };
 }
 
-export async function listVisitCompanyOptions(): Promise<{
+export async function listVisitCompanyOptions(
+  includeCompanyId?: string | null
+): Promise<{
   data: VisitCompanyOption[];
   error: string | null;
 }> {
@@ -599,8 +623,27 @@ export async function listVisitCompanyOptions(): Promise<{
     return { data: [], error: describeDbError(error) };
   }
 
+  let companies = data ?? [];
+  const companyId = includeCompanyId?.trim();
+
+  if (companyId && !companies.some((company) => company.id === companyId)) {
+    const { data: company, error: companyError } = await supabase
+      .from("companies")
+      .select("id,name,city")
+      .eq("id", companyId)
+      .maybeSingle();
+
+    if (companyError) {
+      return { data: [], error: describeDbError(companyError) };
+    }
+
+    if (company) {
+      companies = [company, ...companies];
+    }
+  }
+
   return {
-    data: (data ?? []).map((row) => ({
+    data: companies.map((row) => ({
       id: row.id,
       name: row.name,
       city: row.city,
@@ -623,7 +666,8 @@ export async function getVisitDashboardMetrics(): Promise<{
       .from("visits")
       .select("id", { count: "exact", head: true })
       .eq("status", "completed")
-      .gte("completed_at", todayStart),
+      .gte("completed_at", todayStart)
+      .lte("completed_at", endOfTodayIso()),
     supabase
       .from("visits")
       .select("id", { count: "exact", head: true })

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Plus } from "lucide-react";
 import { Button } from "@/components/ui";
@@ -14,6 +14,7 @@ interface RecordVisitFormProps {
 }
 
 export function RecordVisitForm({ companyId, defaultOpen = false }: RecordVisitFormProps) {
+  const formRef = useRef<HTMLFormElement>(null);
   const [notes, setNotes] = useState("");
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(defaultOpen);
@@ -26,7 +27,12 @@ export function RecordVisitForm({ companyId, defaultOpen = false }: RecordVisitF
     setMessage(null);
     setError(null);
 
-    const formData = new FormData(event.currentTarget);
+    const form = formRef.current;
+    if (!form) {
+      return;
+    }
+
+    const formData = new FormData(form);
     const completedAtRaw = String(formData.get("completed_at") ?? "");
     const durationRaw = String(formData.get("duration_minutes") ?? "");
     const nextCallbackRaw = String(formData.get("next_callback_at") ?? "");
@@ -50,7 +56,8 @@ export function RecordVisitForm({ companyId, defaultOpen = false }: RecordVisitF
 
       setMessage(result.message);
       setIsOpen(false);
-      event.currentTarget.reset();
+      form.reset();
+      setNotes("");
       router.refresh();
     });
   }
@@ -72,7 +79,7 @@ export function RecordVisitForm({ companyId, defaultOpen = false }: RecordVisitF
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+    <form ref={formRef} onSubmit={handleSubmit} className="space-y-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="block text-sm">
           <span className="mb-1 block font-medium text-slate-700">Data e ora visita</span>

@@ -28,7 +28,7 @@ export async function VoicePage({ company, intent }: VoicePageProps) {
     );
   }
 
-  const { data: companies, error } = await listVisitCompanyOptions();
+  const { data: companies, error } = await listVisitCompanyOptions(company ?? undefined);
 
   return (
     <div className="space-y-6">

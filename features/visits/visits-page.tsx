@@ -49,7 +49,7 @@ export async function VisitsPage({ period, company, briefing }: VisitsPageProps)
       companyId: company || undefined,
       limit: 200,
     }),
-    listVisitCompanyOptions(),
+    listVisitCompanyOptions(company || undefined),
     getVisitDashboardMetrics(),
   ]);
 
@@ -83,9 +83,6 @@ export async function VisitsPage({ period, company, briefing }: VisitsPageProps)
         <Suspense fallback={<PageLoadingSkeleton rows={1} />}>
           <VisitPeriodTabs />
         </Suspense>
-        <div className="hidden lg:block">
-          <ScheduleVisitForm companies={companies} defaultCompanyId={company} />
-        </div>
       </div>
 
       {briefingCompanyId ? (

@@ -84,6 +84,7 @@ export function VisitTourCompaniesProvider({ children }: { children: ReactNode }
   const [error, setError] = useState<string | null>(null);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inFlightBoundsRef = useRef<Set<string>>(new Set());
+  const inFlightPromisesRef = useRef<Map<string, Promise<VisitTourCompany[]>>>(new Map());
 
   const mergeCompanies = useCallback((incoming: VisitTourCompany[]) => {
     if (incoming.length === 0) {
@@ -107,25 +108,32 @@ export function VisitTourCompaniesProvider({ children }: { children: ReactNode }
   const runBoundsFetch = useCallback(
     async (bounds: VisitTourGeoBounds): Promise<VisitTourCompany[]> => {
       const key = boundsKey(bounds);
-      if (inFlightBoundsRef.current.has(key)) {
-        return [];
+      const inFlight = inFlightPromisesRef.current.get(key);
+      if (inFlight) {
+        return inFlight;
       }
 
-      inFlightBoundsRef.current.add(key);
-      setIsLoading(true);
-      setError(null);
+      const promise = (async () => {
+        inFlightBoundsRef.current.add(key);
+        setIsLoading(true);
+        setError(null);
 
-      try {
-        const result = await fetchAllPagesForBounds(bounds);
-        if (result.error) {
-          setError(result.error);
+        try {
+          const result = await fetchAllPagesForBounds(bounds);
+          if (result.error) {
+            setError(result.error);
+          }
+          mergeCompanies(result.companies);
+          return result.companies;
+        } finally {
+          inFlightBoundsRef.current.delete(key);
+          inFlightPromisesRef.current.delete(key);
+          setIsLoading(false);
         }
-        mergeCompanies(result.companies);
-        return result.companies;
-      } finally {
-        inFlightBoundsRef.current.delete(key);
-        setIsLoading(false);
-      }
+      })();
+
+      inFlightPromisesRef.current.set(key, promise);
+      return promise;
     },
     [mergeCompanies]
   );

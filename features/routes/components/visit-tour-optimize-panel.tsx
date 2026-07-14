@@ -15,6 +15,7 @@ import { formatDurationMinutes } from "@/lib/last-visit/format";
 import {
   createManualStop,
   optimizeVisitTour,
+  recalculateVisitTourPlanMetrics,
 } from "@/lib/visit-tour/optimize";
 import {
   VISIT_TOUR_DEFAULT_MAX_DEVIATION_KM,
@@ -104,6 +105,7 @@ export function VisitTourOptimizePanel({
   const [manualCompanyId, setManualCompanyId] = useState("");
   const [tourName, setTourName] = useState("");
   const [notes, setNotes] = useState("");
+  const [savedTourId, setSavedTourId] = useState<string | null>(loadedTour?.id ?? null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -137,6 +139,7 @@ export function VisitTourOptimizePanel({
     setConstraints(loadedTour.constraints);
     setTourName(loadedTour.name);
     setNotes(loadedTour.notes ?? "");
+    setSavedTourId(loadedTour.id);
     setMessage(`Giro "${loadedTour.name}" caricato con ${loadedTour.stops.length} tappe.`);
     setError(null);
     syncPlan(
@@ -300,13 +303,38 @@ export function VisitTourOptimizePanel({
     });
   }, [destinationAddressInput]);
 
+  const applyStopsWithRecalc = useCallback(
+    async (nextStops: VisitTourOptimizeStop[]) => {
+      const normalized = normalizeStopsOrder(nextStops);
+
+      if (!origin || !destination?.point) {
+        const nextPlan = plan ? { ...plan, stops: normalized } : null;
+        syncPlan(normalized, nextPlan);
+        return;
+      }
+
+      const context = optimizeContext ?? (await fetchVisitTourOptimizeContextAction());
+      if (!optimizeContext) {
+        setOptimizeContext(context);
+      }
+
+      const nextPlan = recalculateVisitTourPlanMetrics(
+        origin,
+        destination.point,
+        normalized,
+        context
+      );
+      syncPlan(nextPlan.stops, nextPlan);
+    },
+    [destination?.point, optimizeContext, origin, plan, syncPlan]
+  );
+
   const handleRemoveStop = useCallback(
     (companyId: string) => {
-      const nextStops = normalizeStopsOrder(stops.filter((stop) => stop.id !== companyId));
-      const nextPlan = plan ? { ...plan, stops: nextStops } : null;
-      syncPlan(nextStops, nextPlan);
+      const nextStops = stops.filter((stop) => stop.id !== companyId);
+      void applyStopsWithRecalc(nextStops);
     },
-    [plan, stops, syncPlan]
+    [applyStopsWithRecalc, stops]
   );
 
   const handleMoveStop = useCallback(
@@ -325,11 +353,9 @@ export function VisitTourOptimizePanel({
       const current = nextStops[index]!;
       nextStops[index] = nextStops[target]!;
       nextStops[target] = current;
-      const normalized = normalizeStopsOrder(nextStops);
-      const nextPlan = plan ? { ...plan, stops: normalized } : null;
-      syncPlan(normalized, nextPlan);
+      void applyStopsWithRecalc(nextStops);
     },
-    [plan, stops, syncPlan]
+    [applyStopsWithRecalc, stops]
   );
 
   const handleToggleLock = useCallback(
@@ -348,6 +374,16 @@ export function VisitTourOptimizePanel({
   const handleAddManualStop = useCallback(() => {
     if (!manualCompanyId || !origin || !destination?.point) {
       setError("Configura partenza e arrivo prima di aggiungere una tappa.");
+      return;
+    }
+
+    if (stops.some((stop) => stop.id === manualCompanyId)) {
+      setError("Questa azienda è già presente nel giro.");
+      return;
+    }
+
+    if (stops.length >= constraints.maxStops) {
+      setError(`Numero massimo di tappe (${constraints.maxStops}) raggiunto.`);
       return;
     }
 
@@ -370,19 +406,26 @@ export function VisitTourOptimizePanel({
         context
       );
       const nextStops = normalizeStopsOrder([...stops, manualStop]);
-      const nextPlan = plan
-        ? { ...plan, stops: nextStops }
-        : {
-            stops: nextStops,
-            totalDistanceKm: 0,
-            estimatedMinutes: 0,
-            totalDeviationKm: 0,
-          };
-      syncPlan(nextStops, nextPlan);
+      const nextPlan = recalculateVisitTourPlanMetrics(
+        origin,
+        destination.point,
+        nextStops,
+        context
+      );
+      syncPlan(nextPlan.stops, nextPlan);
       setManualCompanyId("");
       setMessage("Tappa aggiunta manualmente.");
     });
-  }, [companyById, destination, manualCompanyId, optimizeContext, origin, plan, stops, syncPlan]);
+  }, [
+    companyById,
+    constraints.maxStops,
+    destination,
+    manualCompanyId,
+    optimizeContext,
+    origin,
+    stops,
+    syncPlan,
+  ]);
 
   const handleSaveTour = useCallback(() => {
     if (!plan || !origin || !destination) {
@@ -395,6 +438,7 @@ export function VisitTourOptimizePanel({
 
     startTransition(async () => {
       const result = await saveVisitTourAction({
+        tourId: savedTourId,
         name: tourName.trim() || null,
         tourDate: loadedTour?.tourDate ?? new Date().toISOString().slice(0, 10),
         origin: {
@@ -420,6 +464,9 @@ export function VisitTourOptimizePanel({
         return;
       }
 
+      if (result.tourId) {
+        setSavedTourId(result.tourId);
+      }
       setMessage(result.message);
     });
   }, [
@@ -432,6 +479,7 @@ export function VisitTourOptimizePanel({
     originLabel,
     originType,
     plan,
+    savedTourId,
     stops,
     tourName,
   ]);

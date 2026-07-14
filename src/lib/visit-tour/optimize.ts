@@ -291,6 +291,54 @@ export function optimizeVisitTour(input: OptimizeVisitTourInput): VisitTourOptim
   };
 }
 
+/** Ricalcola metriche per un ordine tappe già definito (drag/reorder manuale). */
+export function recalculateVisitTourPlanMetrics(
+  origin: GeoPoint,
+  destination: GeoPoint,
+  stops: VisitTourOptimizeStop[],
+  context: VisitTourOptimizeContext
+): VisitTourOptimizePlan {
+  if (stops.length === 0) {
+    return {
+      stops: [],
+      totalDistanceKm: 0,
+      estimatedMinutes: 0,
+      totalDeviationKm: 0,
+    };
+  }
+
+  const baseRoute: GeoPoint[] = [origin, destination];
+  let current = origin;
+  let totalDistanceKm = 0;
+  let totalDeviationKm = 0;
+  let totalMinutes = 0;
+  const refreshedStops: VisitTourOptimizeStop[] = [];
+
+  for (let index = 0; index < stops.length; index += 1) {
+    const stop = stops[index]!;
+    const segmentEnd =
+      index === stops.length - 1 ? destination : toPoint(stops[index + 1]!.company);
+    const refreshed = refreshStopMetrics(stop, current, segmentEnd, baseRoute, context);
+    const legMinutes = travelMinutes(refreshed.legDistanceKm);
+    totalMinutes += legMinutes + VISIT_TOUR_STOP_MINUTES;
+    totalDistanceKm += refreshed.legDistanceKm;
+    totalDeviationKm += refreshed.deviationKm;
+    refreshedStops.push({ ...refreshed, order: index + 1 });
+    current = toPoint(refreshed.company);
+  }
+
+  const finalLegKm = getDistanceKm(current.lat, current.lng, destination.lat, destination.lng);
+  totalDistanceKm += finalLegKm;
+  totalMinutes += travelMinutes(finalLegKm);
+
+  return {
+    stops: refreshedStops,
+    totalDistanceKm: Math.round(totalDistanceKm * 10) / 10,
+    estimatedMinutes: Math.round(totalMinutes),
+    totalDeviationKm: Math.round(totalDeviationKm * 10) / 10,
+  };
+}
+
 export function createManualStop(
   company: OptimizeVisitTourInput["companies"][number],
   order: number,

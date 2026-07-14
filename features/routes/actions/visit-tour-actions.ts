@@ -132,5 +132,16 @@ export async function loadVisitTourAction(tourId: string): Promise<{
     };
   }
 
-  return { success: true, message: "Giro caricato.", tour: loadedTour };
+  const storedCount = storedStops.length;
+  const restoredCount = loadedTour.stops.length;
+  const partialWarning =
+    storedCount > restoredCount
+      ? ` Attenzione: ${storedCount - restoredCount} tappe non caricate (aziende senza coordinate o rimosse).`
+      : "";
+
+  return {
+    success: true,
+    message: `Giro caricato con ${restoredCount} tappe.${partialWarning}`,
+    tour: loadedTour,
+  };
 }

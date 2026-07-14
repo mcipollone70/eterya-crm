@@ -18,6 +18,7 @@ import type {
 import { buildDefaultTourName } from "../utils/visit-tour-restore";
 
 export interface SaveVisitTourInput {
+  tourId?: string | null;
   name?: string | null;
   tourDate: string;
   origin: GeoPoint & { label: string; companyId?: string };
@@ -106,23 +107,46 @@ export async function saveVisitTour(
     input.name?.trim() ||
     buildDefaultTourName(input.tourDate, input.stops.length);
 
+  const rowPayload = {
+    user_id: user.id,
+    name: tourName,
+    tour_date: input.tourDate,
+    mode: "optimize",
+    origin: input.origin as unknown as Json,
+    destination: input.destination as unknown as Json,
+    constraints: input.constraints as unknown as Json,
+    stops: stopsPayload as unknown as Json,
+    total_distance_km: input.totalDistanceKm,
+    estimated_minutes: input.estimatedMinutes,
+    deviation_km: input.deviationKm,
+    status: input.status ?? "planned",
+    notes: input.notes ?? null,
+  };
+
+  if (input.tourId) {
+    const { data, error } = await supabase
+      .from("visit_tours")
+      .update(rowPayload)
+      .eq("id", input.tourId)
+      .select("id")
+      .single();
+
+    if (error) {
+      return { success: false, message: describeDbError(error) ?? "Aggiornamento non riuscito." };
+    }
+
+    revalidatePath("/routes");
+
+    return {
+      success: true,
+      message: "Giro visite aggiornato.",
+      tourId: data.id,
+    };
+  }
+
   const { data, error } = await supabase
     .from("visit_tours")
-    .insert({
-      user_id: user.id,
-      name: tourName,
-      tour_date: input.tourDate,
-      mode: "optimize",
-      origin: input.origin as unknown as Json,
-      destination: input.destination as unknown as Json,
-      constraints: input.constraints as unknown as Json,
-      stops: stopsPayload as unknown as Json,
-      total_distance_km: input.totalDistanceKm,
-      estimated_minutes: input.estimatedMinutes,
-      deviation_km: input.deviationKm,
-      status: input.status ?? "planned",
-      notes: input.notes ?? null,
-    })
+    .insert(rowPayload)
     .select("id")
     .single();
 

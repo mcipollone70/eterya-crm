@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { CalendarPlus, Loader2 } from "lucide-react";
 import { Button, StickyActionBar } from "@/components/ui";
@@ -18,6 +18,7 @@ export function ScheduleVisitForm({
   defaultCompanyId,
   fixedOnMobile = false,
 }: ScheduleVisitFormProps) {
+  const formRef = useRef<HTMLFormElement>(null);
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -37,7 +38,12 @@ export function ScheduleVisitForm({
     setMessage(null);
     setError(null);
 
-    const formData = new FormData(event.currentTarget);
+    const form = formRef.current;
+    if (!form) {
+      return;
+    }
+
+    const formData = new FormData(form);
     const scheduledAtRaw = String(formData.get("scheduled_at") ?? "");
 
     startTransition(async () => {
@@ -54,7 +60,7 @@ export function ScheduleVisitForm({
 
       setMessage(result.message);
       setIsOpen(false);
-      event.currentTarget.reset();
+      form.reset();
       router.refresh();
     });
   }
@@ -85,6 +91,7 @@ export function ScheduleVisitForm({
 
   const form = (
     <form
+      ref={formRef}
       onSubmit={handleSubmit}
       className="space-y-4 rounded-lg border border-slate-200 bg-slate-50 p-4"
     >
