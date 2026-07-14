@@ -53,12 +53,20 @@ export function JoyAiScreen({ data }: JoyAiScreenProps) {
               Ho analizzato visite, agenda, follow-up, opportunità, radar, giro visite e pipeline per
               proporti il piano migliore di oggi.
             </p>
-            <Link href="/joy/chat" className="mt-4 inline-block">
-              <Button size="sm" className="min-h-10 gap-2 bg-violet-600 hover:bg-violet-700">
-                <Sparkles className="h-4 w-4" />
-                Apri Joy Copilot
-              </Button>
-            </Link>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Link href="/joy/autonomous">
+                <Button size="sm" className="min-h-10 gap-2 bg-violet-600 hover:bg-violet-700">
+                  <Sparkles className="h-4 w-4" />
+                  Joy Autonomous
+                </Button>
+              </Link>
+              <Link href="/joy/chat">
+                <Button size="sm" variant="outline" className="min-h-10 gap-2">
+                  <Sparkles className="h-4 w-4" />
+                  Joy Copilot
+                </Button>
+              </Link>
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:max-w-xl">
             {[

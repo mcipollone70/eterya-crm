@@ -42,6 +42,7 @@ export const PAGE_TITLES: Record<string, string> = {
   "/assistant": "Assistente commerciale",
   "/joy": "Joy AI",
   "/joy/chat": "Joy Copilot",
+  "/joy/autonomous": "Joy Autonomous",
   "/visits": "Visite",
   "/auto": "Modalità Auto",
   "/maps": "Mappa",
