@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { Sparkles } from "lucide-react";
-import { EmptyState, PageHeader } from "@/components/ui";
+import { EmptyState, PageHeader, PageLoadingSkeleton } from "@/components/ui";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { AssistantFiltersBar } from "./components/assistant-filters-bar";
 import { CompanyVisitBriefingPanel } from "./components/company-visit-briefing-panel";
@@ -20,7 +20,7 @@ interface AssistantPageProps {
 export async function AssistantPage({ agent, briefing }: AssistantPageProps) {
   if (!isSupabaseConfigured()) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-4 sm:space-y-6">
         <PageHeader title="Assistente commerciale" subtitle="Suggerimenti visita giornalieri." />
         <EmptyState
           icon={Sparkles}
@@ -40,13 +40,13 @@ export async function AssistantPage({ agent, briefing }: AssistantPageProps) {
   ]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       <PageHeader
         title="Assistente commerciale"
-        subtitle="Oggi ti consiglio di visitare… · motore decisionale interno (senza LLM esterno)"
+        subtitle="Oggi ti consiglio di visitare…"
       />
 
-      <Suspense fallback={null}>
+      <Suspense fallback={<PageLoadingSkeleton rows={1} />}>
         <AssistantFiltersBar agents={agentsResult.data ?? []} />
       </Suspense>
 
@@ -67,22 +67,24 @@ export async function AssistantPage({ agent, briefing }: AssistantPageProps) {
         />
       )}
 
-      <div>
-        <h2 className="mb-4 text-lg font-semibold text-slate-900">
-          Oggi ti consiglio di visitare ({suggestionsResult.data.length})
-        </h2>
-        {suggestionsResult.error ? (
-          <EmptyState
-            icon={Sparkles}
-            title="Impossibile generare i suggerimenti"
-            message={suggestionsResult.error}
-          />
-        ) : (
-          <DailySuggestionsList suggestions={suggestionsResult.data} />
-        )}
-      </div>
+      {!briefing && (
+        <div>
+          <h2 className="mb-4 text-base font-semibold text-slate-900 sm:text-lg">
+            Oggi ti consiglio di visitare ({suggestionsResult.data.length})
+          </h2>
+          {suggestionsResult.error ? (
+            <EmptyState
+              icon={Sparkles}
+              title="Impossibile generare i suggerimenti"
+              message={suggestionsResult.error}
+            />
+          ) : (
+            <DailySuggestionsList suggestions={suggestionsResult.data} />
+          )}
+        </div>
+      )}
 
-      <p className="text-xs text-slate-500">
+      <p className="hidden text-xs text-slate-500 sm:block">
         Priorità calcolata su distanza, storico visite, opportunità aperte, follow-up scaduti, valore
         cliente, probabilità di chiusura e interessi prodotto.
       </p>

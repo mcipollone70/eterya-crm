@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Sidebar } from "./sidebar";
 import { Header } from "./header";
+import { MobileBottomNav } from "./mobile-bottom-nav";
 import { cn } from "@/utils/cn";
 
 interface DashboardShellProps {
@@ -32,16 +33,17 @@ export function DashboardShell({ children, userEmail }: DashboardShellProps) {
             aria-label="Chiudi menu"
           />
           <div className="relative z-50 h-full w-64">
-            <Sidebar />
+            <Sidebar onNavigate={() => setMobileOpen(false)} />
           </div>
         </div>
       )}
 
       <div className="flex flex-1 flex-col overflow-hidden">
         <Header onMenuClick={() => setMobileOpen(true)} userEmail={userEmail} />
-        <main className={cn("flex-1 overflow-y-auto p-4 lg:p-6")}>
+        <main className={cn("flex-1 overflow-y-auto p-3 pb-24 sm:p-4 sm:pb-24 lg:p-6 lg:pb-6")}>
           {children}
         </main>
+        <MobileBottomNav onMenuClick={() => setMobileOpen(true)} />
       </div>
     </div>
   );

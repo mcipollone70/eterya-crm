@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Bell, CalendarPlus, Loader2, Mic, Save } from "lucide-react";
-import { Button } from "@/components/ui";
+import { Button, StickyActionBar } from "@/components/ui";
 import { saveFollowUpAction } from "@/features/activities/actions/follow-up-actions";
 import { agendaSaveReminderAction } from "@/features/agenda/actions/agenda-actions";
 import { saveVisitAction } from "@/features/visits/actions/visit-mutations";
@@ -50,6 +50,7 @@ export function VoiceOperationalHub({
   const [priority, setPriority] = useState<ActivityPriority>("medium");
   const [message, setMessage] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [awaitingConfirm, setAwaitingConfirm] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   const appendTranscript = useCallback((chunk: string) => {
@@ -83,6 +84,7 @@ export function VoiceOperationalHub({
     setMessage(null);
     setSubmitError(null);
     setReminderTitle("");
+    setAwaitingConfirm(false);
   }
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -105,10 +107,8 @@ export function VoiceOperationalHub({
       return;
     }
 
-    const confirmed = window.confirm(
-      "Confermi il salvataggio? Il testo trascritto verrà registrato solo dopo la conferma."
-    );
-    if (!confirmed) {
+    if (!awaitingConfirm) {
+      setAwaitingConfirm(true);
       return;
     }
 
@@ -154,8 +154,10 @@ export function VoiceOperationalHub({
     });
   }
 
+  const selectedCompany = companies.find((company) => company.id === companyId);
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 pb-24 sm:space-y-6 sm:pb-0">
       <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <p className="mb-3 text-sm font-medium text-slate-900">Tipo operazione</p>
         <div className="flex flex-wrap gap-2">
@@ -164,7 +166,7 @@ export function VoiceOperationalHub({
               key={option.value}
               type="button"
               onClick={() => setIntent(option.value)}
-              className={`inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-sm font-medium ${
+              className={`inline-flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 text-sm font-medium sm:flex-none sm:h-9 ${
                 intent === option.value
                   ? option.value === "visit_note"
                     ? "border-violet-200 bg-violet-50 text-violet-700"
@@ -183,7 +185,13 @@ export function VoiceOperationalHub({
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <form id="voice-operational-form" onSubmit={handleSubmit} className="space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+        {selectedCompany && (
+          <div className="rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2 text-sm text-indigo-800">
+            Azienda: <span className="font-medium">{selectedCompany.name}</span>
+          </div>
+        )}
+
         <label className="block text-sm">
           <span className="mb-1 block font-medium text-slate-700">
             Azienda {intent === "reminder" ? "(opzionale)" : ""}
@@ -192,7 +200,7 @@ export function VoiceOperationalHub({
             value={companyId}
             onChange={(event) => setCompanyId(event.target.value)}
             required={intent !== "reminder"}
-            className="w-full rounded-lg border border-slate-200 px-3 py-2"
+            className="field-input w-full rounded-lg border border-slate-200 px-3"
           >
             <option value="">
               {intent === "reminder" ? "Nessuna azienda" : "Seleziona azienda"}
@@ -212,12 +220,13 @@ export function VoiceOperationalHub({
             {isSupported ? (
               <Button
                 type="button"
-                size="sm"
+                size="lg"
                 variant={isListening ? "danger" : "outline"}
+                className="w-full sm:w-auto sm:h-8 sm:px-3 sm:text-xs"
                 onClick={toggleListening}
               >
-                <Mic className="h-4 w-4" />
-                {isListening ? "Ferma" : "Inizia dettatura"}
+                <Mic className="h-5 w-5 sm:h-4 sm:w-4" />
+                {isListening ? "Ferma dettatura" : "Inizia dettatura"}
               </Button>
             ) : (
               <p className="text-xs text-slate-500">
@@ -238,10 +247,10 @@ export function VoiceOperationalHub({
             <textarea
               value={transcript}
               onChange={(event) => setTranscript(event.target.value)}
-              rows={5}
+              rows={6}
               required
               placeholder="Il testo apparirà qui dopo la dettatura. Puoi modificarlo prima di salvare."
-              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2"
+              className="field-input w-full rounded-lg border border-slate-200 bg-white px-3"
             />
           </label>
         </div>
@@ -328,21 +337,73 @@ export function VoiceOperationalHub({
 
         {message && <p className="text-sm text-emerald-700">{message}</p>}
 
-        <div className="flex flex-wrap gap-2">
+        {awaitingConfirm && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            <p className="font-medium">Confermi il salvataggio?</p>
+            <p className="mt-1 text-amber-800">
+              Il testo trascritto verrà registrato solo dopo la conferma.
+            </p>
+          </div>
+        )}
+
+        <div className="hidden flex-wrap gap-2 sm:flex">
           <Button type="submit" size="sm" disabled={isPending || !transcript.trim()}>
             {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            Conferma e salva
+            {awaitingConfirm ? "Conferma salvataggio" : "Conferma e salva"}
           </Button>
+          {awaitingConfirm && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={isPending}
+              onClick={() => setAwaitingConfirm(false)}
+            >
+              Indietro
+            </Button>
+          )}
           <Button type="button" size="sm" variant="outline" disabled={isPending} onClick={handleReset}>
             Annulla testo
           </Button>
         </div>
 
-        <p className="text-xs text-slate-500">
+        <p className="hidden text-xs text-slate-500 sm:block">
           Nessun salvataggio automatico: rivedi sempre il testo trascritto e conferma con il pulsante
           Salva.
         </p>
       </form>
+
+      {transcript.trim() && (
+        <StickyActionBar className="sm:hidden">
+          <div className="flex gap-2">
+            <Button
+              type="submit"
+              form="voice-operational-form"
+              size="lg"
+              className="flex-1"
+              disabled={isPending}
+            >
+              {isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4" />
+              )}
+              {awaitingConfirm ? "Conferma" : "Salva"}
+            </Button>
+            {awaitingConfirm ? (
+              <Button
+                type="button"
+                size="lg"
+                variant="outline"
+                disabled={isPending}
+                onClick={() => setAwaitingConfirm(false)}
+              >
+                Indietro
+              </Button>
+            ) : null}
+          </div>
+        </StickyActionBar>
+      )}
     </div>
   );
 }

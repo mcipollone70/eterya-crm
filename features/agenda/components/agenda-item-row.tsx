@@ -9,6 +9,7 @@ import {
   Check,
   Loader2,
   MapPin,
+  MoreHorizontal,
   Pencil,
   Target,
   User,
@@ -44,6 +45,7 @@ function toDateTimeLocal(value: string): string {
 export function AgendaItemRow({ item, compact = false }: AgendaItemRowProps) {
   const router = useRouter();
   const [isEditing, setIsEditing] = useState(false);
+  const [showMoreActions, setShowMoreActions] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const parsed = parseAgendaItemId(item.id);
@@ -143,47 +145,77 @@ export function AgendaItemRow({ item, compact = false }: AgendaItemRowProps) {
         </div>
 
         {!compact && item.canComplete && !isEditing && (
-          <div className="flex flex-wrap gap-1">
-            {item.kind === "visit" && item.companyId ? (
-              <CompleteVisitForm
-                visitId={sourceId}
-                companyId={item.companyId}
-                defaultNotes={item.notes}
-                compact
-              />
-            ) : (
-              <Button type="button" size="sm" disabled={isPending} onClick={handleQuickComplete}>
-                {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                Completa
+          <div className="flex w-full flex-col gap-2 sm:w-auto">
+            <div className="flex flex-wrap gap-1">
+              {item.kind === "visit" && item.companyId ? (
+                <CompleteVisitForm
+                  visitId={sourceId}
+                  companyId={item.companyId}
+                  defaultNotes={item.notes}
+                  compact
+                />
+              ) : (
+                <Button
+                  type="button"
+                  size="lg"
+                  className="w-full sm:w-auto sm:h-8 sm:px-3 sm:text-xs"
+                  disabled={isPending}
+                  onClick={handleQuickComplete}
+                >
+                  {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                  Completa
+                </Button>
+              )}
+              <Button
+                type="button"
+                size="lg"
+                variant="outline"
+                className="hidden sm:inline-flex sm:h-8 sm:px-3 sm:text-xs"
+                onClick={() => setShowMoreActions((prev) => !prev)}
+              >
+                <MoreHorizontal className="h-4 w-4" />
               </Button>
-            )}
-            {item.canEdit && (
-              <Button type="button" size="sm" variant="outline" onClick={() => setIsEditing(true)}>
-                <Pencil className="h-4 w-4" />
-                Modifica
+              <Button
+                type="button"
+                size="lg"
+                variant="outline"
+                className="w-full sm:hidden"
+                onClick={() => setShowMoreActions((prev) => !prev)}
+              >
+                <MoreHorizontal className="h-4 w-4" />
+                Altre azioni
               </Button>
-            )}
-            {item.kind === "follow_up" && item.companyId && (
-              <Button type="button" size="sm" variant="outline" disabled={isPending} onClick={handlePostpone}>
-                <CalendarClock className="h-4 w-4" />
-                Rimanda
-              </Button>
-            )}
-            {item.canEdit && (
-              <Button type="button" size="sm" variant="outline" disabled={isPending} onClick={handleCancel}>
-                <X className="h-4 w-4" />
-              </Button>
-            )}
+            </div>
+            <div className={`flex flex-wrap gap-1 ${showMoreActions ? "flex" : "hidden sm:flex"}`}>
+                {item.canEdit && (
+                  <Button type="button" size="sm" variant="outline" onClick={() => setIsEditing(true)}>
+                    <Pencil className="h-4 w-4" />
+                    Modifica
+                  </Button>
+                )}
+                {item.kind === "follow_up" && item.companyId && (
+                  <Button type="button" size="sm" variant="outline" disabled={isPending} onClick={handlePostpone}>
+                    <CalendarClock className="h-4 w-4" />
+                    Rimanda
+                  </Button>
+                )}
+                {item.canEdit && (
+                  <Button type="button" size="sm" variant="outline" disabled={isPending} onClick={handleCancel}>
+                    <X className="h-4 w-4" />
+                    Annulla
+                  </Button>
+                )}
+              </div>
           </div>
         )}
       </div>
 
       {!compact && (
-        <div className="mt-2 flex flex-wrap gap-2">
+        <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
           {item.companyId && (
             <Link
               href={`/companies/${item.companyId}`}
-              className="inline-flex items-center gap-1 rounded-md border border-white/60 bg-white/70 px-2 py-1 text-xs font-medium hover:bg-white"
+              className="inline-flex shrink-0 items-center gap-1 rounded-md border border-white/60 bg-white/70 px-2.5 py-2 text-xs font-medium hover:bg-white"
             >
               <Building2 className="h-3 w-3" />
               Azienda
@@ -192,7 +224,7 @@ export function AgendaItemRow({ item, compact = false }: AgendaItemRowProps) {
           {item.contactId && (
             <Link
               href={`/contacts/${item.contactId}`}
-              className="inline-flex items-center gap-1 rounded-md border border-white/60 bg-white/70 px-2 py-1 text-xs font-medium hover:bg-white"
+              className="inline-flex shrink-0 items-center gap-1 rounded-md border border-white/60 bg-white/70 px-2.5 py-2 text-xs font-medium hover:bg-white"
             >
               <User className="h-3 w-3" />
               Contatto
@@ -201,7 +233,7 @@ export function AgendaItemRow({ item, compact = false }: AgendaItemRowProps) {
           {item.kind === "visit" && item.companyId && (
             <Link
               href={`/visits?company=${item.companyId}`}
-              className="inline-flex items-center gap-1 rounded-md border border-white/60 bg-white/70 px-2 py-1 text-xs font-medium hover:bg-white"
+              className="inline-flex shrink-0 items-center gap-1 rounded-md border border-white/60 bg-white/70 px-2.5 py-2 text-xs font-medium hover:bg-white"
             >
               <MapPin className="h-3 w-3" />
               Visita
@@ -210,7 +242,7 @@ export function AgendaItemRow({ item, compact = false }: AgendaItemRowProps) {
           {item.companyId && (
             <Link
               href={companyRegisterVisitHref(item.companyId)}
-              className="inline-flex items-center gap-1 rounded-md border border-white/60 bg-white/70 px-2 py-1 text-xs font-medium hover:bg-white"
+              className="inline-flex shrink-0 items-center gap-1 rounded-md border border-white/60 bg-white/70 px-2.5 py-2 text-xs font-medium hover:bg-white"
             >
               <MapPin className="h-3 w-3" />
               Registra
@@ -219,7 +251,7 @@ export function AgendaItemRow({ item, compact = false }: AgendaItemRowProps) {
           {item.opportunityId && (
             <Link
               href="/opportunities"
-              className="inline-flex items-center gap-1 rounded-md border border-white/60 bg-white/70 px-2 py-1 text-xs font-medium hover:bg-white"
+              className="inline-flex shrink-0 items-center gap-1 rounded-md border border-white/60 bg-white/70 px-2.5 py-2 text-xs font-medium hover:bg-white"
             >
               <Target className="h-3 w-3" />
               {item.opportunityTitle ?? "Opportunità"}

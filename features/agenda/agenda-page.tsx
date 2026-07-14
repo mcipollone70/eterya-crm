@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import { CalendarDays } from "lucide-react";
-import { EmptyState, PageHeader } from "@/components/ui";
+import { EmptyState, PageHeader, PageLoadingSkeleton } from "@/components/ui";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { parseAgendaFilters } from "@/lib/constants/agenda";
 import { AgendaCreatePanel } from "./components/agenda-create-panel";
@@ -32,7 +32,7 @@ export async function AgendaPage({
 
   if (!isSupabaseConfigured()) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-4 sm:space-y-6">
         <PageHeader title="Agenda" subtitle="Calendario operativo unificato." />
         <EmptyState
           icon={CalendarDays}
@@ -53,22 +53,26 @@ export async function AgendaPage({
   const companies = companiesResult.data ?? [];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       <PageHeader
         title="Agenda"
         subtitle={`${itemsResult.data.length.toLocaleString("it-IT")} appuntamenti · visite, follow-up e promemoria`}
-        actions={<AgendaCreatePanel companies={companies} />}
+        actions={
+          <div className="hidden lg:block">
+            <AgendaCreatePanel companies={companies} />
+          </div>
+        }
       />
 
-      <Suspense fallback={null}>
+      <Suspense fallback={<PageLoadingSkeleton rows={2} />}>
         <AgendaViewTabs referenceDate={filters.date} rangeLabel={itemsResult.rangeLabel} />
       </Suspense>
 
-      <Suspense fallback={null}>
+      <Suspense fallback={<PageLoadingSkeleton rows={1} />}>
         <AgendaFiltersBar agents={agents} />
       </Suspense>
 
-      <div className="flex flex-wrap gap-3 text-xs text-slate-600">
+      <div className="hidden flex-wrap gap-3 text-xs text-slate-600 sm:flex">
         <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 px-2 py-1 text-violet-800">
           Visite
         </span>
@@ -89,6 +93,8 @@ export async function AgendaPage({
       ) : (
         <AgendaDayView items={itemsResult.data} referenceDate={filters.date} />
       )}
+
+      <AgendaCreatePanel companies={companies} fixedOnMobile />
     </div>
   );
 }

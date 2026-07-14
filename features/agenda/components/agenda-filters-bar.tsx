@@ -3,6 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTransition } from "react";
 import { Filter, Loader2 } from "lucide-react";
+import { FilterToggle } from "@/components/ui";
 import {
   AGENDA_KIND_OPTIONS,
   AGENDA_STATUS_OPTIONS,
@@ -12,10 +13,19 @@ interface AgendaFiltersBarProps {
   agents: Array<{ id: string; label: string }>;
 }
 
+function countActiveFilters(searchParams: URLSearchParams): number {
+  let count = 0;
+  if (searchParams.get("agent")) count += 1;
+  if (searchParams.get("kind")) count += 1;
+  if (searchParams.get("status")) count += 1;
+  return count;
+}
+
 export function AgendaFiltersBar({ agents }: AgendaFiltersBarProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
+  const activeCount = countActiveFilters(searchParams);
 
   function updateParam(key: string, value: string) {
     const params = new URLSearchParams(searchParams.toString());
@@ -29,9 +39,9 @@ export function AgendaFiltersBar({ agents }: AgendaFiltersBarProps) {
     });
   }
 
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="mb-3 flex items-center gap-2 text-sm font-medium text-slate-900">
+  const filters = (
+    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm md:border-0 md:p-0 md:shadow-none">
+      <div className="mb-3 hidden items-center gap-2 text-sm font-medium text-slate-900 md:flex">
         {isPending ? (
           <Loader2 className="h-4 w-4 animate-spin text-indigo-600" />
         ) : (
@@ -46,7 +56,7 @@ export function AgendaFiltersBar({ agents }: AgendaFiltersBarProps) {
           <select
             value={searchParams.get("agent") ?? ""}
             onChange={(event) => updateParam("agent", event.target.value)}
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+            className="field-input w-full rounded-lg border border-slate-200 px-3"
           >
             <option value="">Tutti gli agenti</option>
             {agents.map((agent) => (
@@ -62,7 +72,7 @@ export function AgendaFiltersBar({ agents }: AgendaFiltersBarProps) {
           <select
             value={searchParams.get("kind") ?? ""}
             onChange={(event) => updateParam("kind", event.target.value)}
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+            className="field-input w-full rounded-lg border border-slate-200 px-3"
           >
             {AGENDA_KIND_OPTIONS.map((option) => (
               <option key={option.value || "all"} value={option.value}>
@@ -77,7 +87,7 @@ export function AgendaFiltersBar({ agents }: AgendaFiltersBarProps) {
           <select
             value={searchParams.get("status") ?? ""}
             onChange={(event) => updateParam("status", event.target.value)}
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+            className="field-input w-full rounded-lg border border-slate-200 px-3"
           >
             {AGENDA_STATUS_OPTIONS.map((option) => (
               <option key={option.value || "all"} value={option.value}>
@@ -88,5 +98,11 @@ export function AgendaFiltersBar({ agents }: AgendaFiltersBarProps) {
         </label>
       </div>
     </div>
+  );
+
+  return (
+    <FilterToggle activeCount={activeCount}>
+      {filters}
+    </FilterToggle>
   );
 }

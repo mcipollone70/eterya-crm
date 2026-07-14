@@ -1,14 +1,16 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
-import { Building2, CalendarPlus, FileText, MapPin, Route, Target } from "lucide-react";
-import { Badge, Card, CardContent, CardHeader, CardTitle } from "@/components/ui";
+import { Building2, CalendarPlus, ChevronDown, FileText, MapPin, Route, Target } from "lucide-react";
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle } from "@/components/ui";
 import { PriorityBadge } from "@/features/companies/components/priority-badge";
 import { companyRegisterVisitHref } from "@/lib/constants/visit-workflow";
 import { COMMERCIAL_STATUS_LABELS } from "@/lib/constants/commercial-status";
 import type { CommercialStatus } from "@/lib/supabase/types";
 import { formatDistanceKm } from "@/features/maps/utils/geo-distance";
 import type { DailyVisitSuggestion } from "@/lib/commercial-assistant/types";
+import { cn } from "@/utils/cn";
 
 interface SuggestionCardProps {
   suggestion: DailyVisitSuggestion;
@@ -16,6 +18,7 @@ interface SuggestionCardProps {
 }
 
 export function SuggestionCard({ suggestion, rank }: SuggestionCardProps) {
+  const [showMore, setShowMore] = useState(false);
   const location = [suggestion.city, suggestion.province].filter(Boolean).join(" · ");
   const statusLabel =
     COMMERCIAL_STATUS_LABELS[suggestion.commercialStatus as CommercialStatus] ??
@@ -42,9 +45,7 @@ export function SuggestionCard({ suggestion, rank }: SuggestionCardProps) {
       </CardHeader>
       <CardContent className="space-y-4 pt-0">
         <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-            Perché oggi
-          </p>
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Perché oggi</p>
           <p className="mt-1 text-sm text-slate-800">{suggestion.reasons.join(" · ")}</p>
         </div>
 
@@ -61,38 +62,49 @@ export function SuggestionCard({ suggestion, rank }: SuggestionCardProps) {
           {suggestion.signals.hasOverdueFollowUp && <span>Follow-up scaduto</span>}
         </div>
 
-        <div className="flex flex-wrap gap-2">
-          <Link
-            href={`/assistant?briefing=${suggestion.companyId}`}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-indigo-600 px-3 text-xs font-medium text-white hover:bg-indigo-700"
-          >
-            <FileText className="h-4 w-4" />
-            Briefing visita
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+          <Link href={`/assistant?briefing=${suggestion.companyId}`} className="block sm:inline-block">
+            <Button size="lg" className="w-full sm:w-auto sm:h-8 sm:px-3 sm:text-xs">
+              <FileText className="h-4 w-4" />
+              Briefing visita
+            </Button>
           </Link>
-          <Link
-            href={`/visits?company=${suggestion.companyId}`}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 hover:bg-slate-50"
-          >
-            <CalendarPlus className="h-4 w-4" />
-            Pianifica
+          <Link href={`/visits?company=${suggestion.companyId}`} className="block sm:inline-block">
+            <Button size="lg" variant="outline" className="w-full sm:w-auto sm:h-8 sm:px-3 sm:text-xs">
+              <CalendarPlus className="h-4 w-4" />
+              Pianifica
+            </Button>
           </Link>
+          <Button
+            type="button"
+            size="lg"
+            variant="outline"
+            className="w-full sm:hidden"
+            onClick={() => setShowMore((prev) => !prev)}
+          >
+            <ChevronDown className={cn("h-4 w-4", showMore && "rotate-180")} />
+            Altre azioni
+          </Button>
+        </div>
+
+        <div className={cn("flex flex-wrap gap-2", showMore ? "flex" : "hidden sm:flex")}>
           <Link
             href={companyRegisterVisitHref(suggestion.companyId)}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 hover:bg-slate-50"
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 sm:h-8 sm:text-xs"
           >
             <MapPin className="h-4 w-4" />
             Registra
           </Link>
           <Link
             href={`/companies/${suggestion.companyId}`}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 hover:bg-slate-50"
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 sm:h-8 sm:text-xs"
           >
             <Building2 className="h-4 w-4" />
             Scheda
           </Link>
           <Link
             href="/routes"
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 hover:bg-slate-50"
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 sm:h-8 sm:text-xs"
           >
             <Route className="h-4 w-4" />
             Giro
@@ -100,7 +112,7 @@ export function SuggestionCard({ suggestion, rank }: SuggestionCardProps) {
           {suggestion.signals.openOpportunityCount > 0 && (
             <Link
               href="/opportunities"
-              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 hover:bg-slate-50"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 sm:h-8 sm:text-xs"
             >
               <Target className="h-4 w-4" />
               Opportunità

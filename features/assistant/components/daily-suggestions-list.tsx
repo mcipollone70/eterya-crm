@@ -1,3 +1,6 @@
+import Link from "next/link";
+import { Sparkles } from "lucide-react";
+import { Button, ListEmptyState } from "@/components/ui";
 import type { DailyVisitSuggestion } from "@/lib/commercial-assistant/types";
 import { SuggestionCard } from "./suggestion-card";
 
@@ -8,10 +11,18 @@ interface DailySuggestionsListProps {
 export function DailySuggestionsList({ suggestions }: DailySuggestionsListProps) {
   if (suggestions.length === 0) {
     return (
-      <p className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">
-        Nessun suggerimento per oggi con i filtri attuali. Prova a cambiare agente o verifica che le
-        aziende siano geocodificate.
-      </p>
+      <ListEmptyState
+        icon={Sparkles}
+        title="Nessun suggerimento per oggi"
+        message="Prova a cambiare agente o verifica che le aziende siano geocodificate."
+        action={
+          <Link href="/maps">
+            <Button size="lg" variant="outline">
+              Apri mappa
+            </Button>
+          </Link>
+        }
+      />
     );
   }
 

@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Bell, CalendarPlus, Loader2, Plus } from "lucide-react";
-import { Button } from "@/components/ui";
+import { Button, StickyActionBar } from "@/components/ui";
 import { CONTACT_HISTORY_TYPE_OPTIONS } from "@/lib/constants/contact-history";
 import { FOLLOW_UP_PRIORITY_OPTIONS } from "@/lib/constants/follow-up";
 import type { ActivityPriority } from "@/lib/supabase/types";
@@ -15,6 +15,7 @@ import {
 
 interface AgendaCreatePanelProps {
   companies: Array<{ id: string; name: string }>;
+  fixedOnMobile?: boolean;
 }
 
 type CreateKind = "visit" | "follow_up" | "reminder";
@@ -25,7 +26,7 @@ function defaultDateTimeLocal(): string {
   return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 }
 
-export function AgendaCreatePanel({ companies }: AgendaCreatePanelProps) {
+export function AgendaCreatePanel({ companies, fixedOnMobile = false }: AgendaCreatePanelProps) {
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [kind, setKind] = useState<CreateKind>("visit");
@@ -80,57 +81,62 @@ export function AgendaCreatePanel({ companies }: AgendaCreatePanelProps) {
     });
   }
 
+  const openButton = (
+    <Button
+      type="button"
+      size={fixedOnMobile ? "lg" : "sm"}
+      className={fixedOnMobile ? "w-full shadow-md lg:w-auto lg:shadow-none" : undefined}
+      onClick={() => setIsOpen(true)}
+    >
+      <Plus className="h-4 w-4" />
+      Nuovo appuntamento
+    </Button>
+  );
+
   if (!isOpen) {
-    return (
-      <Button type="button" size="sm" onClick={() => setIsOpen(true)}>
-        <Plus className="h-4 w-4" />
-        Nuovo appuntamento
-      </Button>
-    );
+    if (fixedOnMobile) {
+      return (
+        <>
+          <div className="hidden lg:block">{openButton}</div>
+          <StickyActionBar className="lg:hidden">
+            {openButton}
+          </StickyActionBar>
+        </>
+      );
+    }
+    return openButton;
   }
 
-  return (
+  const form = (
     <form
       onSubmit={handleSubmit}
-      className="space-y-4 rounded-lg border border-slate-200 bg-slate-50 p-4"
+      className="space-y-4 rounded-lg border border-slate-200 bg-slate-50 p-4 lg:max-w-xl"
     >
       <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={() => setKind("visit")}
-          className={`inline-flex h-8 items-center gap-1 rounded-lg border px-3 text-xs font-medium ${
-            kind === "visit"
-              ? "border-violet-200 bg-violet-50 text-violet-700"
-              : "border-slate-200 bg-white text-slate-700"
-          }`}
-        >
-          <CalendarPlus className="h-3.5 w-3.5" />
-          Visita
-        </button>
-        <button
-          type="button"
-          onClick={() => setKind("follow_up")}
-          className={`inline-flex h-8 items-center gap-1 rounded-lg border px-3 text-xs font-medium ${
-            kind === "follow_up"
-              ? "border-indigo-200 bg-indigo-50 text-indigo-700"
-              : "border-slate-200 bg-white text-slate-700"
-          }`}
-        >
-          <Plus className="h-3.5 w-3.5" />
-          Follow-up
-        </button>
-        <button
-          type="button"
-          onClick={() => setKind("reminder")}
-          className={`inline-flex h-8 items-center gap-1 rounded-lg border px-3 text-xs font-medium ${
-            kind === "reminder"
-              ? "border-amber-200 bg-amber-50 text-amber-700"
-              : "border-slate-200 bg-white text-slate-700"
-          }`}
-        >
-          <Bell className="h-3.5 w-3.5" />
-          Promemoria
-        </button>
+        {(
+          [
+            { value: "visit" as const, label: "Visita", icon: CalendarPlus, active: "border-violet-200 bg-violet-50 text-violet-700" },
+            { value: "follow_up" as const, label: "Follow-up", icon: Plus, active: "border-indigo-200 bg-indigo-50 text-indigo-700" },
+            { value: "reminder" as const, label: "Promemoria", icon: Bell, active: "border-amber-200 bg-amber-50 text-amber-700" },
+          ] as const
+        ).map((option) => {
+          const Icon = option.icon;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => setKind(option.value)}
+              className={`inline-flex min-h-11 items-center gap-1 rounded-lg border px-3 text-sm font-medium ${
+                kind === option.value
+                  ? option.active
+                  : "border-slate-200 bg-white text-slate-700"
+              }`}
+            >
+              <Icon className="h-4 w-4" />
+              {option.label}
+            </button>
+          );
+        })}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
@@ -142,7 +148,7 @@ export function AgendaCreatePanel({ companies }: AgendaCreatePanelProps) {
               name="title"
               required
               placeholder="Es. Preparare offerta..."
-              className="w-full rounded-lg border border-slate-200 px-3 py-2"
+              className="field-input w-full rounded-lg border border-slate-200 px-3"
             />
           </label>
         )}
@@ -154,7 +160,7 @@ export function AgendaCreatePanel({ companies }: AgendaCreatePanelProps) {
           <select
             name="company_id"
             required={kind !== "reminder"}
-            className="w-full rounded-lg border border-slate-200 px-3 py-2"
+            className="field-input w-full rounded-lg border border-slate-200 px-3"
           >
             <option value="">{kind === "reminder" ? "Nessuna azienda" : "Seleziona azienda"}</option>
             {companies.map((company) => (
@@ -172,7 +178,7 @@ export function AgendaCreatePanel({ companies }: AgendaCreatePanelProps) {
               <select
                 name="activity_type"
                 defaultValue="call"
-                className="w-full rounded-lg border border-slate-200 px-3 py-2"
+                className="field-input w-full rounded-lg border border-slate-200 px-3"
               >
                 {CONTACT_HISTORY_TYPE_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -186,7 +192,7 @@ export function AgendaCreatePanel({ companies }: AgendaCreatePanelProps) {
               <select
                 name="priority"
                 defaultValue="medium"
-                className="w-full rounded-lg border border-slate-200 px-3 py-2"
+                className="field-input w-full rounded-lg border border-slate-200 px-3"
               >
                 {FOLLOW_UP_PRIORITY_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -205,7 +211,7 @@ export function AgendaCreatePanel({ companies }: AgendaCreatePanelProps) {
             name="scheduled_at"
             defaultValue={defaultDateTimeLocal()}
             required
-            className="w-full rounded-lg border border-slate-200 px-3 py-2"
+            className="field-input w-full rounded-lg border border-slate-200 px-3"
           />
         </label>
 
@@ -215,7 +221,7 @@ export function AgendaCreatePanel({ companies }: AgendaCreatePanelProps) {
             type="text"
             name="notes"
             placeholder="Dettagli..."
-            className="w-full rounded-lg border border-slate-200 px-3 py-2"
+            className="field-input w-full rounded-lg border border-slate-200 px-3"
           />
         </label>
       </div>
@@ -224,14 +230,37 @@ export function AgendaCreatePanel({ companies }: AgendaCreatePanelProps) {
       {message && <p className="text-sm text-emerald-700">{message}</p>}
 
       <div className="flex flex-wrap gap-2">
-        <Button type="submit" size="sm" disabled={isPending}>
+        <Button type="submit" size="lg" className="flex-1 sm:flex-none sm:h-8 sm:px-3 sm:text-xs" disabled={isPending}>
           {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
           Salva
         </Button>
-        <Button type="button" size="sm" variant="outline" disabled={isPending} onClick={() => setIsOpen(false)}>
+        <Button
+          type="button"
+          size="lg"
+          variant="outline"
+          className="flex-1 sm:flex-none sm:h-8 sm:px-3 sm:text-xs"
+          disabled={isPending}
+          onClick={() => setIsOpen(false)}
+        >
           Annulla
         </Button>
       </div>
     </form>
   );
+
+  if (fixedOnMobile) {
+    return (
+      <div className="fixed inset-0 z-50 flex flex-col bg-white lg:static lg:z-auto lg:bg-transparent">
+        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 lg:hidden">
+          <p className="font-semibold text-slate-900">Nuovo appuntamento</p>
+          <Button type="button" size="sm" variant="ghost" onClick={() => setIsOpen(false)}>
+            Chiudi
+          </Button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 pb-24">{form}</div>
+      </div>
+    );
+  }
+
+  return form;
 }

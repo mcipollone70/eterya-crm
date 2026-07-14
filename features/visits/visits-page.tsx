@@ -1,13 +1,14 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { MapPin } from "lucide-react";
-import { Card, CardContent, EmptyState, PageHeader } from "@/components/ui";
+import { EmptyState, PageHeader, PageLoadingSkeleton } from "@/components/ui";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { isVisitPeriod, VISIT_PERIOD_OPTIONS } from "@/lib/constants/visit-workflow";
 import { VisitPeriodTabs } from "./components/visit-period-tabs";
 import { VisitFieldLinks } from "./components/visit-field-links";
 import { ScheduleVisitForm } from "./components/schedule-visit-form";
 import { VisitsList } from "./components/visits-list";
+import { VisitsMetricsBar } from "./components/visits-metrics-bar";
 import {
   getVisitDashboardMetrics,
   listVisitCompanyOptions,
@@ -28,7 +29,7 @@ export async function VisitsPage({ period, company }: VisitsPageProps) {
 
   if (!isSupabaseConfigured()) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-4 sm:space-y-6">
         <PageHeader title="Visite" subtitle="Agenda operativa sul campo." />
         <EmptyState
           icon={MapPin}
@@ -55,7 +56,7 @@ export async function VisitsPage({ period, company }: VisitsPageProps) {
     : null;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       <PageHeader
         title="Visite"
         subtitle={
@@ -67,51 +68,21 @@ export async function VisitsPage({ period, company }: VisitsPageProps) {
       />
 
       {metrics && (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Card>
-            <CardContent className="py-4">
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                Completate oggi
-              </p>
-              <p className="mt-1 text-2xl font-bold text-slate-900">{metrics.visitsToday}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="py-4">
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                Settimana
-              </p>
-              <p className="mt-1 text-2xl font-bold text-slate-900">{metrics.visitsThisWeek}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="py-4">
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                Mai visitate
-              </p>
-              <p className="mt-1 text-2xl font-bold text-slate-900">
-                {metrics.neverVisitedCompanies}
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="py-4">
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                Clienti &gt; 90 gg
-              </p>
-              <p className="mt-1 text-2xl font-bold text-slate-900">
-                {metrics.clientsWithoutVisit90Days}
-              </p>
-            </CardContent>
-          </Card>
-        </div>
+        <VisitsMetricsBar
+          visitsToday={metrics.visitsToday}
+          visitsThisWeek={metrics.visitsThisWeek}
+          neverVisitedCompanies={metrics.neverVisitedCompanies}
+          clientsWithoutVisit90Days={metrics.clientsWithoutVisit90Days}
+        />
       )}
 
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <Suspense fallback={null}>
+      <div className="flex flex-col gap-4">
+        <Suspense fallback={<PageLoadingSkeleton rows={1} />}>
           <VisitPeriodTabs />
         </Suspense>
-        <ScheduleVisitForm companies={companies} defaultCompanyId={company} />
+        <div className="hidden lg:block">
+          <ScheduleVisitForm companies={companies} defaultCompanyId={company} />
+        </div>
       </div>
 
       {company && filteredCompany && (
@@ -135,6 +106,8 @@ export async function VisitsPage({ period, company }: VisitsPageProps) {
           }
         />
       )}
+
+      <ScheduleVisitForm companies={companies} defaultCompanyId={company} fixedOnMobile />
     </div>
   );
 }

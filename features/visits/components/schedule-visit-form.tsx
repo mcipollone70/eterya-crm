@@ -3,16 +3,21 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { CalendarPlus, Loader2 } from "lucide-react";
-import { Button } from "@/components/ui";
+import { Button, StickyActionBar } from "@/components/ui";
 import { scheduleVisitAction } from "../actions/visit-mutations";
 import type { VisitCompanyOption } from "../services/visits.service";
 
 interface ScheduleVisitFormProps {
   companies: VisitCompanyOption[];
   defaultCompanyId?: string;
+  fixedOnMobile?: boolean;
 }
 
-export function ScheduleVisitForm({ companies, defaultCompanyId }: ScheduleVisitFormProps) {
+export function ScheduleVisitForm({
+  companies,
+  defaultCompanyId,
+  fixedOnMobile = false,
+}: ScheduleVisitFormProps) {
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -54,16 +59,31 @@ export function ScheduleVisitForm({ companies, defaultCompanyId }: ScheduleVisit
     });
   }
 
+  const openButton = (
+    <Button
+      type="button"
+      size={fixedOnMobile ? "lg" : "sm"}
+      className={fixedOnMobile ? "w-full shadow-md lg:w-auto lg:shadow-none" : undefined}
+      onClick={() => setIsOpen(true)}
+    >
+      <CalendarPlus className="h-4 w-4" />
+      Pianifica visita
+    </Button>
+  );
+
   if (!isOpen) {
-    return (
-      <Button type="button" size="sm" onClick={() => setIsOpen(true)}>
-        <CalendarPlus className="h-4 w-4" />
-        Pianifica visita
-      </Button>
-    );
+    if (fixedOnMobile) {
+      return (
+        <>
+          <div className="hidden lg:block">{openButton}</div>
+          <StickyActionBar className="lg:hidden">{openButton}</StickyActionBar>
+        </>
+      );
+    }
+    return openButton;
   }
 
-  return (
+  const form = (
     <form
       onSubmit={handleSubmit}
       className="space-y-4 rounded-lg border border-slate-200 bg-slate-50 p-4"
@@ -75,7 +95,7 @@ export function ScheduleVisitForm({ companies, defaultCompanyId }: ScheduleVisit
             name="company_id"
             required
             defaultValue={defaultCompanyId ?? ""}
-            className="w-full rounded-lg border border-slate-200 px-3 py-2"
+            className="field-input w-full rounded-lg border border-slate-200 px-3"
           >
             <option value="">Seleziona azienda</option>
             {companies.map((company) => (
@@ -94,7 +114,7 @@ export function ScheduleVisitForm({ companies, defaultCompanyId }: ScheduleVisit
             name="scheduled_at"
             defaultValue={defaultDateTime}
             required
-            className="w-full rounded-lg border border-slate-200 px-3 py-2"
+            className="field-input w-full rounded-lg border border-slate-200 px-3"
           />
         </label>
 
@@ -104,7 +124,7 @@ export function ScheduleVisitForm({ companies, defaultCompanyId }: ScheduleVisit
             type="text"
             name="notes"
             placeholder="Obiettivo della visita..."
-            className="w-full rounded-lg border border-slate-200 px-3 py-2"
+            className="field-input w-full rounded-lg border border-slate-200 px-3"
           />
         </label>
       </div>
@@ -113,14 +133,15 @@ export function ScheduleVisitForm({ companies, defaultCompanyId }: ScheduleVisit
       {message && <p className="text-sm text-emerald-700">{message}</p>}
 
       <div className="flex flex-wrap gap-2">
-        <Button type="submit" size="sm" disabled={isPending}>
+        <Button type="submit" size="lg" className="flex-1 sm:flex-none sm:h-8 sm:px-3 sm:text-xs" disabled={isPending}>
           {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
           Salva pianificazione
         </Button>
         <Button
           type="button"
-          size="sm"
+          size="lg"
           variant="outline"
+          className="flex-1 sm:flex-none sm:h-8 sm:px-3 sm:text-xs"
           disabled={isPending}
           onClick={() => setIsOpen(false)}
         >
@@ -129,4 +150,20 @@ export function ScheduleVisitForm({ companies, defaultCompanyId }: ScheduleVisit
       </div>
     </form>
   );
+
+  if (fixedOnMobile) {
+    return (
+      <div className="fixed inset-0 z-50 flex flex-col bg-white lg:static lg:z-auto lg:bg-transparent">
+        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 lg:hidden">
+          <p className="font-semibold text-slate-900">Pianifica visita</p>
+          <Button type="button" size="sm" variant="ghost" onClick={() => setIsOpen(false)}>
+            Chiudi
+          </Button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 pb-24">{form}</div>
+      </div>
+    );
+  }
+
+  return form;
 }

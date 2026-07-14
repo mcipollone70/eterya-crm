@@ -25,6 +25,7 @@ import { CompanyContactHistorySection } from "@/features/activities/components/c
 import { CompanyFollowUpsSection } from "@/features/activities/components/company-follow-ups-section";
 import { CompanyOpportunitiesSection } from "@/features/opportunities/components/company-opportunities-section";
 import { CompanyProductsSection } from "@/features/products/components/company-products-section";
+import { CompanyMobileActionBar } from "./company-mobile-action-bar";
 
 interface CompanyDetailProps {
   company: Company;
@@ -58,13 +59,14 @@ export function CompanyDetail({
   const display = resolveCompanyDisplayFields(company);
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-4 sm:gap-6">
+      <div className="order-1">
       <PageHeader
         title={company.name}
         subtitle={location || "Dettaglio azienda"}
         actions={
           <>
-            <Link href={`/companies/${company.id}/edit`}>
+            <Link href={`/companies/${company.id}/edit`} className="hidden sm:block">
               <Button variant="outline">
                 <Pencil className="h-4 w-4" />
                 Modifica
@@ -77,11 +79,42 @@ export function CompanyDetail({
           </>
         }
       />
+      </div>
 
-      <Card>
-        <CardHeader className="flex-row flex-wrap items-center justify-between gap-3">
+      <div className="order-2 lg:hidden">
+      <LastVisitSummary
+        company={company}
+        actions={
+          <div className="hidden flex-wrap items-center gap-2 sm:flex">
+            <RecordVisitForm companyId={company.id} defaultOpen={registerVisit} />
+            <Link
+              href={`/voice?company=${company.id}`}
+              className="inline-flex min-h-11 items-center rounded-lg border border-indigo-200 bg-indigo-50 px-3 text-sm font-medium text-indigo-700 hover:bg-indigo-100 sm:h-8 sm:text-xs"
+            >
+              Dettatura vocale
+            </Link>
+            <Link
+              href={`/visits?company=${company.id}`}
+              className="inline-flex min-h-11 items-center rounded-lg border border-slate-200 px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 sm:h-8 sm:text-xs"
+            >
+              Agenda
+            </Link>
+            <Link
+              href="/routes"
+              className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-slate-200 px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 sm:h-8 sm:text-xs"
+            >
+              <Route className="h-3.5 w-3.5" />
+              Giro
+            </Link>
+          </div>
+        }
+      />
+      </div>
+
+      <Card className="order-3 lg:order-2">
+        <CardHeader className="flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
           <CardTitle>Anagrafica</CardTitle>
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
             <CommercialStatusSelect companyId={company.id} value={company.commercial_status} />
             <Badge>{COMPANY_STATUS_LABELS[company.status] ?? company.status}</Badge>
           </div>
@@ -101,7 +134,7 @@ export function CompanyDetail({
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="order-4 lg:order-3">
         <CardHeader>
           <CardTitle>Indirizzo</CardTitle>
         </CardHeader>
@@ -117,7 +150,7 @@ export function CompanyDetail({
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="order-5 lg:order-4">
         <CardHeader>
           <CardTitle>Contatti azienda</CardTitle>
         </CardHeader>
@@ -161,7 +194,7 @@ export function CompanyDetail({
       </Card>
 
       {(company.notes || company.internal_notes) && (
-        <Card>
+        <Card className="order-6 lg:order-5">
           <CardHeader>
             <CardTitle>Note</CardTitle>
           </CardHeader>
@@ -174,40 +207,49 @@ export function CompanyDetail({
         </Card>
       )}
 
-      <CompanyOpportunitiesSection companyId={company.id} contacts={contacts} />
+      <div className="order-7 lg:order-6">
+        <CompanyOpportunitiesSection companyId={company.id} contacts={contacts} />
+      </div>
 
-      <CompanyProductsSection companyId={company.id} />
+      <div className="order-8 lg:order-7">
+        <CompanyProductsSection companyId={company.id} />
+      </div>
 
-      <CompanyFollowUpsSection companyId={company.id} contacts={contacts} />
+      <div className="order-9 lg:order-8">
+        <CompanyFollowUpsSection companyId={company.id} contacts={contacts} />
+      </div>
 
-      <LastVisitSummary
-        company={company}
-        actions={
-          <div className="flex flex-wrap items-center gap-2">
-            <RecordVisitForm companyId={company.id} defaultOpen={registerVisit} />
-            <Link
-              href={`/voice?company=${company.id}`}
-              className="inline-flex h-8 items-center rounded-lg border border-indigo-200 bg-indigo-50 px-3 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
-            >
-              Dettatura vocale
-            </Link>
-            <Link
-              href={`/visits?company=${company.id}`}
-              className="inline-flex h-8 items-center rounded-lg border border-slate-200 px-3 text-xs font-medium text-slate-700 hover:bg-slate-50"
-            >
-              Agenda
-            </Link>
-            <Link
-              href="/routes"
-              className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 px-3 text-xs font-medium text-slate-700 hover:bg-slate-50"
-            >
-              <Route className="h-3.5 w-3.5" />
-              Giro
-            </Link>
-          </div>
-        }
-      />
+      <div className="order-9 hidden lg:block">
+        <LastVisitSummary
+          company={company}
+          actions={
+            <div className="flex flex-wrap items-center gap-2">
+              <RecordVisitForm companyId={company.id} defaultOpen={registerVisit} />
+              <Link
+                href={`/voice?company=${company.id}`}
+                className="inline-flex h-8 items-center rounded-lg border border-indigo-200 bg-indigo-50 px-3 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
+              >
+                Dettatura vocale
+              </Link>
+              <Link
+                href={`/visits?company=${company.id}`}
+                className="inline-flex h-8 items-center rounded-lg border border-slate-200 px-3 text-xs font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Agenda
+              </Link>
+              <Link
+                href="/routes"
+                className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 px-3 text-xs font-medium text-slate-700 hover:bg-slate-50"
+              >
+                <Route className="h-3.5 w-3.5" />
+                Giro
+              </Link>
+            </div>
+          }
+        />
+      </div>
 
+      <div className="order-10 lg:order-10">
       <CompanyContactHistorySection
         companyId={company.id}
         basePath={`/companies/${company.id}`}
@@ -216,8 +258,9 @@ export function CompanyDetail({
         operator={historyOperator}
         search={historySearch}
       />
+      </div>
 
-      <Card>
+      <Card className="order-11 lg:order-11">
         <CardHeader className="flex-row items-center justify-between">
           <CardTitle>Referenti ({contacts.length})</CardTitle>
           <Link href={`/contacts/new?company_id=${company.id}`}>
@@ -260,9 +303,11 @@ export function CompanyDetail({
         </CardContent>
       </Card>
 
-      <p className="text-right text-xs text-slate-400">
+      <p className="order-12 text-right text-xs text-slate-400">
         Creata il {formatDate(company.created_at)} · aggiornata il {formatDate(company.updated_at)}
       </p>
+
+      <CompanyMobileActionBar companyId={company.id} />
     </div>
   );
 }

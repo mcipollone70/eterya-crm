@@ -21,6 +21,15 @@ export const NAV_BOTTOM: NavItem[] = [
   { label: "Impostazioni", href: "/settings", icon: "Settings" },
 ];
 
+/** Scorciatoie campo su mobile (bottom nav). */
+export const MOBILE_FIELD_NAV_ITEMS: NavItem[] = [
+  { label: "Agenda", href: "/agenda", icon: "CalendarDays" },
+  { label: "Visite", href: "/visits", icon: "MapPin" },
+  { label: "Assistente", href: "/assistant", icon: "Sparkles" },
+  { label: "Vocale", href: "/voice", icon: "Mic" },
+  { label: "Menu", href: "__menu__", icon: "Menu" },
+];
+
 export const PAGE_TITLES: Record<string, string> = {
   "/": "Dashboard",
   "/companies/import": "Importa Aziende",

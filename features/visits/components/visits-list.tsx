@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { Badge, Card, CardContent, CardHeader, CardTitle } from "@/components/ui";
+import { MapPin } from "lucide-react";
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle, ListEmptyState } from "@/components/ui";
 import { companyRegisterVisitHref } from "@/lib/constants/visit-workflow";
 import { getVisitOutcomeLabel } from "@/lib/constants/last-visit";
 import { formatVisitDate } from "@/lib/last-visit/format";
@@ -43,7 +44,18 @@ export function VisitsList({
       </CardHeader>
       <CardContent className="pt-2">
         {visits.length === 0 ? (
-          <p className="py-6 text-center text-sm text-slate-500">{emptyMessage}</p>
+          <ListEmptyState
+            icon={MapPin}
+            title="Nessuna visita in elenco"
+            message={emptyMessage}
+            action={
+              <Link href="/routes">
+                <Button size="lg" variant="outline">
+                  Apri Giro visite
+                </Button>
+              </Link>
+            }
+          />
         ) : (
           <ul className="divide-y divide-slate-100">
             {visits.map((visit) => {
@@ -56,7 +68,7 @@ export function VisitsList({
 
               return (
                 <li key={visit.id} className="py-4 first:pt-0 last:pb-0">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0 flex-1 space-y-2">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="text-sm font-semibold text-slate-900">
@@ -89,7 +101,7 @@ export function VisitsList({
                       )}
                     </div>
 
-                    <div className="flex flex-col items-end gap-2">
+                    <div className="w-full sm:w-auto sm:shrink-0">
                       {canComplete ? (
                         <CompleteVisitForm
                           visitId={visit.id}
@@ -97,11 +109,10 @@ export function VisitsList({
                           defaultNotes={visit.notes}
                         />
                       ) : (
-                        <Link
-                          href={companyRegisterVisitHref(visit.company_id)}
-                          className="inline-flex h-8 items-center rounded-lg border border-slate-200 px-3 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                        >
-                          Scheda
+                        <Link href={companyRegisterVisitHref(visit.company_id)} className="block">
+                          <Button size="lg" variant="outline" className="w-full sm:w-auto sm:h-8 sm:px-3 sm:text-xs">
+                            Scheda
+                          </Button>
                         </Link>
                       )}
                     </div>

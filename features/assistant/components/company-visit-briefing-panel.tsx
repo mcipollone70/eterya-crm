@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CalendarPlus, MapPin } from "lucide-react";
+import { ArrowLeft, CalendarPlus, MapPin } from "lucide-react";
 import { Badge, Card, CardContent, CardHeader, CardTitle, DescriptionItem, DescriptionList } from "@/components/ui";
 import { getContactOutcomeLabel } from "@/lib/constants/contact-history";
 import { getVisitOutcomeLabel } from "@/lib/constants/last-visit";
@@ -19,6 +19,15 @@ interface CompanyVisitBriefingPanelProps {
 export function CompanyVisitBriefingPanel({ briefing }: CompanyVisitBriefingPanelProps) {
   return (
     <Card className="border-indigo-200 bg-indigo-50/30">
+      <div className="sticky top-0 z-10 border-b border-indigo-100 bg-indigo-50/95 px-4 py-2 backdrop-blur-sm sm:hidden">
+        <Link
+          href="/assistant"
+          className="inline-flex min-h-11 items-center gap-2 text-sm font-medium text-indigo-700"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Torna ai suggerimenti
+        </Link>
+      </div>
       <CardHeader className="flex-row flex-wrap items-start justify-between gap-3">
         <div>
           <CardTitle>Briefing pre-visita · {briefing.companyName}</CardTitle>
@@ -27,24 +36,24 @@ export function CompanyVisitBriefingPanel({ briefing }: CompanyVisitBriefingPane
             {briefing.commercialStatus}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap">
           <Link
             href={`/visits?company=${briefing.companyId}`}
-            className="inline-flex h-9 items-center gap-2 rounded-lg bg-indigo-600 px-3 text-sm font-medium text-white hover:bg-indigo-700"
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-3 text-sm font-medium text-white hover:bg-indigo-700"
           >
             <CalendarPlus className="h-4 w-4" />
             Pianifica visita
           </Link>
           <Link
             href={companyRegisterVisitHref(briefing.companyId)}
-            className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
           >
             <MapPin className="h-4 w-4" />
             Registra visita
           </Link>
           <Link
             href={`/companies/${briefing.companyId}`}
-            className="inline-flex h-9 items-center rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            className="inline-flex min-h-11 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
           >
             Scheda completa
           </Link>
