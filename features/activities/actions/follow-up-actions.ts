@@ -49,6 +49,7 @@ export async function saveFollowUpAction(input: {
   }
 
   revalidatePath("/activities");
+  revalidatePath("/agenda");
   revalidatePath("/");
   revalidatePath("/visits");
   revalidatePath(`/companies/${input.companyId}`);
@@ -67,6 +68,7 @@ export async function completeFollowUpAction(
   const result = await completeFollowUp(id);
   if (result.success) {
     revalidatePath("/activities");
+    revalidatePath("/agenda");
     revalidatePath("/");
     revalidatePath("/visits");
     revalidatePath(`/companies/${companyId}`);
@@ -86,6 +88,7 @@ export async function postponeFollowUpAction(
   const result = await postponeFollowUp(id, postponedTo);
   if (result.success) {
     revalidatePath("/activities");
+    revalidatePath("/agenda");
     revalidatePath("/");
     revalidatePath("/visits");
     revalidatePath(`/companies/${companyId}`);
@@ -104,6 +107,7 @@ export async function cancelFollowUpAction(
   const result = await cancelFollowUp(id);
   if (result.success) {
     revalidatePath("/activities");
+    revalidatePath("/agenda");
     revalidatePath("/");
     revalidatePath("/visits");
     revalidatePath(`/companies/${companyId}`);

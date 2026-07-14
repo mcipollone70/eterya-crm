@@ -309,6 +309,38 @@ export interface Database {
           },
         ];
       };
+      agenda_reminders: {
+        Row: {
+          id: string;
+          user_id: string;
+          company_id: string | null;
+          contact_id: string | null;
+          opportunity_id: string | null;
+          title: string;
+          notes: string | null;
+          scheduled_at: string;
+          status: FollowUpStatus;
+          completed_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          company_id?: string | null;
+          contact_id?: string | null;
+          opportunity_id?: string | null;
+          title: string;
+          notes?: string | null;
+          scheduled_at: string;
+          status?: FollowUpStatus;
+          completed_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["agenda_reminders"]["Insert"]>;
+        Relationships: [];
+      };
       activities: {
         Row: {
           id: string;

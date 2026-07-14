@@ -290,6 +290,74 @@ export async function scheduleVisit(
   return { visitId: data.id, error: null };
 }
 
+export async function updateScheduledVisit(
+  visitId: string,
+  input: { scheduledAt?: string; notes?: string | null }
+): Promise<{ error: string | null }> {
+  const supabase = await createServerClient();
+
+  const { data: visit, error: fetchError } = await supabase
+    .from("visits")
+    .select("id,status")
+    .eq("id", visitId)
+    .maybeSingle();
+
+  if (fetchError) {
+    return { error: describeDbError(fetchError) };
+  }
+
+  if (!visit) {
+    return { error: "Visita non trovata." };
+  }
+
+  if (visit.status !== "scheduled" && visit.status !== "in_progress") {
+    return { error: "Solo le visite pianificate possono essere modificate." };
+  }
+
+  const patch: {
+    scheduled_at?: string;
+    notes?: string | null;
+  } = {};
+  if (input.scheduledAt) {
+    patch.scheduled_at = input.scheduledAt;
+  }
+  if (input.notes !== undefined) {
+    patch.notes = input.notes?.trim() || null;
+  }
+
+  const { error } = await supabase.from("visits").update(patch).eq("id", visitId);
+  return { error: describeDbError(error) };
+}
+
+export async function cancelVisit(visitId: string): Promise<{ error: string | null }> {
+  const supabase = await createServerClient();
+
+  const { data: visit, error: fetchError } = await supabase
+    .from("visits")
+    .select("id,status")
+    .eq("id", visitId)
+    .maybeSingle();
+
+  if (fetchError) {
+    return { error: describeDbError(fetchError) };
+  }
+
+  if (!visit) {
+    return { error: "Visita non trovata." };
+  }
+
+  if (visit.status === "completed") {
+    return { error: "Visita già completata." };
+  }
+
+  const { error } = await supabase
+    .from("visits")
+    .update({ status: "cancelled" })
+    .eq("id", visitId);
+
+  return { error: describeDbError(error) };
+}
+
 export async function completeScheduledVisit(
   visitId: string,
   input: CompleteScheduledVisitInput

@@ -272,6 +272,59 @@ export async function saveFollowUp(
   return { followUpId: data.id, error: null };
 }
 
+export interface UpdateFollowUpInput {
+  scheduledAt?: string;
+  activityType?: ContactHistoryType;
+  description?: string | null;
+  priority?: ActivityPriority;
+  contactId?: string | null;
+}
+
+export async function updateFollowUp(
+  id: string,
+  input: UpdateFollowUpInput
+): Promise<{ error: string | null }> {
+  const followUp = await getFollowUpById(id);
+  if (!followUp) {
+    return { error: "Follow-up non trovato." };
+  }
+
+  if (followUp.status === "completed" || followUp.status === "cancelled") {
+    return { error: "Il follow-up non può essere modificato." };
+  }
+
+  const patch: {
+    scheduled_at?: string;
+    status?: FollowUpStatus;
+    postponed_to?: string | null;
+    activity_type?: ContactHistoryType;
+    description?: string | null;
+    priority?: ActivityPriority;
+    contact_id?: string | null;
+  } = {};
+  if (input.scheduledAt) {
+    patch.scheduled_at = input.scheduledAt;
+    patch.status = "todo";
+    patch.postponed_to = null;
+  }
+  if (input.activityType) {
+    patch.activity_type = input.activityType;
+  }
+  if (input.description !== undefined) {
+    patch.description = input.description?.trim() || null;
+  }
+  if (input.priority) {
+    patch.priority = input.priority;
+  }
+  if (input.contactId !== undefined) {
+    patch.contact_id = input.contactId;
+  }
+
+  const supabase = await createServerClient();
+  const { error } = await supabase.from("follow_ups").update(patch).eq("id", id);
+  return { error: describeDbError(error) };
+}
+
 async function getFollowUpById(id: string): Promise<FollowUpListItem | null> {
   const supabase = await createServerClient();
   const { data, error } = await supabase

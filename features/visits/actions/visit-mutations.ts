@@ -16,6 +16,7 @@ const NOT_CONFIGURED_MESSAGE =
 
 function revalidateVisitPaths(companyId?: string) {
   revalidatePath("/visits");
+  revalidatePath("/agenda");
   revalidatePath("/");
   revalidatePath("/companies");
   if (companyId) {
