@@ -53,6 +53,12 @@ export function JoyAiScreen({ data }: JoyAiScreenProps) {
               Ho analizzato visite, agenda, follow-up, opportunità, radar, giro visite e pipeline per
               proporti il piano migliore di oggi.
             </p>
+            <Link href="/joy/chat" className="mt-4 inline-block">
+              <Button size="sm" className="min-h-10 gap-2 bg-violet-600 hover:bg-violet-700">
+                <Sparkles className="h-4 w-4" />
+                Apri Joy Chat
+              </Button>
+            </Link>
           </div>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:max-w-xl">
             {[

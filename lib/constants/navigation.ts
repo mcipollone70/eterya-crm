@@ -41,6 +41,7 @@ export const PAGE_TITLES: Record<string, string> = {
   "/agenda": "Agenda",
   "/assistant": "Assistente commerciale",
   "/joy": "Joy AI",
+  "/joy/chat": "Joy Chat",
   "/visits": "Visite",
   "/auto": "Modalità Auto",
   "/maps": "Mappa",
