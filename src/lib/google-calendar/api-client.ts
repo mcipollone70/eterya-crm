@@ -11,6 +11,20 @@ import type {
   GoogleCalendarEventResponse,
 } from "./types";
 
+export class GoogleCalendarApiError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "GoogleCalendarApiError";
+    this.status = status;
+  }
+}
+
+export function isGoogleCalendarEventMissingError(error: unknown): boolean {
+  return error instanceof GoogleCalendarApiError && (error.status === 404 || error.status === 410);
+}
+
 function calendarEventsUrl(calendarId: string, eventId?: string): string {
   const encodedCalendar = encodeURIComponent(calendarId);
   if (eventId) {
@@ -60,7 +74,7 @@ export async function createGoogleCalendarEvent(
 
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(`Creazione evento Google non riuscita: ${text}`);
+    throw new GoogleCalendarApiError(`Creazione evento Google non riuscita: ${text}`, response.status);
   }
 
   return (await response.json()) as GoogleCalendarEventResponse;
@@ -84,7 +98,10 @@ export async function updateGoogleCalendarEvent(
 
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(`Aggiornamento evento Google non riuscito: ${text}`);
+    throw new GoogleCalendarApiError(
+      `Aggiornamento evento Google non riuscito: ${text}`,
+      response.status
+    );
   }
 
   return (await response.json()) as GoogleCalendarEventResponse;
@@ -108,7 +125,10 @@ export async function deleteGoogleCalendarEvent(
 
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(`Eliminazione evento Google non riuscita: ${text}`);
+    throw new GoogleCalendarApiError(
+      `Eliminazione evento Google non riuscita: ${text}`,
+      response.status
+    );
   }
 }
 

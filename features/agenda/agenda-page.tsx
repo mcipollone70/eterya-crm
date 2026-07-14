@@ -1,7 +1,6 @@
 import { Suspense } from "react";
 import { CalendarDays } from "lucide-react";
 import { EmptyState, PageHeader, PageLoadingSkeleton } from "@/components/ui";
-import { getCurrentUser } from "@/features/auth/session";
 import { listAgendaCalendarSyncStatuses } from "@/features/calendar-sync/services/sync.service";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { parseAgendaFilters, parseAgendaItemId } from "@/lib/constants/agenda";
@@ -54,11 +53,9 @@ export async function AgendaPage({
   const agents = agentsResult.data ?? [];
   const companies = companiesResult.data ?? [];
 
-  const user = await getCurrentUser();
   const calendarSyncStatuses =
-    user && itemsResult.data.length > 0
+    itemsResult.data.length > 0
       ? await listAgendaCalendarSyncStatuses(
-          user.id,
           itemsResult.data
             .map((item) => {
               const parsed = parseAgendaItemId(item.id);
@@ -69,6 +66,7 @@ export async function AgendaPage({
                 compositeId: item.id,
                 kind: parsed.kind,
                 entityId: parsed.sourceId,
+                ownerUserId: item.userId,
               };
             })
             .filter((item): item is NonNullable<typeof item> => item !== null)

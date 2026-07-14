@@ -1,11 +1,13 @@
 import "server-only";
 
+import { getCurrentUser } from "@/features/auth/session";
 import { getDefaultContactHistoryTitle, type ContactHistoryType } from "@/lib/constants/contact-history";
 import { createServerClient } from "@/lib/supabase/server";
 import {
   buildEntityRef,
   createGoogleCalendarEvent,
   deleteGoogleCalendarEvent,
+  isGoogleCalendarEventMissingError,
   updateGoogleCalendarEvent,
 } from "@/lib/google-calendar/api-client";
 import {
@@ -59,13 +61,13 @@ function relationCompanyName(value: CompanyRelation): string | null {
 async function loadEntityContext(
   kind: CalendarEntityKind,
   entityId: string
-): Promise<EntityContext | null> {
+): Promise<{ context: EntityContext; ownerUserId: string } | null> {
   const supabase = await createServerClient();
 
   if (kind === "visit") {
     const { data, error } = await supabase
       .from("visits")
-      .select("id,scheduled_at,notes,status,companies(name)")
+      .select("id,user_id,scheduled_at,notes,status,companies(name)")
       .eq("id", entityId)
       .maybeSingle();
 
@@ -75,6 +77,7 @@ async function loadEntityContext(
 
     const row = data as {
       id: string;
+      user_id: string;
       scheduled_at: string;
       notes: string | null;
       status: string;
@@ -83,13 +86,16 @@ async function loadEntityContext(
     const companyName = relationCompanyName(row.companies);
 
     return {
-      kind,
-      entityId: row.id,
-      title: companyName ? `Visita ${companyName}` : "Visita pianificata",
-      notes: row.notes,
-      scheduledAt: row.scheduled_at,
-      companyName,
-      statusLabel: VISIT_STATUS_LABELS[row.status] ?? row.status,
+      ownerUserId: row.user_id,
+      context: {
+        kind,
+        entityId: row.id,
+        title: companyName ? `Visita ${companyName}` : "Visita pianificata",
+        notes: row.notes,
+        scheduledAt: row.scheduled_at,
+        companyName,
+        statusLabel: VISIT_STATUS_LABELS[row.status] ?? row.status,
+      },
     };
   }
 
@@ -97,7 +103,7 @@ async function loadEntityContext(
     const { data, error } = await supabase
       .from("follow_ups")
       .select(
-        "id,scheduled_at,postponed_to,description,status,activity_type,companies(name)"
+        "id,user_id,scheduled_at,postponed_to,description,status,activity_type,companies(name)"
       )
       .eq("id", entityId)
       .maybeSingle();
@@ -108,6 +114,7 @@ async function loadEntityContext(
 
     const row = data as {
       id: string;
+      user_id: string;
       scheduled_at: string;
       postponed_to: string | null;
       description: string | null;
@@ -120,19 +127,22 @@ async function loadEntityContext(
       row.status === "postponed" && row.postponed_to ? row.postponed_to : row.scheduled_at;
 
     return {
-      kind,
-      entityId: row.id,
-      title: getDefaultContactHistoryTitle(row.activity_type as ContactHistoryType),
-      notes: row.description,
-      scheduledAt,
-      companyName,
-      statusLabel: FOLLOW_UP_STATUS_LABELS[row.status] ?? row.status,
+      ownerUserId: row.user_id,
+      context: {
+        kind,
+        entityId: row.id,
+        title: getDefaultContactHistoryTitle(row.activity_type as ContactHistoryType),
+        notes: row.description,
+        scheduledAt,
+        companyName,
+        statusLabel: FOLLOW_UP_STATUS_LABELS[row.status] ?? row.status,
+      },
     };
   }
 
   const { data, error } = await supabase
     .from("agenda_reminders")
-    .select("id,title,notes,scheduled_at,status,companies(name)")
+    .select("id,user_id,title,notes,scheduled_at,status,companies(name)")
     .eq("id", entityId)
     .maybeSingle();
 
@@ -142,6 +152,7 @@ async function loadEntityContext(
 
   const row = data as {
     id: string;
+    user_id: string;
     title: string;
     notes: string | null;
     scheduled_at: string;
@@ -151,14 +162,69 @@ async function loadEntityContext(
   const companyName = relationCompanyName(row.companies);
 
   return {
-    kind,
-    entityId: row.id,
-    title: row.title,
-    notes: row.notes,
-    scheduledAt: row.scheduled_at,
-    companyName,
-    statusLabel: FOLLOW_UP_STATUS_LABELS[row.status] ?? row.status,
+    ownerUserId: row.user_id,
+    context: {
+      kind,
+      entityId: row.id,
+      title: row.title,
+      notes: row.notes,
+      scheduledAt: row.scheduled_at,
+      companyName,
+      statusLabel: FOLLOW_UP_STATUS_LABELS[row.status] ?? row.status,
+    },
   };
+}
+
+async function upsertGoogleCalendarEvent(
+  accessToken: string,
+  connection: { calendar_id: string; user_id: string },
+  kind: CalendarEntityKind,
+  entityId: string,
+  payload: ReturnType<typeof buildPayloadForOperation>,
+  entityRef: string,
+  mapping: Awaited<ReturnType<typeof getExternalEventMapping>>
+): Promise<void> {
+  if (mapping?.google_event_id && mapping.sync_status !== "deleted") {
+    try {
+      await updateGoogleCalendarEvent(
+        accessToken,
+        mapping.google_calendar_id,
+        mapping.google_event_id,
+        payload,
+        entityRef
+      );
+
+      await upsertExternalEventMapping({
+        userId: connection.user_id,
+        kind,
+        entityId,
+        googleEventId: mapping.google_event_id,
+        googleCalendarId: mapping.google_calendar_id,
+        syncStatus: "synced",
+      });
+      return;
+    } catch (updateError) {
+      if (!isGoogleCalendarEventMissingError(updateError)) {
+        throw updateError;
+      }
+    }
+  }
+
+  const created = await createGoogleCalendarEvent(
+    accessToken,
+    connection.calendar_id,
+    payload,
+    entityRef
+  );
+
+  await upsertExternalEventMapping({
+    userId: connection.user_id,
+    kind,
+    entityId,
+    googleEventId: created.id,
+    googleCalendarId: connection.calendar_id,
+    syncStatus: "synced",
+  });
 }
 
 function buildPayloadForOperation(
@@ -179,13 +245,23 @@ export async function syncCalendarEntity(
   entityId: string,
   operation: CalendarSyncOperation
 ): Promise<void> {
-  const connection = await getActiveGoogleCalendarConnection();
-  if (!connection) {
+  const actingUser = await getCurrentUser();
+  if (!actingUser) {
     return;
   }
 
-  const context = await loadEntityContext(kind, entityId);
-  if (!context) {
+  const loaded = await loadEntityContext(kind, entityId);
+  if (!loaded) {
+    return;
+  }
+
+  const { context, ownerUserId } = loaded;
+  if (ownerUserId !== actingUser.id) {
+    return;
+  }
+
+  const connection = await getActiveGoogleCalendarConnection();
+  if (!connection) {
     return;
   }
 
@@ -217,39 +293,16 @@ export async function syncCalendarEntity(
 
     const payload = buildPayloadForOperation(context, operation);
 
-    if (mapping?.google_event_id && mapping.sync_status !== "deleted") {
-      await updateGoogleCalendarEvent(
+    if (operation === "upsert" || operation === "complete") {
+      await upsertGoogleCalendarEvent(
         accessToken,
-        mapping.google_calendar_id,
-        mapping.google_event_id,
-        payload,
-        entityRef
-      );
-
-      await upsertExternalEventMapping({
-        userId: activeConnection.user_id,
+        activeConnection,
         kind,
         entityId,
-        googleEventId: mapping.google_event_id,
-        googleCalendarId: mapping.google_calendar_id,
-        syncStatus: "synced",
-      });
-    } else if (operation === "upsert" || operation === "complete") {
-      const created = await createGoogleCalendarEvent(
-        accessToken,
-        activeConnection.calendar_id,
         payload,
-        entityRef
+        entityRef,
+        mapping
       );
-
-      await upsertExternalEventMapping({
-        userId: activeConnection.user_id,
-        kind,
-        entityId,
-        googleEventId: created.id,
-        googleCalendarId: activeConnection.calendar_id,
-        syncStatus: "synced",
-      });
     }
 
     await recordConnectionSyncSuccess(activeConnection.user_id);
@@ -275,14 +328,23 @@ export async function triggerCalendarSync(
 }
 
 export async function listAgendaCalendarSyncStatuses(
-  userId: string,
-  items: Array<{ kind: CalendarEntityKind; entityId: string; compositeId: string }>
+  items: Array<{
+    kind: CalendarEntityKind;
+    entityId: string;
+    compositeId: string;
+    ownerUserId: string;
+  }>
 ): Promise<Record<string, string>> {
+  if (items.length === 0) {
+    return {};
+  }
+
+  const entityIds = [...new Set(items.map((item) => item.entityId))];
   const supabase = await createServerClient();
   const { data, error } = await supabase
     .from("calendar_external_events")
-    .select("entity_kind,entity_id,sync_status")
-    .eq("user_id", userId);
+    .select("user_id,entity_kind,entity_id,sync_status")
+    .in("entity_id", entityIds);
 
   if (error || !data) {
     return {};
@@ -290,16 +352,17 @@ export async function listAgendaCalendarSyncStatuses(
 
   const byEntity = new Map<string, string>();
   for (const row of data as Array<{
+    user_id: string;
     entity_kind: CalendarEntityKind;
     entity_id: string;
     sync_status: string;
   }>) {
-    byEntity.set(`${row.entity_kind}:${row.entity_id}`, row.sync_status);
+    byEntity.set(`${row.user_id}:${row.entity_kind}:${row.entity_id}`, row.sync_status);
   }
 
   const result: Record<string, string> = {};
   for (const item of items) {
-    const status = byEntity.get(`${item.kind}:${item.entityId}`);
+    const status = byEntity.get(`${item.ownerUserId}:${item.kind}:${item.entityId}`);
     if (status) {
       result[item.compositeId] = status;
     }
