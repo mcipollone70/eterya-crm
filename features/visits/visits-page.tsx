@@ -4,6 +4,7 @@ import { MapPin } from "lucide-react";
 import { EmptyState, PageHeader, PageLoadingSkeleton } from "@/components/ui";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { isVisitPeriod, VISIT_PERIOD_OPTIONS } from "@/lib/constants/visit-workflow";
+import { CompanyBriefingLoader } from "@/features/assistant/components/company-briefing-loader";
 import { VisitPeriodTabs } from "./components/visit-period-tabs";
 import { VisitFieldLinks } from "./components/visit-field-links";
 import { ScheduleVisitForm } from "./components/schedule-visit-form";
@@ -18,14 +19,16 @@ import {
 interface VisitsPageProps {
   period?: string;
   company?: string;
+  briefing?: string;
 }
 
 function periodLabel(period: string): string {
   return VISIT_PERIOD_OPTIONS.find((option) => option.value === period)?.label ?? "Oggi";
 }
 
-export async function VisitsPage({ period, company }: VisitsPageProps) {
+export async function VisitsPage({ period, company, briefing }: VisitsPageProps) {
   const activePeriod = isVisitPeriod(period) ? period : "today";
+  const briefingCompanyId = briefing?.trim() || company?.trim() || "";
 
   if (!isSupabaseConfigured()) {
     return (
@@ -84,6 +87,14 @@ export async function VisitsPage({ period, company }: VisitsPageProps) {
           <ScheduleVisitForm companies={companies} defaultCompanyId={company} />
         </div>
       </div>
+
+      {briefingCompanyId ? (
+        <CompanyBriefingLoader
+          companyId={briefingCompanyId}
+          backHref="/visits"
+          backLabel="Torna alle visite"
+        />
+      ) : null}
 
       {company && filteredCompany && (
         <p className="text-sm text-slate-600">

@@ -42,13 +42,19 @@ export async function AssistantPage({ agent, briefing }: AssistantPageProps) {
   return (
     <div className="space-y-4 sm:space-y-6">
       <PageHeader
-        title="Assistente commerciale"
-        subtitle="Oggi ti consiglio di visitare…"
+        title={briefing && briefingResult.data ? "Briefing AI" : "Assistente commerciale"}
+        subtitle={
+          briefing && briefingResult.data
+            ? `Scheda pre-visita · ${briefingResult.data.companyName}`
+            : "Oggi ti consiglio di visitare…"
+        }
       />
 
-      <Suspense fallback={<PageLoadingSkeleton rows={1} />}>
-        <AssistantFiltersBar agents={agentsResult.data ?? []} />
-      </Suspense>
+      {!briefing && (
+        <Suspense fallback={<PageLoadingSkeleton rows={1} />}>
+          <AssistantFiltersBar agents={agentsResult.data ?? []} />
+        </Suspense>
+      )}
 
       {briefing && briefingResult.data && (
         <CompanyVisitBriefingPanel briefing={briefingResult.data} />

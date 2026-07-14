@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { MapPin } from "lucide-react";
+import { MapPin, Sparkles } from "lucide-react";
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, ListEmptyState } from "@/components/ui";
 import { companyRegisterVisitHref } from "@/lib/constants/visit-workflow";
 import { getVisitOutcomeLabel } from "@/lib/constants/last-visit";
@@ -85,7 +85,7 @@ export function VisitsList({
                       {visit.company_name && (
                         <p className="text-sm text-slate-700">
                           <Link
-                            href={`/companies/${visit.company_id}`}
+                            href={`/visits?company=${visit.company_id}&briefing=${visit.company_id}`}
                             className="font-medium text-indigo-600 hover:underline"
                           >
                             {visit.company_name}
@@ -101,7 +101,16 @@ export function VisitsList({
                       )}
                     </div>
 
-                    <div className="w-full sm:w-auto sm:shrink-0">
+                    <div className="flex w-full flex-col gap-2 sm:w-auto sm:shrink-0">
+                      <Link
+                        href={`/visits?company=${visit.company_id}&briefing=${visit.company_id}`}
+                        className="block"
+                      >
+                        <Button size="lg" variant="outline" className="w-full sm:w-auto">
+                          <Sparkles className="h-4 w-4" />
+                          Briefing
+                        </Button>
+                      </Link>
                       {canComplete ? (
                         <CompleteVisitForm
                           visitId={visit.id}

@@ -30,14 +30,24 @@ export interface CompanyVisitBriefing {
   city: string | null;
   province: string | null;
   commercialStatus: string;
+  contactName: string | null;
+  phone: string | null;
+  latitude: number | null;
+  longitude: number | null;
   notes: string | null;
   internalNotes: string | null;
+  importantNotes: string[];
   lastVisit: {
     at: string | null;
     outcome: string | null;
     notes: string | null;
     durationMinutes: number | null;
     nextCallbackAt: string | null;
+  };
+  lastOrder: {
+    at: string | null;
+    label: string | null;
+    notes: string | null;
   };
   lastContact: {
     at: string | null;
@@ -58,6 +68,7 @@ export interface CompanyVisitBriefing {
   products: {
     purchased: Array<{ name: string; family: string }>;
     interests: Array<{ name: string; family: string; level: string | null }>;
+    neverPurchased: Array<{ name: string; family: string }>;
   };
   followUps: Array<{
     id: string;
@@ -74,6 +85,7 @@ export interface CompanyVisitBriefing {
     occurredAt: string;
     outcome: string | null;
   }>;
+  aiSuggestions: string[];
 }
 
 export interface OpportunityAggregate {

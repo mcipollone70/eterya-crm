@@ -8,14 +8,15 @@ export const dynamic = "force-dynamic";
 export default async function Page({
   searchParams,
 }: {
-  searchParams: Promise<{ period?: string; company?: string }>;
+  searchParams: Promise<{ period?: string; company?: string; briefing?: string }>;
 }) {
-  const { period, company } = await searchParams;
+  const { period, company, briefing } = await searchParams;
 
   return (
     <VisitsPage
       period={isVisitPeriod(period) ? period : undefined}
       company={company}
+      briefing={briefing}
     />
   );
 }

@@ -13,6 +13,7 @@ import {
   Pencil,
   Target,
   User,
+  Sparkles,
   X,
 } from "lucide-react";
 import { Badge, Button } from "@/components/ui";
@@ -238,13 +239,22 @@ export function AgendaItemRow({
             </Link>
           )}
           {item.kind === "visit" && item.companyId && (
-            <Link
-              href={`/visits?company=${item.companyId}`}
-              className="inline-flex shrink-0 items-center gap-1 rounded-md border border-white/60 bg-white/70 px-2.5 py-2 text-xs font-medium hover:bg-white"
-            >
-              <MapPin className="h-3 w-3" />
-              Visita
-            </Link>
+            <>
+              <Link
+                href={`/visits?company=${item.companyId}&briefing=${item.companyId}`}
+                className="inline-flex shrink-0 items-center gap-1 rounded-md border border-white/60 bg-white/70 px-2.5 py-2 text-xs font-medium hover:bg-white"
+              >
+                <Sparkles className="h-3 w-3" />
+                Briefing
+              </Link>
+              <Link
+                href={`/visits?company=${item.companyId}`}
+                className="inline-flex shrink-0 items-center gap-1 rounded-md border border-white/60 bg-white/70 px-2.5 py-2 text-xs font-medium hover:bg-white"
+              >
+                <MapPin className="h-3 w-3" />
+                Visita
+              </Link>
+            </>
           )}
           {item.companyId && (
             <Link
