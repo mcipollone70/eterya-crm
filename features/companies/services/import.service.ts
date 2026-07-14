@@ -1,7 +1,12 @@
 import "server-only";
 
+import { getCurrentUser } from "@/features/auth/session";
 import { createServerClient } from "@/lib/supabase/server";
 import type { CompanyInsert } from "../utils/build-db-rows";
+import {
+  resolveAssignedUserIdForInsert,
+  resolveAssignedUserIdForUpdate,
+} from "../utils/import-assignment";
 
 export interface ImportResult {
   success: boolean;
@@ -14,6 +19,11 @@ export interface ImportResult {
 const MAX_REPORTED_ERRORS = 20;
 const INSERT_BATCH_SIZE = 100;
 const VAT_LOOKUP_BATCH_SIZE = 200;
+
+type ExistingCompanyRef = {
+  id: string;
+  assigned_user_id: string | null;
+};
 
 function rowLabel(row: CompanyInsert): string {
   return `Riga ${row.import_row_index ?? "?"} (${row.name})`;
@@ -30,15 +40,15 @@ function hasVatNumber(row: CompanyInsert): row is CompanyInsert & { vat_number: 
 
 async function loadExistingCompaniesByVat(
   vatNumbers: string[]
-): Promise<Map<string, string>> {
+): Promise<Map<string, ExistingCompanyRef>> {
   const supabase = await createServerClient();
-  const existingByVat = new Map<string, string>();
+  const existingByVat = new Map<string, ExistingCompanyRef>();
 
   for (let index = 0; index < vatNumbers.length; index += VAT_LOOKUP_BATCH_SIZE) {
     const chunk = vatNumbers.slice(index, index + VAT_LOOKUP_BATCH_SIZE);
     const { data, error } = await supabase
       .from("companies")
-      .select("id,vat_number")
+      .select("id,vat_number,assigned_user_id")
       .in("vat_number", chunk);
 
     if (error) {
@@ -47,7 +57,10 @@ async function loadExistingCompaniesByVat(
 
     for (const row of data ?? []) {
       if (row.vat_number) {
-        existingByVat.set(row.vat_number, row.id);
+        existingByVat.set(row.vat_number, {
+          id: row.id,
+          assigned_user_id: row.assigned_user_id,
+        });
       }
     }
   }
@@ -59,6 +72,7 @@ async function loadExistingCompaniesByVat(
  * Import massivo aziende su Supabase tramite il client server auth-scoped.
  * - Con P.IVA: upsert (UPDATE se esiste, INSERT altrimenti) su vat_number.
  * - Senza P.IVA: INSERT (consentiti più record con vat null).
+ * - Assegna `assigned_user_id` all'utente corrente se non già valorizzato.
  * - Non interrompe l'import al primo errore: processa tutte le righe.
  */
 export async function importCompanyRows(
@@ -71,6 +85,19 @@ export async function importCompanyRows(
       updatedCount: 0,
       skippedCount: 0,
       errors: ["Nessuna azienda da importare."],
+    };
+  }
+
+  const currentUser = await getCurrentUser();
+  const currentUserId = currentUser?.id ?? null;
+
+  if (!currentUserId) {
+    return {
+      success: false,
+      importedCount: 0,
+      updatedCount: 0,
+      skippedCount: 0,
+      errors: ["Devi essere autenticato per importare aziende."],
     };
   }
 
@@ -97,7 +124,9 @@ export async function importCompanyRows(
   }
 
   for (let index = 0; index < rowsWithoutVat.length; index += INSERT_BATCH_SIZE) {
-    const chunk = rowsWithoutVat.slice(index, index + INSERT_BATCH_SIZE);
+    const chunk = rowsWithoutVat
+      .slice(index, index + INSERT_BATCH_SIZE)
+      .map((row) => resolveAssignedUserIdForInsert(row, currentUserId));
     const { error } = await supabase.from("companies").insert(chunk);
 
     if (error) {
@@ -118,7 +147,7 @@ export async function importCompanyRows(
   }
 
   const uniqueVatNumbers = [...new Set(rowsWithVat.map((row) => row.vat_number))];
-  let existingByVat = new Map<string, string>();
+  let existingByVat = new Map<string, ExistingCompanyRef>();
 
   try {
     existingByVat = await loadExistingCompaniesByVat(uniqueVatNumbers);
@@ -135,13 +164,18 @@ export async function importCompanyRows(
 
   for (const row of rowsWithVat) {
     const vat = row.vat_number;
-    const existingId = existingByVat.get(vat);
+    const existing = existingByVat.get(vat);
 
-    if (existingId) {
+    if (existing) {
+      const updatePayload = resolveAssignedUserIdForUpdate(
+        row,
+        existing.assigned_user_id,
+        currentUserId
+      );
       const { error: updateError } = await supabase
         .from("companies")
-        .update(row)
-        .eq("id", existingId);
+        .update(updatePayload)
+        .eq("id", existing.id);
 
       if (updateError) {
         if (errors.length < MAX_REPORTED_ERRORS) {
@@ -153,16 +187,17 @@ export async function importCompanyRows(
       continue;
     }
 
+    const insertPayload = resolveAssignedUserIdForInsert(row, currentUserId);
     const { data: inserted, error: insertError } = await supabase
       .from("companies")
-      .insert(row)
-      .select("id")
+      .insert(insertPayload)
+      .select("id,assigned_user_id")
       .maybeSingle();
 
     if (insertError?.code === "23505") {
       const { data: raced, error: raceSelectError } = await supabase
         .from("companies")
-        .select("id")
+        .select("id,assigned_user_id")
         .eq("vat_number", vat)
         .maybeSingle();
 
@@ -175,11 +210,19 @@ export async function importCompanyRows(
         continue;
       }
 
-      existingByVat.set(vat, raced.id);
+      existingByVat.set(vat, {
+        id: raced.id,
+        assigned_user_id: raced.assigned_user_id,
+      });
 
+      const updatePayload = resolveAssignedUserIdForUpdate(
+        row,
+        raced.assigned_user_id,
+        currentUserId
+      );
       const { error: updateError } = await supabase
         .from("companies")
-        .update(row)
+        .update(updatePayload)
         .eq("id", raced.id);
 
       if (updateError) {
@@ -200,7 +243,10 @@ export async function importCompanyRows(
     }
 
     if (inserted?.id) {
-      existingByVat.set(vat, inserted.id);
+      existingByVat.set(vat, {
+        id: inserted.id,
+        assigned_user_id: inserted.assigned_user_id,
+      });
     }
     importedCount++;
   }

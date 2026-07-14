@@ -17,6 +17,7 @@ import {
   type VisitTourCompanyLike,
 } from "@/lib/visit-tour/eligibility";
 import { createServerClient } from "@/lib/supabase/server";
+import { applyAgentCompanyScope } from "@/features/companies/utils/agent-company-scope";
 import { describeDbError } from "@/lib/supabase/errors";
 import type { CommercialStatus, CompanyStatus, Json } from "@/lib/supabase/types";
 
@@ -159,7 +160,7 @@ export async function getDailyVisitSuggestions(options?: {
     .limit(2500);
 
   if (agentId) {
-    query = query.eq("assigned_user_id", agentId);
+    query = applyAgentCompanyScope(query, agentId);
   }
 
   const [companiesRes, optimizeContext, opportunityMap, productSignals] = await Promise.all([

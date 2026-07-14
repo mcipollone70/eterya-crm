@@ -12,15 +12,43 @@ function isPublicRoute(pathname: string): boolean {
   );
 }
 
+function isDevelopmentBypass(): boolean {
+  return process.env.NODE_ENV === "development";
+}
+
+function redirectToLogin(request: NextRequest, pathname: string): NextResponse {
+  const redirectUrl = request.nextUrl.clone();
+  redirectUrl.pathname = "/login";
+  redirectUrl.searchParams.set("redirectedFrom", pathname);
+  return NextResponse.redirect(redirectUrl);
+}
+
 /**
  * Aggiorna la sessione Supabase sui cookie e protegge il gruppo (dashboard).
- * Se Supabase non è configurato degrada in modo trasparente lasciando passare
- * la richiesta, così l'app resta navigabile senza autenticazione.
+ * Se Supabase non è configurato: in produzione blocca ogni route non pubblica
+ * (fail-closed); in development consente il bypass per sviluppo locale.
  */
 export async function updateSession(request: NextRequest): Promise<NextResponse> {
+  const { pathname } = request.nextUrl;
   const env = getSupabasePublicEnv();
+
   if (!env) {
-    return NextResponse.next({ request });
+    if (isDevelopmentBypass()) {
+      return NextResponse.next({ request });
+    }
+
+    if (isPublicRoute(pathname)) {
+      return NextResponse.next({ request });
+    }
+
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json(
+        { error: "Autenticazione non configurata." },
+        { status: 503 }
+      );
+    }
+
+    return redirectToLogin(request, pathname);
   }
 
   let response = NextResponse.next({ request });
@@ -47,13 +75,8 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
     data: { user },
   } = await supabase.auth.getUser();
 
-  const { pathname } = request.nextUrl;
-
   if (!user && !isPublicRoute(pathname)) {
-    const redirectUrl = request.nextUrl.clone();
-    redirectUrl.pathname = "/login";
-    redirectUrl.searchParams.set("redirectedFrom", pathname);
-    return NextResponse.redirect(redirectUrl);
+    return redirectToLogin(request, pathname);
   }
 
   if (user && isPublicRoute(pathname)) {

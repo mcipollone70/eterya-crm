@@ -13,7 +13,9 @@ export function computePreviewStats(records: CompanyImportRecord[]): ImportPrevi
     withoutPhone: records.filter((r) => !r.phone).length,
     withoutEmail: records.filter((r) => !r.email).length,
     withoutAddress: records.filter((r) => !r.address).length,
-    geocodedRecords: records.filter((r) => r.geocodeStatus === "geocoded").length,
+    geocodedRecords: records.filter(
+      (r) => r.geocodeStatus === "geocoded" || r.geocodeStatus === "completed"
+    ).length,
     recordsToFix: records.filter((r) => r.needsFix).length,
   };
 }

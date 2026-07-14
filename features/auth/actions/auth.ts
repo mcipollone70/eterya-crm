@@ -4,6 +4,10 @@ import { redirect } from "next/navigation";
 import { createServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { ensureUserProfile } from "../services/user-provisioning.service";
+import {
+  canProcessSignup,
+  SIGNUP_DISABLED_MESSAGE,
+} from "../utils/signup-policy";
 
 export interface AuthFormState {
   error?: string;
@@ -28,6 +32,7 @@ export async function authenticateAction(
   const intent = formData.get("intent") === "signup" ? "signup" : "signin";
   const email = String(formData.get("email") ?? "").trim();
   const password = String(formData.get("password") ?? "");
+  const inviteCode = String(formData.get("invite_code") ?? "").trim() || null;
 
   if (!email || !password) {
     return { error: "Inserisci email e password." };
@@ -36,6 +41,9 @@ export async function authenticateAction(
   const supabase = await createServerClient();
 
   if (intent === "signup") {
+    if (!canProcessSignup(inviteCode)) {
+      return { error: SIGNUP_DISABLED_MESSAGE };
+    }
     if (password.length < 6) {
       return { error: "La password deve contenere almeno 6 caratteri." };
     }

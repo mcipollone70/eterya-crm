@@ -8,6 +8,7 @@ import { getDailyVisitSuggestions } from "@/features/assistant/services/assistan
 import { getPriorityDashboardMetrics } from "@/features/companies/services/commercial-priority.service";
 import { getOpportunityDashboardMetrics } from "@/features/opportunities/services/opportunities.service";
 import { analyzeOpportunityRadar } from "@/features/radar/services/opportunity-radar.service";
+import { applyAgentCompanyScope } from "@/features/companies/utils/agent-company-scope";
 import { getDistanceKm } from "@/features/maps/utils/geo-distance";
 import { parseAgendaFilters } from "@/lib/constants/agenda";
 import type { DailyVisitSuggestion } from "@/lib/commercial-assistant/types";
@@ -330,7 +331,7 @@ async function getRadarPreview(userId: string | null): Promise<MissionControlDat
     .limit(250);
 
   if (userId) {
-    query = query.eq("assigned_user_id", userId);
+    query = applyAgentCompanyScope(query, userId);
   }
 
   const { data } = await query;

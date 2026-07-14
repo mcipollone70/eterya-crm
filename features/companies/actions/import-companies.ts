@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
+import { COMPANY_IMPORT_REVALIDATE_PATHS } from "../utils/agent-company-scope";
 import { importCompanyRows, type ImportResult } from "../services/import.service";
 import type { CompanyInsert } from "../utils/build-db-rows";
 
@@ -23,7 +24,9 @@ export async function importCompaniesAction(
   try {
     const result = await importCompanyRows(rows);
     if (result.importedCount > 0 || result.updatedCount > 0) {
-      revalidatePath("/companies");
+      for (const path of COMPANY_IMPORT_REVALIDATE_PATHS) {
+        revalidatePath(path);
+      }
     }
     return result;
   } catch (error) {

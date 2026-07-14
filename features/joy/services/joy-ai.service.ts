@@ -4,6 +4,7 @@ import { getCurrentUser, getCurrentUserProfile } from "@/features/auth/session";
 import { listFollowUps, getFollowUpDashboardMetrics } from "@/features/activities/services/follow-ups.service";
 import { getDailyVisitSuggestions } from "@/features/assistant/services/assistant-suggestions.service";
 import { getPriorityDashboardMetrics } from "@/features/companies/services/commercial-priority.service";
+import { applyAgentCompanyScope } from "@/features/companies/utils/agent-company-scope";
 import { listAgendaItems } from "@/features/agenda/services/agenda.service";
 import { getOpportunityDashboardMetrics, listOpportunities } from "@/features/opportunities/services/opportunities.service";
 import { resolveCompanyIdsForProductFilters } from "@/features/products/services/company-product-interests.service";
@@ -154,7 +155,7 @@ async function getRadarCount(userId: string | null): Promise<number> {
     .limit(250);
 
   if (userId) {
-    query = query.eq("assigned_user_id", userId);
+    query = applyAgentCompanyScope(query, userId);
   }
 
   const { data } = await query;

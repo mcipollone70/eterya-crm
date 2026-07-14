@@ -32,6 +32,9 @@ export function buildCompanyInsertRow(
     }
   });
 
+  const hasGeoapifyResult =
+    record.geocodeStatus === "completed" || record.geocodeStatus === "needs_review";
+
   const row: CompanyInsert = {
     name: record.name || `Riga ${record.rowIndex}`,
     vat_number: nullify(record.vatNumber),
@@ -49,6 +52,10 @@ export function buildCompanyInsertRow(
     latitude: record.latitude,
     longitude: record.longitude,
     geocode_status: record.geocodeStatus,
+    geocoding_provider: hasGeoapifyResult ? "geoapify" : null,
+    geocoded_at: record.geocodeStatus === "completed" ? new Date().toISOString() : null,
+    geocoding_error: record.geocodingError ?? null,
+    geocoding_normalized_address: record.geocodingNormalizedAddress ?? null,
     commercial_status: "prospect",
     import_source: "excel_wizard",
     import_file_name: fileName,

@@ -9,6 +9,7 @@ import { listContacts } from "@/features/contacts/services/contacts.service";
 import { listOpportunities } from "@/features/opportunities/services/opportunities.service";
 import { resolveCompanyIdsForProductFilters } from "@/features/products/services/company-product-interests.service";
 import { analyzeOpportunityRadar } from "@/features/radar/services/opportunity-radar.service";
+import { applyAgentCompanyScope } from "@/features/companies/utils/agent-company-scope";
 import { escapeIlikePattern } from "@/features/search/utils/escape-ilike";
 import { listVisits } from "@/features/visits/services/visits.service";
 import { formatDistanceKm, getDistanceKm } from "@/features/maps/utils/geo-distance";
@@ -732,7 +733,7 @@ async function handleRadar(userId: string | null): Promise<JoyChatResponse> {
     .limit(200);
 
   if (userId) {
-    query = query.eq("assigned_user_id", userId);
+    query = applyAgentCompanyScope(query, userId);
   }
 
   const { data: companies } = await query;

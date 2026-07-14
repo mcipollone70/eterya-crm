@@ -22,7 +22,13 @@ export type ImportWizardStep = 1 | 2 | 3 | 4 | 5 | 6;
 
 export type MappingConfidence = "high" | "medium" | "low" | "manual";
 
-export type GeocodeStatus = "not_geocoded" | "geocoded" | "pending" | "failed";
+export type GeocodeStatus =
+  | "not_geocoded"
+  | "geocoded"
+  | "pending"
+  | "failed"
+  | "completed"
+  | "needs_review";
 
 export interface DetectedColumn {
   index: number;
@@ -79,6 +85,8 @@ export interface CompanyImportRecord {
   latitude: number | null;
   longitude: number | null;
   geocodeStatus: GeocodeStatus;
+  geocodingError?: string | null;
+  geocodingNormalizedAddress?: string | null;
   issues: string[];
   isComplete: boolean;
   needsFix: boolean;
@@ -151,4 +159,6 @@ export const GEOCODE_STATUS_LABELS: Record<GeocodeStatus, string> = {
   geocoded: "GEOCODIFICATE",
   pending: "IN ATTESA",
   failed: "FALLITE",
+  completed: "GEOCODIFICATE",
+  needs_review: "DA VERIFICARE",
 };

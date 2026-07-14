@@ -12,7 +12,9 @@ import type {
 import { parseExcelFile, createInitialMappings } from "../utils/parse-excel";
 import { buildAndCleanRecords, hasRequiredMapping } from "../utils/build-records";
 import { computePreviewStats } from "../utils/compute-stats";
-import { geocodeRecords } from "../services/geocoding.service";
+import { geocodeImportRecordsAction } from "../actions/geocode-import";
+
+const GEOCODE_CHUNK_SIZE = 50;
 
 interface WizardState {
   currentStep: ImportWizardStep;
@@ -128,12 +130,25 @@ export function useImportWizard() {
 
     if (snapshot.currentStep === 3) {
       setState((prev) => ({ ...prev, isLoading: true, error: null }));
-      const { records } = await geocodeRecords(snapshot.cleanedRecords);
+
+      const geocodedRecords: CompanyImportRecord[] = [];
+      let geocodeMessage: string | null = null;
+
+      for (let index = 0; index < snapshot.cleanedRecords.length; index += GEOCODE_CHUNK_SIZE) {
+        const chunk = snapshot.cleanedRecords.slice(index, index + GEOCODE_CHUNK_SIZE);
+        const chunkResult = await geocodeImportRecordsAction(chunk);
+        geocodedRecords.push(...chunkResult.records);
+        if (chunkResult.message) {
+          geocodeMessage = chunkResult.message;
+        }
+      }
+
       setState((prev) => ({
         ...prev,
-        cleanedRecords: records,
+        cleanedRecords: geocodedRecords,
         currentStep: 4,
         isLoading: false,
+        error: geocodeMessage?.includes("non configurata") ? geocodeMessage : null,
       }));
       return;
     }

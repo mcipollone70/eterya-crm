@@ -89,6 +89,11 @@ create policy "authenticated_all_attachments" on attachments
 
 DO $$
 BEGIN
+  IF to_regclass('public.agenda_reminders') IS NOT NULL THEN
+    EXECUTE 'DROP POLICY IF EXISTS "authenticated_all_agenda_reminders" ON agenda_reminders';
+    EXECUTE 'CREATE POLICY "authenticated_all_agenda_reminders" ON agenda_reminders FOR ALL TO authenticated USING (true) WITH CHECK (true)';
+  END IF;
+
   IF to_regclass('public.follow_ups') IS NOT NULL THEN
     EXECUTE 'DROP POLICY IF EXISTS "authenticated_all_follow_ups" ON follow_ups';
     EXECUTE 'CREATE POLICY "authenticated_all_follow_ups" ON follow_ups FOR ALL TO authenticated USING (true) WITH CHECK (true)';

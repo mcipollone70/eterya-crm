@@ -9,9 +9,11 @@ const initialState: AuthFormState = {};
 
 interface LoginFormProps {
   configured: boolean;
+  showSignup: boolean;
+  inviteCode?: string | null;
 }
 
-export function LoginForm({ configured }: LoginFormProps) {
+export function LoginForm({ configured, showSignup, inviteCode = null }: LoginFormProps) {
   const [state, formAction, pending] = useActionState(
     authenticateAction,
     initialState
@@ -87,6 +89,10 @@ export function LoginForm({ configured }: LoginFormProps) {
               </p>
             )}
 
+            {inviteCode ? (
+              <input type="hidden" name="invite_code" value={inviteCode} />
+            ) : null}
+
             <button
               type="submit"
               name="intent"
@@ -97,15 +103,21 @@ export function LoginForm({ configured }: LoginFormProps) {
               {pending ? "Attendere…" : "Accedi"}
             </button>
 
-            <button
-              type="submit"
-              name="intent"
-              value="signup"
-              disabled={pending}
-              className="flex h-10 w-full items-center justify-center rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:pointer-events-none disabled:opacity-60"
-            >
-              Crea un account
-            </button>
+            {showSignup ? (
+              <button
+                type="submit"
+                name="intent"
+                value="signup"
+                disabled={pending}
+                className="flex h-10 w-full items-center justify-center rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:pointer-events-none disabled:opacity-60"
+              >
+                Crea un account
+              </button>
+            ) : (
+              <p className="text-center text-xs text-slate-500">
+                Per ottenere un account contatta l&apos;amministratore.
+              </p>
+            )}
           </form>
         </div>
       </div>

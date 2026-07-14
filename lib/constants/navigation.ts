@@ -1,6 +1,7 @@
 import type { NavItem } from "@/types";
 
 export const NAV_ITEMS: NavItem[] = [
+  { label: "Command Center", href: "/command-center", icon: "Sparkles" },
   { label: "Dashboard", href: "/", icon: "LayoutDashboard" },
   { label: "Importa Aziende", href: "/companies/import", icon: "FileUp" },
   { label: "Aziende", href: "/companies", icon: "Building2" },
@@ -34,6 +35,7 @@ export const MOBILE_FIELD_NAV_ITEMS: NavItem[] = [
 
 export const PAGE_TITLES: Record<string, string> = {
   "/": "Mission Control",
+  "/command-center": "Command Center",
   "/companies/import": "Importa Aziende",
   "/companies": "Aziende",
   "/contacts": "Contatti",

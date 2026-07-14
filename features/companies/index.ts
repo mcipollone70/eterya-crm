@@ -23,4 +23,3 @@ export type {
   ImportPreviewStats,
 } from "./types/import";
 export { parseExcelFile, isValidExcelFile } from "./utils/parse-excel";
-export { geocodeRecords } from "./services/geocoding.service";

@@ -10,6 +10,7 @@ import type {
   CompanyNeedingReview,
   GeocodingSummary,
 } from "../types/geocoding";
+import type { CompanyImportRecord, GeocodeStatus as ImportGeocodeStatus } from "../types/import";
 import { buildFullAddress } from "../utils/build-full-address";
 import {
   GEOCODE_SEARCH_LIMIT,
@@ -163,6 +164,135 @@ async function persistGeocodeResolution(
   }
 
   return nextStatus === "completed" ? "succeeded" : "needsReview";
+}
+
+function mapResolutionToImportRecord(
+  record: CompanyImportRecord,
+  resolution: GeocodeResolution
+): CompanyImportRecord {
+  if (resolution.status === "failed" || !resolution.result) {
+    if (resolution.reason === "Indirizzo insufficiente per la geocodifica") {
+      return {
+        ...record,
+        latitude: null,
+        longitude: null,
+        geocodeStatus: "needs_review",
+        geocodingError: resolution.reason,
+        geocodingNormalizedAddress: null,
+      };
+    }
+
+    return {
+      ...record,
+      latitude: null,
+      longitude: null,
+      geocodeStatus: "needs_review",
+      geocodingError: resolution.reason ?? "Nessun risultato Geoapify",
+      geocodingNormalizedAddress: null,
+    };
+  }
+
+  const nextStatus: ImportGeocodeStatus =
+    resolution.status === "completed" ? "completed" : "needs_review";
+
+  return {
+    ...record,
+    latitude: resolution.result.latitude,
+    longitude: resolution.result.longitude,
+    geocodeStatus: nextStatus,
+    geocodingError: resolution.reason,
+    geocodingNormalizedAddress: resolution.result.normalizedAddress,
+  };
+}
+
+function importRecordToAddressParts(record: CompanyImportRecord): CompanyAddressParts {
+  return {
+    address: record.address,
+    city: record.city,
+    province: record.province,
+    postal_code: record.postalCode,
+    country: record.country,
+  };
+}
+
+async function geocodeSingleImportRecord(
+  record: CompanyImportRecord
+): Promise<CompanyImportRecord> {
+  const parts = importRecordToAddressParts(record);
+
+  if (!buildFullAddress(parts)) {
+    return {
+      ...record,
+      latitude: null,
+      longitude: null,
+      geocodeStatus: "needs_review",
+      geocodingError: "Indirizzo insufficiente per la geocodifica",
+      geocodingNormalizedAddress: null,
+    };
+  }
+
+  try {
+    const resolution = await resolveCompanyGeocode(parts);
+    return mapResolutionToImportRecord(record, resolution);
+  } catch (error) {
+    const message =
+      error instanceof GeoapifyProviderError
+        ? error.message
+        : error instanceof Error
+          ? error.message
+          : "Errore geocodifica";
+
+    return {
+      ...record,
+      latitude: null,
+      longitude: null,
+      geocodeStatus: "needs_review",
+      geocodingError: message,
+      geocodingNormalizedAddress: null,
+    };
+  }
+}
+
+export interface ImportGeocodingResult {
+  records: CompanyImportRecord[];
+  geocodedCount: number;
+  failedCount: number;
+  needsReviewCount: number;
+  message: string | null;
+}
+
+/**
+ * Geocodifica i record dell'import Excel con Geoapify (stessa logica del batch DB).
+ * Non persiste su database: aggiorna solo i record in memoria del wizard.
+ */
+export async function geocodeImportRecords(
+  records: CompanyImportRecord[]
+): Promise<ImportGeocodingResult> {
+  if (records.length === 0) {
+    return {
+      records: [],
+      geocodedCount: 0,
+      failedCount: 0,
+      needsReviewCount: 0,
+      message: "Nessun record da geocodificare.",
+    };
+  }
+
+  const geocodedRecords = await mapWithConcurrency(records, MAX_CONCURRENCY, (record) =>
+    geocodeSingleImportRecord(record)
+  );
+
+  const geocodedCount = geocodedRecords.filter((r) => r.geocodeStatus === "completed").length;
+  const needsReviewCount = geocodedRecords.filter((r) => r.geocodeStatus === "needs_review").length;
+  const failedCount = geocodedRecords.filter((r) => r.geocodeStatus === "failed").length;
+
+  return {
+    records: geocodedRecords,
+    geocodedCount,
+    failedCount,
+    needsReviewCount,
+    message: `Geocodificate ${geocodedCount} aziende, ${needsReviewCount} da verificare.`,
+  };
 }
 
 export async function getGeocodingSummary(): Promise<{
