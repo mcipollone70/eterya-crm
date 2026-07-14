@@ -11,6 +11,10 @@ import { resolveCompanyIdsForProductFilters } from "@/features/products/services
 import { analyzeOpportunityRadar } from "@/features/radar/services/opportunity-radar.service";
 import { applyAgentCompanyScope } from "@/features/companies/utils/agent-company-scope";
 import { escapeIlikePattern } from "@/features/search/utils/escape-ilike";
+import {
+  countUserCompletedVisitsToday,
+} from "@/features/joy/services/joy-ai.service";
+import { getUserScopedTodayVisitPlan } from "@/features/dashboard/services/mission-control.service";
 import { listVisits } from "@/features/visits/services/visits.service";
 import { formatDistanceKm, getDistanceKm } from "@/features/maps/utils/geo-distance";
 import { AGENDA_KIND_LABELS, parseAgendaFilters } from "@/lib/constants/agenda";
@@ -127,17 +131,12 @@ async function fetchCompaniesByIds(ids: string[]): Promise<CompanyRow[]> {
 }
 
 async function handleVisitsToday(userId: string | null): Promise<JoyChatResponse> {
-  const { data: visits, error } = await listVisits({ period: "today", limit: 50 });
-  if (error) {
-    return { message: assistantMessage(`Non riesco a leggere le visite: ${error}`), error };
-  }
+  const [openVisits, completedTodayCount] = await Promise.all([
+    getUserScopedTodayVisitPlan(userId),
+    countUserCompletedVisitsToday(userId),
+  ]);
 
-  const openVisits = (visits ?? []).filter(
-    (visit) => visit.status === "scheduled" || visit.status === "in_progress"
-  );
-  const completedToday = (visits ?? []).filter((visit) => visit.status === "completed");
-
-  if (openVisits.length === 0 && completedToday.length === 0) {
+  if (openVisits.length === 0 && completedTodayCount === 0) {
     const suggestions = await getDailyVisitSuggestions({ limit: 5, agentId: userId });
     const items: JoyChatListItem[] = (suggestions.data ?? []).map((item) => ({
       id: item.companyId,
@@ -159,7 +158,7 @@ async function handleVisitsToday(userId: string | null): Promise<JoyChatResponse
     };
   }
 
-  const companyIds = [...new Set(openVisits.map((visit) => visit.company_id))];
+  const companyIds = [...new Set(openVisits.map((visit) => visit.companyId))];
   const companies = await fetchCompaniesByIds(companyIds);
   const companyMap = new Map(companies.map((row) => [row.id, row]));
 
@@ -171,13 +170,13 @@ async function handleVisitsToday(userId: string | null): Promise<JoyChatResponse
   ];
 
   for (const visit of openVisits.slice(0, LIST_LIMIT)) {
-    const company = companyMap.get(visit.company_id);
-    const time = formatVisitDate(visit.scheduled_at);
-    const location = [visit.company_city, visit.company_province].filter(Boolean).join(", ");
-    lines.push(`• **${visit.company_name ?? "Azienda"}** — ${time}${location ? ` (${location})` : ""}`);
+    const company = companyMap.get(visit.companyId);
+    const time = formatVisitDate(visit.scheduledAt);
+    const location = [visit.city, visit.province].filter(Boolean).join(", ");
+    lines.push(`• **${visit.companyName}** — ${time}${location ? ` (${location})` : ""}`);
     items.push({
-      id: visit.id,
-      title: visit.company_name ?? "Azienda",
+      id: visit.visitId,
+      title: visit.companyName,
       subtitle: `${time}${location ? ` · ${location}` : ""}`,
     });
 
@@ -191,14 +190,14 @@ async function handleVisitsToday(userId: string | null): Promise<JoyChatResponse
             latitude: company.latitude,
             longitude: company.longitude,
           },
-          `visit-${visit.id}`
+          `visit-${visit.visitId}`
         ).slice(0, 3)
       );
     }
   }
 
-  if (completedToday.length > 0) {
-    lines.push(`\nHai già completato ${completedToday.length} visita/e oggi.`);
+  if (completedTodayCount > 0) {
+    lines.push(`\nHai già completato ${completedTodayCount} visita/e oggi.`);
   }
 
   return {
@@ -388,14 +387,11 @@ async function handleProductInterest(family: ProductFamily): Promise<JoyChatResp
 }
 
 async function handleOptimizeTour(userId: string | null): Promise<JoyChatResponse> {
-  const [visitsResult, suggestionsResult] = await Promise.all([
-    listVisits({ period: "today", limit: 30 }),
+  const [scheduled, suggestionsResult] = await Promise.all([
+    getUserScopedTodayVisitPlan(userId),
     getDailyVisitSuggestions({ limit: 8, agentId: userId }),
   ]);
 
-  const scheduled = (visitsResult.data ?? []).filter(
-    (visit) => visit.status === "scheduled" || visit.status === "in_progress"
-  );
   const suggestions = suggestionsResult.data ?? [];
 
   if (scheduled.length === 0 && suggestions.length === 0) {
@@ -407,12 +403,12 @@ async function handleOptimizeTour(userId: string | null): Promise<JoyChatRespons
     };
   }
 
-  const ordered = [...scheduled].sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at));
+  const ordered = [...scheduled].sort((a, b) => a.scheduledAt.localeCompare(b.scheduledAt));
   const lines: string[] = [];
 
   ordered.forEach((visit, index) => {
     lines.push(
-      `${index + 1}. **${visit.company_name ?? "Azienda"}** — ${formatVisitDate(visit.scheduled_at)}`
+      `${index + 1}. **${visit.companyName}** — ${formatVisitDate(visit.scheduledAt)}`
     );
   });
 
@@ -426,7 +422,7 @@ async function handleOptimizeTour(userId: string | null): Promise<JoyChatRespons
   }
 
   const companyIds = [
-    ...ordered.map((visit) => visit.company_id),
+    ...ordered.map((visit) => visit.companyId),
     ...suggestions.map((item) => item.companyId),
   ];
   const companies = await fetchCompaniesByIds(companyIds);

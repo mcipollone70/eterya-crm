@@ -18,7 +18,12 @@ export async function executeCommandCenterAction(
   const result = await executeJoyCopilotOperation(operation);
   if (result.success) {
     revalidatePath("/command-center");
+    revalidatePath("/joy");
+    revalidatePath("/joy/chat");
+    revalidatePath("/joy/autonomous");
     revalidatePath("/");
+    revalidatePath("/agenda");
+    revalidatePath("/visits");
   }
 
   return result;

@@ -13,6 +13,8 @@ import type { JoyCopilotExecuteResult, JoyCopilotOperation } from "../types/joy-
 function revalidateCopilotPaths(companyId?: string | null) {
   revalidatePath("/joy/chat");
   revalidatePath("/joy");
+  revalidatePath("/joy/autonomous");
+  revalidatePath("/command-center");
   revalidatePath("/");
   revalidatePath("/visits");
   revalidatePath("/agenda");

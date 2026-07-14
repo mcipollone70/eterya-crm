@@ -19,6 +19,11 @@ export async function executeJoyAutonomousAction(
   if (result.success) {
     revalidatePath("/joy/autonomous");
     revalidatePath("/joy");
+    revalidatePath("/joy/chat");
+    revalidatePath("/command-center");
+    revalidatePath("/");
+    revalidatePath("/agenda");
+    revalidatePath("/visits");
   }
 
   return result;

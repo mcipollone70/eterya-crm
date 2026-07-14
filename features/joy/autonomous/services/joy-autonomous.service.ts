@@ -1,6 +1,6 @@
 import "server-only";
 
-import { listFollowUps } from "@/features/activities/services/follow-ups.service";
+import { listFollowUps, type FollowUpListItem } from "@/features/activities/services/follow-ups.service";
 import { getMissionControlData } from "@/features/dashboard/services/mission-control.service";
 import { listOpportunities } from "@/features/opportunities/services/opportunities.service";
 import { listVisits } from "@/features/visits/services/visits.service";
@@ -19,9 +19,9 @@ import { buildAutonomousNotifications } from "../utils/build-autonomous-notifica
 
 function buildMorningBriefing(
   joyData: Awaited<ReturnType<typeof getJoyData>>,
-  missionData: Awaited<ReturnType<typeof getMissionControlData>>
+  missionData: Awaited<ReturnType<typeof getMissionControlData>>,
+  overdueFollowUps: FollowUpListItem[]
 ): JoyAutonomousMorningBriefing {
-  const urgentOpportunities = missionData.kpis.hotOpportunities;
   const openOpps = joyData.suggestions
     .filter((item) => item.signals.openOpportunityCount > 0)
     .slice(0, 5)
@@ -34,16 +34,13 @@ function buildMorningBriefing(
       href: `/opportunities`,
     }));
 
-  const followUpsDue = joyData.risks
-    .filter((risk) => risk.id.startsWith("risk-followup-"))
-    .slice(0, 6)
-    .map((risk) => ({
-      id: risk.id,
-      companyName: risk.title.replace("Follow-up scaduto · ", ""),
-      scheduledAt: new Date().toISOString(),
-      priority: "high",
-      href: risk.href,
-    }));
+  const followUpsDue = overdueFollowUps.slice(0, 6).map((followUp) => ({
+    id: followUp.id,
+    companyName: followUp.company_name ?? "Azienda",
+    scheduledAt: followUp.effective_at,
+    priority: followUp.priority,
+    href: `/activities?section=followups&fcompany=${followUp.company_id}`,
+  }));
 
   const lostClientRisks = joyData.risks.filter(
     (risk) => risk.id.startsWith("risk-inactive-") || risk.id.startsWith("risk-opp-")
@@ -130,7 +127,11 @@ export async function getJoyAutonomousData(): Promise<JoyAutonomousData> {
       isOpenOpportunityStage(item.stage)
     );
 
-    const briefing = buildMorningBriefing(joyData, missionData);
+    const briefing = buildMorningBriefing(
+      joyData,
+      missionData,
+      overdueFollowUpsResult.data ?? []
+    );
     const notifications = buildAutonomousNotifications({
       suggestions: joyData.suggestions,
       risks: joyData.risks,

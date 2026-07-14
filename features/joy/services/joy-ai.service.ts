@@ -5,11 +5,13 @@ import { listFollowUps, getFollowUpDashboardMetrics } from "@/features/activitie
 import { getDailyVisitSuggestions } from "@/features/assistant/services/assistant-suggestions.service";
 import { getPriorityDashboardMetrics } from "@/features/companies/services/commercial-priority.service";
 import { applyAgentCompanyScope } from "@/features/companies/utils/agent-company-scope";
+import { getUserScopedTodayVisitPlan } from "@/features/dashboard/services/mission-control.service";
 import { listAgendaItems } from "@/features/agenda/services/agenda.service";
 import { getOpportunityDashboardMetrics, listOpportunities } from "@/features/opportunities/services/opportunities.service";
 import { resolveCompanyIdsForProductFilters } from "@/features/products/services/company-product-interests.service";
 import { analyzeOpportunityRadar } from "@/features/radar/services/opportunity-radar.service";
 import { listVisits, getVisitDashboardMetrics } from "@/features/visits/services/visits.service";
+import { describeDbError } from "@/lib/supabase/errors";
 import { getDistanceKm } from "@/features/maps/utils/geo-distance";
 import { parseAgendaFilters } from "@/lib/constants/agenda";
 import type { ProductFamily } from "@/lib/constants/product-catalog";
@@ -17,7 +19,6 @@ import { endOfTodayIso, startOfTodayIso } from "@/lib/last-visit/format";
 import { createServerClient } from "@/lib/supabase/server";
 import type { JoyData } from "../types/joy-data";
 import {
-  buildJoyDayPlan,
   buildJoyOpportunities,
   buildJoyRecommendations,
   buildJoyRisks,
@@ -96,29 +97,52 @@ async function estimateTodayTourKm(userId: string | null): Promise<number> {
   return Math.round(total * 10) / 10;
 }
 
-async function fetchCompanyDetailsForVisits(companyIds: string[]): Promise<
-  Map<string, { phone: string | null; latitude: number | null; longitude: number | null }>
-> {
-  const map = new Map<string, { phone: string | null; latitude: number | null; longitude: number | null }>();
-  if (companyIds.length === 0) {
-    return map;
-  }
-
+export async function countUserVisitsToday(userId: string | null): Promise<number> {
   const supabase = await createServerClient();
-  const { data } = await supabase
-    .from("companies")
-    .select("id,phone,contact_phone,mobile,latitude,longitude")
-    .in("id", companyIds);
+  const todayStart = startOfTodayIso();
+  const todayEnd = endOfTodayIso();
 
-  for (const row of data ?? []) {
-    map.set(row.id, {
-      phone: row.phone ?? row.contact_phone ?? row.mobile ?? null,
-      latitude: row.latitude,
-      longitude: row.longitude,
-    });
+  let query = supabase
+    .from("visits")
+    .select("id")
+    .or(
+      `and(status.in.(scheduled,in_progress),scheduled_at.gte.${todayStart},scheduled_at.lte.${todayEnd}),and(status.eq.completed,completed_at.gte.${todayStart},completed_at.lte.${todayEnd})`
+    );
+
+  if (userId) {
+    query = query.eq("user_id", userId);
   }
 
-  return map;
+  const { data, error } = await query;
+  if (error) {
+    throw new Error(describeDbError(error) ?? "Conteggio visite non riuscito.");
+  }
+
+  return new Set((data ?? []).map((row) => row.id)).size;
+}
+
+export async function countUserCompletedVisitsToday(userId: string | null): Promise<number> {
+  const supabase = await createServerClient();
+  const todayStart = startOfTodayIso();
+  const todayEnd = endOfTodayIso();
+
+  let query = supabase
+    .from("visits")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "completed")
+    .gte("completed_at", todayStart)
+    .lte("completed_at", todayEnd);
+
+  if (userId) {
+    query = query.eq("user_id", userId);
+  }
+
+  const { count, error } = await query;
+  if (error) {
+    return 0;
+  }
+
+  return count ?? 0;
 }
 
 async function fetchCompaniesByProductFamily(
@@ -189,7 +213,8 @@ export async function getJoyData(): Promise<JoyData> {
   try {
     const [
       suggestionsResult,
-      todayVisitsResult,
+      userDayPlan,
+      visitsToday,
       overdueVisitsResult,
       agendaResult,
       overdueFollowUpsResult,
@@ -205,7 +230,8 @@ export async function getJoyData(): Promise<JoyData> {
       tapparelleCompanies,
     ] = await Promise.all([
       getDailyVisitSuggestions({ limit: 20, agentId: userId }),
-      listVisits({ period: "today", limit: 100 }),
+      getUserScopedTodayVisitPlan(userId),
+      countUserVisitsToday(userId),
       listVisits({ period: "overdue", limit: 20 }),
       listAgendaItems(
         parseAgendaFilters({
@@ -229,11 +255,7 @@ export async function getJoyData(): Promise<JoyData> {
     ]);
 
     const suggestions = suggestionsResult.data ?? [];
-    const todayVisits = todayVisitsResult.data ?? [];
-    const companyIds = [...new Set(todayVisits.map((visit) => visit.company_id))];
-    const companyDetails = await fetchCompanyDetailsForVisits(companyIds);
-
-    const recommendations = buildJoyRecommendations(suggestions);
+    const dayPlan = userDayPlan;
     const risks = buildJoyRisks({
       overdueFollowUps: overdueFollowUpsResult.data ?? [],
       opportunities: opportunitiesResult.data ?? [],
@@ -248,7 +270,7 @@ export async function getJoyData(): Promise<JoyData> {
         tapparelle: tapparelleCompanies,
       },
     });
-    const dayPlan = buildJoyDayPlan(todayVisits, companyDetails);
+    const recommendations = buildJoyRecommendations(suggestions);
 
     const agendaItems = (agendaResult.data ?? []).filter(
       (item) => new Date(item.scheduledAt).getTime() >= now.getTime()
@@ -256,7 +278,6 @@ export async function getJoyData(): Promise<JoyData> {
 
     const errors = [
       suggestionsResult.error,
-      todayVisitsResult.error,
       agendaResult.error,
       overdueFollowUpsResult.error,
       opportunitiesResult.error,
@@ -270,7 +291,7 @@ export async function getJoyData(): Promise<JoyData> {
       userName,
       dateLabel: formatItalianDate(now),
       summary: {
-        visitsToday: todayVisits.length,
+        visitsToday,
         agendaItems: agendaItems.length,
         overdueFollowUps: followUpMetrics.data?.overdue ?? 0,
         openOpportunities: opportunityMetrics.data?.openCount ?? 0,
