@@ -92,7 +92,7 @@ const OPPORTUNITY_SELECT =
   "id,company_id,contact_id,user_id,title,product_interest,product_family,total_amount,currency,probability,stage,status,opened_at,expected_close_at,notes,created_at,updated_at,companies(name),contacts(full_name),opportunity_products(product_id,products(id,name))";
 
 const LEGACY_OPPORTUNITY_SELECT =
-  "id,company_id,user_id,title,product_interest,total_amount,currency,status,notes,created_at,updated_at,companies(name),contacts(full_name)";
+  "id,company_id,contact_id,user_id,title,product_interest,total_amount,currency,status,notes,created_at,updated_at,companies(name),contacts(full_name)";
 
 type OpportunityRow = {
   id: string;
@@ -190,7 +190,7 @@ function mapOpportunityRow(row: OpportunityRow): OpportunityListItem {
     product_names: productNames,
     total_amount: Number(row.total_amount),
     currency: row.currency,
-    probability: row.probability ?? 50,
+    probability: row.probability ?? null,
     stage,
     status: row.status,
     opened_at: row.opened_at ?? row.created_at,
@@ -219,11 +219,75 @@ function legacyStatusForStage(stage: OpportunityStage): OpportunityStatus {
   return "draft";
 }
 
+async function resolveValidContactId(
+  companyId: string,
+  contactId: string | null | undefined
+): Promise<{ contactId: string | null; error: string | null }> {
+  if (!contactId) {
+    return { contactId: null, error: null };
+  }
+
+  const supabase = await createServerClient();
+  const { data, error } = await supabase
+    .from("contacts")
+    .select("id")
+    .eq("id", contactId)
+    .eq("company_id", companyId)
+    .maybeSingle();
+
+  if (error) {
+    return { contactId: null, error: describeDbError(error) };
+  }
+
+  if (!data) {
+    return {
+      contactId: null,
+      error: "Il referente selezionato non appartiene a questa azienda.",
+    };
+  }
+
+  return { contactId, error: null };
+}
+
+async function replaceOpportunityProducts(
+  opportunityId: string,
+  productIds: string[] | undefined
+): Promise<{ error: string | null }> {
+  const supabase = await createServerClient();
+  const { error: deleteError } = await supabase
+    .from("opportunity_products")
+    .delete()
+    .eq("opportunity_id", opportunityId);
+
+  if (deleteError) {
+    return { error: describeDbError(deleteError) };
+  }
+
+  if (!productIds || productIds.length === 0) {
+    return { error: null };
+  }
+
+  const { error: insertError } = await supabase.from("opportunity_products").insert(
+    productIds.map((productId) => ({
+      opportunity_id: opportunityId,
+      product_id: productId,
+    }))
+  );
+
+  return { error: describeDbError(insertError) };
+}
+
 export async function listOpportunities(options?: {
   companyId?: string;
   limit?: number;
-}): Promise<{ data: OpportunityListItem[]; error: string | null }> {
+}): Promise<{ data: OpportunityListItem[]; count: number; error: string | null }> {
   const supabase = await createServerClient();
+
+  let countQuery = supabase.from("opportunities").select("id", { count: "exact", head: true });
+  if (options?.companyId) {
+    countQuery = countQuery.eq("company_id", options.companyId);
+  }
+  const countResult = await countQuery;
 
   async function runQuery(select: string) {
     let query = supabase
@@ -250,14 +314,18 @@ export async function listOpportunities(options?: {
   }
 
   if (result.error) {
-    return { data: [], error: describeDbError(result.error) };
+    return { data: [], count: 0, error: describeDbError(result.error) };
   }
 
   const items = (result.data ?? []).map((row) =>
     mapOpportunityRow(row as unknown as OpportunityRow)
   );
 
-  return { data: items, error: null };
+  return {
+    data: items,
+    count: countResult.count ?? items.length,
+    error: null,
+  };
 }
 
 export async function getCompanyOpportunitySummary(
@@ -305,6 +373,14 @@ export async function saveOpportunity(
   const supabase = await createServerClient();
   const now = new Date().toISOString();
 
+  const { contactId, error: contactError } = await resolveValidContactId(
+    input.companyId,
+    input.contactId
+  );
+  if (contactError) {
+    return { opportunityId: null, error: contactError };
+  }
+
   const productNames: string[] = [];
   if (input.productIds && input.productIds.length > 0) {
     const { data: products } = await supabase
@@ -320,7 +396,7 @@ export async function saveOpportunity(
     .from("opportunities")
     .insert({
       company_id: input.companyId,
-      contact_id: input.contactId ?? null,
+      contact_id: contactId,
       user_id: userId,
       title: input.title.trim(),
       product_interest:
@@ -343,12 +419,10 @@ export async function saveOpportunity(
   }
 
   if (input.productIds && input.productIds.length > 0) {
-    await supabase.from("opportunity_products").insert(
-      input.productIds.map((productId) => ({
-        opportunity_id: data.id,
-        product_id: productId,
-      }))
-    );
+    const { error: productsError } = await replaceOpportunityProducts(data.id, input.productIds);
+    if (productsError) {
+      return { opportunityId: null, error: productsError };
+    }
   }
 
   await supabase.from("opportunity_stage_history").insert({
@@ -440,6 +514,14 @@ export async function updateOpportunity(
   const supabase = await createServerClient();
   const now = new Date().toISOString();
 
+  const { contactId, error: contactError } = await resolveValidContactId(
+    opportunity.company_id,
+    input.contactId
+  );
+  if (contactError) {
+    return { error: contactError };
+  }
+
   const productNames: string[] = [];
   if (input.productIds && input.productIds.length > 0) {
     const { data: products } = await supabase
@@ -454,7 +536,7 @@ export async function updateOpportunity(
   const { error } = await supabase
     .from("opportunities")
     .update({
-      contact_id: input.contactId ?? null,
+      contact_id: contactId,
       title: input.title.trim(),
       product_interest:
         input.productInterest?.trim() ||
@@ -475,14 +557,12 @@ export async function updateOpportunity(
     return { error: describeDbError(error) };
   }
 
-  await supabase.from("opportunity_products").delete().eq("opportunity_id", opportunityId);
-  if (input.productIds && input.productIds.length > 0) {
-    await supabase.from("opportunity_products").insert(
-      input.productIds.map((productId) => ({
-        opportunity_id: opportunityId,
-        product_id: productId,
-      }))
-    );
+  const { error: productsError } = await replaceOpportunityProducts(
+    opportunityId,
+    input.productIds
+  );
+  if (productsError) {
+    return { error: productsError };
   }
 
   if (opportunity.stage !== stage) {
@@ -602,33 +682,58 @@ export async function getOpportunityDashboardMetrics(): Promise<{
     };
   }
 
-  const { data, error } = await listOpportunities({ limit: 2000 });
-  if (error) {
-    return { data: null, error };
+  const { count: openCount, error: openCountError } = await supabase
+    .from("opportunities")
+    .select("id", { count: "exact", head: true })
+    .in("stage", [...OPEN_OPPORTUNITY_STAGES]);
+
+  const { count: wonCount, error: wonError } = await supabase
+    .from("opportunities")
+    .select("id", { count: "exact", head: true })
+    .eq("stage", CLOSED_WON_STAGE);
+
+  const { count: lostCount, error: lostError } = await supabase
+    .from("opportunities")
+    .select("id", { count: "exact", head: true })
+    .eq("stage", CLOSED_LOST_STAGE);
+
+  const aggregateError = openCountError ?? wonError ?? lostError;
+  if (aggregateError) {
+    return { data: null, error: describeDbError(aggregateError) };
   }
 
-  let openCount = 0;
   let pipelineValue = 0;
-  let wonCount = 0;
-  let lostCount = 0;
+  let offset = 0;
+  const batchSize = 1000;
 
-  for (const item of data) {
-    if (item.stage === CLOSED_WON_STAGE) {
-      wonCount += 1;
-      continue;
+  while (true) {
+    const { data: valueBatch, error: valueError } = await supabase
+      .from("opportunities")
+      .select("total_amount")
+      .in("stage", [...OPEN_OPPORTUNITY_STAGES])
+      .range(offset, offset + batchSize - 1);
+
+    if (valueError) {
+      return { data: null, error: describeDbError(valueError) };
     }
-    if (item.stage === CLOSED_LOST_STAGE) {
-      lostCount += 1;
-      continue;
+
+    const rows = valueBatch ?? [];
+    pipelineValue += rows.reduce((sum, row) => sum + Number(row.total_amount ?? 0), 0);
+
+    if (rows.length < batchSize) {
+      break;
     }
-    if (isOpenOpportunityStage(item.stage)) {
-      openCount += 1;
-      pipelineValue += item.total_amount;
-    }
+
+    offset += batchSize;
   }
 
   return {
-    data: { openCount, pipelineValue, wonCount, lostCount },
+    data: {
+      openCount: openCount ?? 0,
+      pipelineValue,
+      wonCount: wonCount ?? 0,
+      lostCount: lostCount ?? 0,
+    },
     error: null,
   };
 }

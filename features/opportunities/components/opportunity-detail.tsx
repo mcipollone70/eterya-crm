@@ -262,8 +262,8 @@ export function OpportunityDetail({
               <div>
                 <p className="font-medium text-slate-700">Prodotti</p>
                 <ul className="mt-1 list-inside list-disc text-slate-600">
-                  {opportunity.product_names.map((name) => (
-                    <li key={name}>{name}</li>
+                  {opportunity.product_names.map((name, index) => (
+                    <li key={opportunity.product_ids[index] ?? `${name}-${index}`}>{name}</li>
                   ))}
                 </ul>
               </div>

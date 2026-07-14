@@ -126,7 +126,7 @@ export function EditOpportunityForm({
             </select>
           </label>
 
-          {contacts.length > 0 && (
+          {contacts.length > 0 ? (
             <label className="block text-sm">
               <span className="mb-1 block font-medium text-slate-700">Referente</span>
               <select
@@ -135,6 +135,12 @@ export function EditOpportunityForm({
                 className="w-full rounded-lg border border-slate-200 px-3 py-2"
               >
                 <option value="">Nessun referente</option>
+                {opportunity.contact_id &&
+                  !contacts.some((contact) => contact.id === opportunity.contact_id) && (
+                    <option value={opportunity.contact_id}>
+                      {opportunity.contact_name ?? "Referente collegato"}
+                    </option>
+                  )}
                 {contacts.map((contact) => (
                   <option key={contact.id} value={contact.id}>
                     {contact.full_name}
@@ -142,7 +148,9 @@ export function EditOpportunityForm({
                 ))}
               </select>
             </label>
-          )}
+          ) : opportunity.contact_id ? (
+            <input type="hidden" name="contact_id" value={opportunity.contact_id} />
+          ) : null}
 
           <label className="block text-sm sm:col-span-2">
             <span className="mb-1 block font-medium text-slate-700">Prodotti collegati</span>

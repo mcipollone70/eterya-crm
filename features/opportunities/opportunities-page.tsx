@@ -18,13 +18,17 @@ export async function OpportunitiesPage() {
     );
   }
 
-  const { data: opportunities, error } = await listOpportunities();
+  const { data: opportunities, count, error } = await listOpportunities();
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Opportunità"
-        subtitle={`${opportunities.length.toLocaleString("it-IT")} opportunità nella pipeline · vista Kanban.`}
+        subtitle={`${count.toLocaleString("it-IT")} opportunità nella pipeline${
+          count > opportunities.length
+            ? ` · prime ${opportunities.length.toLocaleString("it-IT")} in Kanban`
+            : ""
+        } · vista Kanban.`}
       />
 
       {error ? (
