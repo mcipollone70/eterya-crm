@@ -39,7 +39,8 @@ export function AgendaCreatePanel({ companies, fixedOnMobile = false }: AgendaCr
     setMessage(null);
     setError(null);
 
-    const formData = new FormData(event.currentTarget);
+    const form = event.currentTarget;
+    const formData = new FormData(form);
     const scheduledRaw = String(formData.get("scheduled_at") ?? "");
     const scheduledAt = scheduledRaw ? new Date(scheduledRaw).toISOString() : "";
 
@@ -74,9 +75,9 @@ export function AgendaCreatePanel({ companies, fixedOnMobile = false }: AgendaCr
         return;
       }
 
+      form.reset();
       setMessage(result.message);
       setIsOpen(false);
-      event.currentTarget.reset();
       router.refresh();
     });
   }
