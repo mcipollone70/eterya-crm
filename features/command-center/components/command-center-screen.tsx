@@ -385,6 +385,27 @@ export function CommandCenterScreen({ data }: CommandCenterScreenProps) {
                         <PriorityBadge score={item.score} tier={item.tier} />
                       </div>
                       <p className="text-sm text-amber-800">{item.primaryReason}</p>
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        <Link
+                          href={`/visits?company=${item.companyId}&briefing=${item.companyId}`}
+                          className="inline-flex min-h-9 items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-3 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"
+                        >
+                          <Sparkles className="h-3.5 w-3.5" />
+                          Briefing
+                        </Link>
+                        <Link
+                          href={`/companies/${item.companyId}`}
+                          className="inline-flex min-h-9 items-center text-xs font-medium text-indigo-600 hover:underline"
+                        >
+                          Apri scheda
+                        </Link>
+                        <Link
+                          href={`/visits?company=${item.companyId}`}
+                          className="inline-flex min-h-9 items-center text-xs font-medium text-indigo-600 hover:underline"
+                        >
+                          Pianifica visita
+                        </Link>
+                      </div>
                     </CardContent>
                   </Card>
                 ))}

@@ -29,6 +29,7 @@ import type {
   MissionControlKpis,
   MissionControlNextVisit,
 } from "../types/mission-control";
+import type { JoyDayPlanItem } from "@/features/joy/types/joy-data";
 
 function formatItalianDate(date: Date): string {
   return new Intl.DateTimeFormat("it-IT", {
@@ -148,32 +149,98 @@ async function countVisitsToday(userId: string | null): Promise<number> {
   const todayStart = startOfTodayIso();
   const todayEnd = endOfTodayIso();
 
-  let scheduledQuery = supabase
+  let query = supabase
     .from("visits")
-    .select("id", { count: "exact", head: true })
-    .in("status", ["scheduled", "in_progress", "completed"])
-    .gte("scheduled_at", todayStart)
-    .lte("scheduled_at", todayEnd);
-
-  let completedQuery = supabase
-    .from("visits")
-    .select("id", { count: "exact", head: true })
-    .eq("status", "completed")
-    .gte("completed_at", todayStart)
-    .lte("completed_at", todayEnd);
+    .select("id")
+    .or(
+      `and(status.in.(scheduled,in_progress),scheduled_at.gte.${todayStart},scheduled_at.lte.${todayEnd}),and(status.eq.completed,completed_at.gte.${todayStart},completed_at.lte.${todayEnd})`
+    );
 
   if (userId) {
-    scheduledQuery = scheduledQuery.eq("user_id", userId);
-    completedQuery = completedQuery.eq("user_id", userId);
+    query = query.eq("user_id", userId);
   }
 
-  const [scheduledRes, completedRes] = await Promise.all([scheduledQuery, completedQuery]);
-  const error = scheduledRes.error ?? completedRes.error;
+  const { data, error } = await query;
   if (error) {
     throw new Error(describeDbError(error) ?? "Conteggio visite non riuscito.");
   }
 
-  return Math.max(scheduledRes.count ?? 0, completedRes.count ?? 0);
+  return new Set((data ?? []).map((row) => row.id)).size;
+}
+
+export async function getUserScopedTodayVisitPlan(
+  userId: string | null
+): Promise<JoyDayPlanItem[]> {
+  const supabase = await createServerClient();
+  const todayStart = startOfTodayIso();
+  const todayEnd = endOfTodayIso();
+
+  type VisitPlanRow = {
+    id: string;
+    company_id: string;
+    scheduled_at: string;
+    status: string;
+    notes: string | null;
+    companies:
+      | {
+          name: string;
+          city: string | null;
+          province: string | null;
+          phone: string | null;
+          contact_phone: string | null;
+          mobile: string | null;
+          latitude: number | null;
+          longitude: number | null;
+        }
+      | Array<{
+          name: string;
+          city: string | null;
+          province: string | null;
+          phone: string | null;
+          contact_phone: string | null;
+          mobile: string | null;
+          latitude: number | null;
+          longitude: number | null;
+        }>
+      | null;
+  };
+
+  let query = supabase
+    .from("visits")
+    .select(
+      "id,company_id,scheduled_at,status,notes,companies(name,city,province,phone,contact_phone,mobile,latitude,longitude)"
+    )
+    .in("status", ["scheduled", "in_progress"])
+    .gte("scheduled_at", todayStart)
+    .lte("scheduled_at", todayEnd)
+    .order("scheduled_at", { ascending: true });
+
+  if (userId) {
+    query = query.eq("user_id", userId);
+  }
+
+  const { data, error } = await query;
+  if (error || !data) {
+    return [];
+  }
+
+  return (data as VisitPlanRow[]).map((row) => {
+    const company = Array.isArray(row.companies) ? row.companies[0] : row.companies;
+    return {
+      visitId: row.id,
+      companyId: row.company_id,
+      companyName: company?.name ?? "Azienda",
+      city: company?.city ?? null,
+      province: company?.province ?? null,
+      scheduledAt: row.scheduled_at,
+      scheduledLabel: formatScheduledTimeLabel(row.scheduled_at),
+      status: row.status as JoyDayPlanItem["status"],
+      phone: company?.phone ?? company?.contact_phone ?? company?.mobile ?? null,
+      latitude: company?.latitude ?? null,
+      longitude: company?.longitude ?? null,
+      notes: row.notes,
+    };
+  });
 }
 
 async function estimateTodayTourKm(userId: string | null): Promise<number> {

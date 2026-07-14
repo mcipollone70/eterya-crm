@@ -1,7 +1,11 @@
 import "server-only";
 
+import { getCurrentUser } from "@/features/auth/session";
 import { listFollowUps } from "@/features/activities/services/follow-ups.service";
-import { getMissionControlData } from "@/features/dashboard/services/mission-control.service";
+import {
+  getMissionControlData,
+  getUserScopedTodayVisitPlan,
+} from "@/features/dashboard/services/mission-control.service";
 import { buildAutonomousDecisions } from "@/features/joy/autonomous/utils/build-autonomous-decisions";
 import { buildAutonomousNotifications } from "@/features/joy/autonomous/utils/build-autonomous-notifications";
 import { listOpportunities } from "@/features/opportunities/services/opportunities.service";
@@ -84,12 +88,15 @@ async function fetchMapCompaniesForIds(companyIds: string[]): Promise<MapCompany
 
 export async function getCommandCenterData(): Promise<CommandCenterData> {
   const now = new Date();
+  const user = await getCurrentUser();
+  const userId = user?.id ?? null;
 
   try {
-    const [missionData, joyData, overdueFollowUpsResult, overdueVisitsResult, opportunitiesResult] =
+    const [missionData, joyData, userDayPlan, overdueFollowUpsResult, overdueVisitsResult, opportunitiesResult] =
       await Promise.all([
         getMissionControlData(),
         getJoyData(),
+        getUserScopedTodayVisitPlan(userId),
         listFollowUps({ period: "overdue", limit: 12 }),
         listVisits({ period: "overdue", limit: 12 }),
         listOpportunities({ limit: 100 }),
@@ -104,23 +111,27 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
     const reminders = agenda.filter((item) => item.kind === "reminder");
 
     const mission = buildCommandCenterMission({
-      summary: joyData.summary,
-      dayPlan: joyData.dayPlan,
+      summary: {
+        ...joyData.summary,
+        visitsToday: missionData.kpis.visitsToday,
+        estimatedTourKm: missionData.kpis.estimatedTourKm,
+      },
+      dayPlan: userDayPlan,
       suggestions: joyData.suggestions,
     });
 
     const timeline = buildCommandCenterTimeline({
-      dayPlan: joyData.dayPlan,
+      dayPlan: userDayPlan,
       agendaItems: agenda,
     });
 
     const rawDecisions = buildAutonomousDecisions({
       suggestions: joyData.suggestions,
-      dayPlan: joyData.dayPlan,
+      dayPlan: userDayPlan,
       overdueFollowUps: followUps,
       overdueVisits: overdueVisitsResult.data ?? [],
       opportunities: openOpportunities,
-      estimatedTourKm: joyData.summary.estimatedTourKm,
+      estimatedTourKm: missionData.kpis.estimatedTourKm,
     });
 
     const decisions = buildCommandCenterDecisions(rawDecisions);
@@ -135,7 +146,7 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
     });
 
     const mapCompanyIds = [
-      ...joyData.dayPlan.map((item) => item.companyId),
+      ...userDayPlan.map((item) => item.companyId),
       ...missionData.radarItems.map((item) => item.companyId),
       ...joyData.suggestions.slice(0, 10).map((item) => item.companyId),
     ];
