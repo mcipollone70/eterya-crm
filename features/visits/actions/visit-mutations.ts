@@ -19,6 +19,7 @@ function revalidateVisitPaths(companyId?: string) {
   revalidatePath("/visits");
   revalidatePath("/agenda");
   revalidatePath("/");
+  revalidatePath("/auto");
   revalidatePath("/companies");
   if (companyId) {
     revalidatePath(`/companies/${companyId}`);

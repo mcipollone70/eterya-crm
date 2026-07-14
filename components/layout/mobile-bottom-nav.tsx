@@ -4,11 +4,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   CalendarDays,
+  Car,
   MapPin,
   Menu,
   Mic,
   Search,
-  Sparkles,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/utils/cn";
@@ -16,8 +16,8 @@ import { MOBILE_FIELD_NAV_ITEMS } from "@/lib/constants/navigation";
 
 const iconMap: Record<string, LucideIcon> = {
   CalendarDays,
+  Car,
   MapPin,
-  Sparkles,
   Mic,
   Menu,
   Search,

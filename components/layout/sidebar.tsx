@@ -20,6 +20,7 @@ import {
   ChevronRight,
   Sparkles,
   FileUp,
+  Car,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/utils/cn";
@@ -40,6 +41,8 @@ const iconMap: Record<string, LucideIcon> = {
   BarChart3,
   Settings,
   FileUp,
+  Sparkles,
+  Car,
 };
 
 function isNavActive(pathname: string, href: string): boolean {

@@ -55,6 +55,7 @@ export async function saveFollowUpAction(input: {
   revalidatePath("/agenda");
   revalidatePath("/");
   revalidatePath("/visits");
+  revalidatePath("/auto");
   revalidatePath(`/companies/${input.companyId}`);
 
   await syncFollowUpCalendar(followUpId, "upsert");
@@ -76,6 +77,7 @@ export async function completeFollowUpAction(
     revalidatePath("/agenda");
     revalidatePath("/");
     revalidatePath("/visits");
+    revalidatePath("/auto");
     revalidatePath(`/companies/${companyId}`);
     await syncFollowUpCalendar(id, "complete");
   }
@@ -97,6 +99,7 @@ export async function postponeFollowUpAction(
     revalidatePath("/agenda");
     revalidatePath("/");
     revalidatePath("/visits");
+    revalidatePath("/auto");
     revalidatePath(`/companies/${companyId}`);
     await syncFollowUpCalendar(id, "upsert");
   }
@@ -117,6 +120,7 @@ export async function cancelFollowUpAction(
     revalidatePath("/agenda");
     revalidatePath("/");
     revalidatePath("/visits");
+    revalidatePath("/auto");
     revalidatePath(`/companies/${companyId}`);
     await syncFollowUpCalendar(id, "cancel");
   }

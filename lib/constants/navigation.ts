@@ -9,6 +9,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Agenda", href: "/agenda", icon: "CalendarDays" },
   { label: "Assistente", href: "/assistant", icon: "Sparkles" },
   { label: "Visite", href: "/visits", icon: "MapPin" },
+  { label: "Modalità Auto", href: "/auto", icon: "Car" },
   { label: "Mappa", href: "/maps", icon: "Map" },
   { label: "Giro Visite", href: "/routes", icon: "Route" },
   { label: "Promemoria vocali", href: "/voice", icon: "Mic" },
@@ -24,8 +25,8 @@ export const NAV_BOTTOM: NavItem[] = [
 /** Scorciatoie campo su mobile (bottom nav). */
 export const MOBILE_FIELD_NAV_ITEMS: NavItem[] = [
   { label: "Agenda", href: "/agenda", icon: "CalendarDays" },
+  { label: "Auto", href: "/auto", icon: "Car" },
   { label: "Visite", href: "/visits", icon: "MapPin" },
-  { label: "Assistente", href: "/assistant", icon: "Sparkles" },
   { label: "Vocale", href: "/voice", icon: "Mic" },
   { label: "Menu", href: "__menu__", icon: "Menu" },
 ];
@@ -39,6 +40,7 @@ export const PAGE_TITLES: Record<string, string> = {
   "/agenda": "Agenda",
   "/assistant": "Assistente commerciale",
   "/visits": "Visite",
+  "/auto": "Modalità Auto",
   "/maps": "Mappa",
   "/routes": "Giro Visite",
   "/voice": "Funzioni vocali",
