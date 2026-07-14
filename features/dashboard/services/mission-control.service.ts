@@ -8,6 +8,7 @@ import { getDailyVisitSuggestions } from "@/features/assistant/services/assistan
 import { getPriorityDashboardMetrics } from "@/features/companies/services/commercial-priority.service";
 import { getOpportunityDashboardMetrics } from "@/features/opportunities/services/opportunities.service";
 import { analyzeOpportunityRadar } from "@/features/radar/services/opportunity-radar.service";
+import { getValidMapCoordinates } from "@/features/radar/utils/map-coordinates";
 import { applyAgentCompanyScope } from "@/features/companies/utils/agent-company-scope";
 import { getDistanceKm } from "@/features/maps/utils/geo-distance";
 import { parseAgendaFilters } from "@/lib/constants/agenda";
@@ -17,6 +18,10 @@ import { endOfTodayIso, startOfTodayIso } from "@/lib/last-visit/format";
 import { companyRegisterVisitHref } from "@/lib/constants/visit-workflow";
 import { createServerClient } from "@/lib/supabase/server";
 import { describeDbError } from "@/lib/supabase/errors";
+import {
+  formatScheduledDayLabel,
+  formatScheduledTimeLabel,
+} from "../utils/scheduled-day-label";
 import { fetchWeatherLabel } from "../utils/weather";
 import type {
   MissionControlAction,
@@ -32,13 +37,6 @@ function formatItalianDate(date: Date): string {
     month: "long",
     year: "numeric",
   }).format(date);
-}
-
-function formatTimeLabel(value: string): string {
-  return new Date(value).toLocaleTimeString("it-IT", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 }
 
 function resolveDisplayName(fullName: string | null | undefined, email: string | null | undefined): string {
@@ -311,7 +309,8 @@ async function getNextScheduledVisit(userId: string | null): Promise<MissionCont
     companyId: row.company_id,
     companyName: company?.name ?? "Azienda",
     scheduledAt: row.scheduled_at,
-    scheduledLabel: formatTimeLabel(row.scheduled_at),
+    scheduledDayLabel: formatScheduledDayLabel(row.scheduled_at),
+    scheduledLabel: formatScheduledTimeLabel(row.scheduled_at),
     phone,
     notes: row.notes,
     latitude: company?.latitude ?? null,
@@ -355,28 +354,65 @@ async function getRadarPreview(userId: string | null): Promise<MissionControlDat
   return result.items.slice(0, 3);
 }
 
-function mapRadarFromSuggestions(suggestions: DailyVisitSuggestion[]): MissionControlData["radarItems"] {
-  return suggestions.slice(0, 3).map((item) => ({
-    companyId: item.companyId,
-    companyName: item.companyName,
-    city: item.city,
-    province: item.province,
-    phone: null,
-    latitude: 0,
-    longitude: 0,
-    commercialStatus: item.commercialStatus as MissionControlData["radarItems"][number]["commercialStatus"],
-    distanceKm: item.signals.distanceKm ?? 0,
-    score: item.score,
-    tier: item.tier,
-    priorityScore: item.score,
-    opportunityValue: item.signals.openPipelineValue,
-    lastVisitLabel:
-      item.signals.daysSinceLastVisit == null
-        ? "Mai visitata"
-        : `${item.signals.daysSinceLastVisit} gg fa`,
-    primaryReason: item.reasons[0] ?? "Priorità commerciale",
-    reasons: item.reasons,
-  }));
+async function fetchCompanyCoordinatesByIds(
+  companyIds: string[]
+): Promise<Map<string, { latitude: number; longitude: number }>> {
+  const uniqueIds = [...new Set(companyIds)].filter(Boolean);
+  if (uniqueIds.length === 0) {
+    return new Map();
+  }
+
+  const supabase = await createServerClient();
+  const { data } = await supabase
+    .from("companies")
+    .select("id,latitude,longitude")
+    .in("id", uniqueIds);
+
+  const coordinates = new Map<string, { latitude: number; longitude: number }>();
+
+  for (const row of data ?? []) {
+    const coords = getValidMapCoordinates(row.latitude, row.longitude);
+    if (coords) {
+      coordinates.set(row.id, coords);
+    }
+  }
+
+  return coordinates;
+}
+
+async function mapRadarFromSuggestions(
+  suggestions: DailyVisitSuggestion[]
+): Promise<MissionControlData["radarItems"]> {
+  const slice = suggestions.slice(0, 3);
+  const coordinatesById = await fetchCompanyCoordinatesByIds(
+    slice.map((item) => item.companyId)
+  );
+
+  return slice.map((item) => {
+    const coordinates = coordinatesById.get(item.companyId);
+
+    return {
+      companyId: item.companyId,
+      companyName: item.companyName,
+      city: item.city,
+      province: item.province,
+      phone: null,
+      latitude: coordinates?.latitude ?? null,
+      longitude: coordinates?.longitude ?? null,
+      commercialStatus: item.commercialStatus as MissionControlData["radarItems"][number]["commercialStatus"],
+      distanceKm: item.signals.distanceKm ?? 0,
+      score: item.score,
+      tier: item.tier,
+      priorityScore: item.score,
+      opportunityValue: item.signals.openPipelineValue,
+      lastVisitLabel:
+        item.signals.daysSinceLastVisit == null
+          ? "Mai visitata"
+          : `${item.signals.daysSinceLastVisit} gg fa`,
+      primaryReason: item.reasons[0] ?? "Priorità commerciale",
+      reasons: item.reasons,
+    };
+  });
 }
 
 export async function getMissionControlData(): Promise<MissionControlData> {
@@ -441,7 +477,7 @@ export async function getMissionControlData(): Promise<MissionControlData> {
       .slice(0, 5);
 
     const radar =
-      radarItems.length > 0 ? radarItems : mapRadarFromSuggestions(suggestions);
+      radarItems.length > 0 ? radarItems : await mapRadarFromSuggestions(suggestions);
 
     const errors = [
       suggestionsResult.error,

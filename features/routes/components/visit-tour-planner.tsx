@@ -11,9 +11,9 @@ import { geocodeDestinationAddressAction } from "../actions/geocode-destination"
 import type {
   GeoPoint,
   VisitTourCandidate,
-  VisitTourCompany,
   VisitTourDestination,
   VisitTourDestinationType,
+  VisitTourLoadedState,
   VisitTourOptimizePlan,
   VisitTourPlannerMode,
   VisitTourRoute,
@@ -25,11 +25,18 @@ import { buildGoogleMapsTourUrl } from "../utils/google-maps-tour-url";
 import { fetchDrivingRoute } from "../utils/osrm-routing";
 import { sortVisitTourCandidates } from "../utils/visit-tour-sort";
 import { VisitTourCandidatesList } from "./visit-tour-candidates-list";
+import { useVisitTourCompanies } from "./visit-tour-companies-provider";
+import { VisitTourCompanySelect } from "./visit-tour-company-select";
 import { VisitTourMap } from "./visit-tour-map";
 import { VisitTourOptimizePanel } from "./visit-tour-optimize-panel";
+import { VisitTourSavedList } from "./visit-tour-saved-list";
+import { VISIT_TOUR_INITIAL_RADIUS_KM, VISIT_TOUR_ROUTE_BUFFER_KM } from "../constants/visit-tour-fetch";
+import type { VisitTourGeoBounds } from "../types/visit-tour";
+
+type VisitTourPageTab = "plan" | "saved";
 
 interface VisitTourPlannerProps {
-  companies: VisitTourCompany[];
+  agents: Array<{ id: string; label: string }>;
 }
 
 function requestCurrentLocation(): Promise<GeoPoint> {
@@ -54,8 +61,19 @@ function requestCurrentLocation(): Promise<GeoPoint> {
   });
 }
 
-export function VisitTourPlanner({ companies }: VisitTourPlannerProps) {
+export function VisitTourPlanner({ agents }: VisitTourPlannerProps) {
+  const {
+    companies,
+    companyById,
+    isLoading: isCompaniesLoading,
+    loadForBounds,
+    loadForCenter,
+    loadForPoints,
+    loadByIds,
+  } = useVisitTourCompanies();
+  const [pageTab, setPageTab] = useState<VisitTourPageTab>("plan");
   const [mode, setMode] = useState<VisitTourPlannerMode>("corridor");
+  const [loadedTour, setLoadedTour] = useState<VisitTourLoadedState | null>(null);
   const [optimizePlan, setOptimizePlan] = useState<VisitTourOptimizePlan | null>(null);
   const [optimizeOrigin, setOptimizeOrigin] = useState<GeoPoint | null>(null);
   const [optimizeDestination, setOptimizeDestination] = useState<GeoPoint | null>(null);
@@ -99,6 +117,7 @@ export function VisitTourPlanner({ companies }: VisitTourPlannerProps) {
       .then((point) => {
         setRadarCenter(point);
         setRadarLocationError(null);
+        loadForCenter(point, VISIT_TOUR_INITIAL_RADIUS_KM, true);
       })
       .catch((locationError) => {
         setRadarLocationError(
@@ -106,9 +125,11 @@ export function VisitTourPlanner({ companies }: VisitTourPlannerProps) {
             ? locationError.message
             : "Impossibile ottenere la posizione corrente."
         );
+        const [lat, lng] = DEFAULT_MAP_CENTER;
+        loadForCenter({ lat, lng }, VISIT_TOUR_INITIAL_RADIUS_KM, true);
       })
       .finally(() => setIsRadarLocating(false));
-  }, []);
+  }, [loadForCenter]);
 
   useEffect(() => {
     if (mode === "corridor" && origin) {
@@ -124,6 +145,7 @@ export function VisitTourPlanner({ companies }: VisitTourPlannerProps) {
     requestCurrentLocation()
       .then((point) => {
         setRadarCenter(point);
+        loadForCenter(point, VISIT_TOUR_INITIAL_RADIUS_KM, true);
       })
       .catch((locationError) => {
         setRadarLocationError(
@@ -133,7 +155,14 @@ export function VisitTourPlanner({ companies }: VisitTourPlannerProps) {
         );
       })
       .finally(() => setIsRadarLocating(false));
-  }, []);
+  }, [loadForCenter]);
+
+  const handleMapViewportChange = useCallback(
+    (bounds: VisitTourGeoBounds) => {
+      loadForBounds(bounds);
+    },
+    [loadForBounds]
+  );
 
   const sortedCandidates = useMemo(
     () => sortVisitTourCandidates(candidates, sortKey),
@@ -166,7 +195,7 @@ export function VisitTourPlanner({ companies }: VisitTourPlannerProps) {
         let nextDestination = destination;
 
         if (destinationType === "company") {
-          const company = companies.find((item) => item.id === selectedCompanyId);
+          const company = companyById.get(selectedCompanyId);
           if (!company) {
             setError("Seleziona un'azienda di destinazione.");
             return;
@@ -184,9 +213,18 @@ export function VisitTourPlanner({ companies }: VisitTourPlannerProps) {
 
         const currentOrigin = await requestCurrentLocation();
         const nextRoute = await fetchDrivingRoute(currentOrigin, nextDestination.point);
+        const routeCompanies = await loadForPoints(
+          [currentOrigin, nextDestination.point, ...nextRoute.coordinates],
+          VISIT_TOUR_ROUTE_BUFFER_KM,
+          true
+        );
+        const scopedCompanies =
+          routeCompanies.length > 0
+            ? routeCompanies
+            : companies;
         const priorityContext = await fetchPriorityContextAction();
         const foundCandidates = findCompaniesAlongRoute(
-          companies,
+          scopedCompanies,
           nextRoute,
           priorityContext,
           {
@@ -209,7 +247,7 @@ export function VisitTourPlanner({ companies }: VisitTourPlannerProps) {
         );
       }
     });
-  }, [companies, destination, destinationType, selectedCompanyId]);
+  }, [companies, companyById, destination, destinationType, loadForPoints, selectedCompanyId]);
 
   const handleGeocodeAddress = useCallback(() => {
     setMessage(null);
@@ -252,6 +290,28 @@ export function VisitTourPlanner({ companies }: VisitTourPlannerProps) {
     []
   );
 
+  const handleOpenSavedTour = useCallback(
+    (tour: VisitTourLoadedState) => {
+      setLoadedTour(tour);
+      setPageTab("plan");
+      setMode("optimize");
+      void loadByIds([
+        ...tour.stops.map((stop) => stop.id),
+        tour.originCompanyId,
+        tour.destinationCompanyId,
+      ].filter(Boolean));
+      loadForPoints(
+        [tour.origin, tour.destination.point, ...tour.stops.map((stop) => ({
+          lat: stop.company.latitude,
+          lng: stop.company.longitude,
+        }))],
+        VISIT_TOUR_ROUTE_BUFFER_KM,
+        true
+      );
+    },
+    [loadByIds, loadForPoints]
+  );
+
   const optimizeMapStops = useMemo(
     () =>
       (optimizePlan?.stops ?? []).map((stop) => ({
@@ -284,6 +344,35 @@ export function VisitTourPlanner({ companies }: VisitTourPlannerProps) {
         subtitle="Pianifica un percorso verso la destinazione o ottimizza un giro multi-tappa."
       />
 
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => setPageTab("plan")}
+          className={`rounded-lg px-4 py-2 text-sm font-medium ${
+            pageTab === "plan"
+              ? "bg-slate-900 text-white"
+              : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+          }`}
+        >
+          Pianifica
+        </button>
+        <button
+          type="button"
+          onClick={() => setPageTab("saved")}
+          className={`rounded-lg px-4 py-2 text-sm font-medium ${
+            pageTab === "saved"
+              ? "bg-slate-900 text-white"
+              : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+          }`}
+        >
+          Giri salvati
+        </button>
+      </div>
+
+      {pageTab === "saved" ? (
+        <VisitTourSavedList agents={agents} onOpenTour={handleOpenSavedTour} />
+      ) : (
+        <>
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
@@ -343,19 +432,11 @@ export function VisitTourPlanner({ companies }: VisitTourPlannerProps) {
           {destinationType === "company" ? (
             <label className="block text-sm">
               <span className="mb-1 block font-medium text-slate-700">Azienda di destinazione</span>
-              <select
+              <VisitTourCompanySelect
                 value={selectedCompanyId}
-                onChange={(event) => setSelectedCompanyId(event.target.value)}
-                className="w-full rounded-lg border border-slate-200 px-3 py-2"
-              >
-                <option value="">Seleziona azienda</option>
-                {companies.map((company) => (
-                  <option key={company.id} value={company.id}>
-                    {company.name}
-                    {company.city ? ` · ${company.city}` : ""}
-                  </option>
-                ))}
-              </select>
+                onChange={setSelectedCompanyId}
+                pinnedIds={selectedCompanyId ? [selectedCompanyId] : []}
+              />
             </label>
           ) : (
             <div className="space-y-2">
@@ -440,10 +521,17 @@ export function VisitTourPlanner({ companies }: VisitTourPlannerProps) {
           )}
         </aside>
         ) : (
+          <>
+          {isCompaniesLoading && companies.length === 0 && (
+            <p className="text-xs text-slate-500">Caricamento aziende nell&apos;area visibile…</p>
+          )}
+
           <VisitTourOptimizePanel
-            companies={companies}
+            key={loadedTour?.id ?? "new-tour"}
+            loadedTour={loadedTour}
             onPlanChange={handleOptimizePlanChange}
           />
+          </>
         )}
 
         <div className="min-h-[520px] overflow-hidden rounded-xl border border-slate-200 shadow-sm">
@@ -471,6 +559,7 @@ export function VisitTourPlanner({ companies }: VisitTourPlannerProps) {
               orderedStopIds={
                 mode === "optimize" ? optimizeMapStops.map((stop) => stop.id) : undefined
               }
+              onViewportChange={handleMapViewportChange}
             />
           </MapContainer>
         </div>
@@ -484,6 +573,8 @@ export function VisitTourPlanner({ companies }: VisitTourPlannerProps) {
         onRequestLocation={handleRefreshRadarLocation}
         layout="overlay"
       />
+        </>
+      )}
     </div>
   );
 }

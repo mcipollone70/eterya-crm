@@ -1,13 +1,23 @@
 import { createServerClient as createSsrServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { resolvePostLoginRedirect } from "@/features/auth/utils/post-login-redirect";
 import type { Database } from "./types";
 import { getSupabasePublicEnv } from "./env";
 
 /** Route pubbliche raggiungibili senza sessione. */
-const PUBLIC_ROUTES = ["/login"];
+const PUBLIC_ROUTES = ["/login", "/auth/callback"];
+
+/** Route pubbliche accessibili anche con sessione attiva (es. recupero password). */
+const PUBLIC_ROUTES_ALLOWING_AUTHENTICATED = ["/login/reset-password", "/auth/callback"];
 
 function isPublicRoute(pathname: string): boolean {
   return PUBLIC_ROUTES.some(
+    (route) => pathname === route || pathname.startsWith(`${route}/`)
+  );
+}
+
+function allowsAuthenticatedPublicAccess(pathname: string): boolean {
+  return PUBLIC_ROUTES_ALLOWING_AUTHENTICATED.some(
     (route) => pathname === route || pathname.startsWith(`${route}/`)
   );
 }
@@ -19,7 +29,18 @@ function isDevelopmentBypass(): boolean {
 function redirectToLogin(request: NextRequest, pathname: string): NextResponse {
   const redirectUrl = request.nextUrl.clone();
   redirectUrl.pathname = "/login";
-  redirectUrl.searchParams.set("redirectedFrom", pathname);
+  const returnPath = `${pathname}${request.nextUrl.search}`;
+  redirectUrl.searchParams.set("redirectedFrom", returnPath);
+  return NextResponse.redirect(redirectUrl);
+}
+
+function redirectAfterLogin(request: NextRequest, redirectedFrom: string | null): NextResponse {
+  const destination = resolvePostLoginRedirect(redirectedFrom);
+  const parsed = new URL(destination, request.url);
+  const redirectUrl = request.nextUrl.clone();
+  redirectUrl.pathname = parsed.pathname;
+  redirectUrl.search = parsed.search;
+  redirectUrl.hash = "";
   return NextResponse.redirect(redirectUrl);
 }
 
@@ -80,10 +101,10 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
   }
 
   if (user && isPublicRoute(pathname)) {
-    const redirectUrl = request.nextUrl.clone();
-    redirectUrl.pathname = "/";
-    redirectUrl.search = "";
-    return NextResponse.redirect(redirectUrl);
+    if (allowsAuthenticatedPublicAccess(pathname)) {
+      return response;
+    }
+    return redirectAfterLogin(request, request.nextUrl.searchParams.get("redirectedFrom"));
   }
 
   return response;

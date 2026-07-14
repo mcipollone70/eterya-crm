@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { LAST_VISIT_FILTER_OPTIONS } from "@/lib/constants/last-visit";
+import { resetCompaniesPageParam } from "../utils/companies-filter-navigation";
 
 export function LastVisitFilter() {
   const router = useRouter();
@@ -18,6 +19,7 @@ export function LastVisitFilter() {
       params.delete("last_visit");
     }
 
+    resetCompaniesPageParam(params);
     const query = params.toString();
     router.push(query ? `/companies?${query}` : "/companies");
   }

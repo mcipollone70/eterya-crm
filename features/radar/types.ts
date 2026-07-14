@@ -20,8 +20,8 @@ export interface OpportunityRadarItem {
   city: string | null;
   province: string | null;
   phone: string | null;
-  latitude: number;
-  longitude: number;
+  latitude: number | null;
+  longitude: number | null;
   commercialStatus: CommercialStatus;
   distanceKm: number;
   score: number;

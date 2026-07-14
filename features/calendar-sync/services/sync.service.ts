@@ -234,7 +234,7 @@ export async function syncCalendarEntity(
         googleCalendarId: mapping.google_calendar_id,
         syncStatus: "synced",
       });
-    } else if (operation === "upsert") {
+    } else if (operation === "upsert" || operation === "complete") {
       const created = await createGoogleCalendarEvent(
         accessToken,
         activeConnection.calendar_id,

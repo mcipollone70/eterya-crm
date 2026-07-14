@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useState, useTransition } from "react";
 import {
   AlertCircle,
   ExternalLink,
@@ -27,21 +27,24 @@ import {
   fetchVisitTourOptimizeContextAction,
   saveVisitTourAction,
 } from "../actions/visit-tour-actions";
+import { VISIT_TOUR_ROUTE_BUFFER_KM } from "../constants/visit-tour-fetch";
 import type {
   GeoPoint,
-  VisitTourCompany,
   VisitTourConstraints,
   VisitTourDestination,
   VisitTourDestinationType,
+  VisitTourLoadedState,
   VisitTourOptimizePlan,
   VisitTourOptimizeStop,
 } from "../types/visit-tour";
 import { buildGoogleMapsTourUrl } from "../utils/google-maps-tour-url";
 import { toGeoPoint } from "../utils/find-route-candidates";
+import { useVisitTourCompanies } from "./visit-tour-companies-provider";
+import { VisitTourCompanySelect } from "./visit-tour-company-select";
 import { VisitTourStopsList } from "./visit-tour-stops-list";
 
 interface VisitTourOptimizePanelProps {
-  companies: VisitTourCompany[];
+  loadedTour?: VisitTourLoadedState | null;
   onPlanChange: (
     plan: VisitTourOptimizePlan | null,
     origin: GeoPoint | null,
@@ -75,7 +78,11 @@ function normalizeStopsOrder(stops: VisitTourOptimizeStop[]): VisitTourOptimizeS
   return stops.map((stop, index) => ({ ...stop, order: index + 1 }));
 }
 
-export function VisitTourOptimizePanel({ companies, onPlanChange }: VisitTourOptimizePanelProps) {
+export function VisitTourOptimizePanel({
+  loadedTour = null,
+  onPlanChange,
+}: VisitTourOptimizePanelProps) {
+  const { companies, companyById, loadForPoints } = useVisitTourCompanies();
   const [originType, setOriginType] = useState<"current" | VisitTourDestinationType>("current");
   const [destinationType, setDestinationType] =
     useState<VisitTourDestinationType>("company");
@@ -95,15 +102,11 @@ export function VisitTourOptimizePanel({ companies, onPlanChange }: VisitTourOpt
   const [stops, setStops] = useState<VisitTourOptimizeStop[]>([]);
   const [optimizeContext, setOptimizeContext] = useState<VisitTourOptimizeContext | null>(null);
   const [manualCompanyId, setManualCompanyId] = useState("");
+  const [tourName, setTourName] = useState("");
   const [notes, setNotes] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
-
-  const availableManualCompanies = useMemo(
-    () => companies.filter((company) => !stops.some((stop) => stop.id === company.id)),
-    [companies, stops]
-  );
 
   const syncPlan = useCallback(
     (
@@ -119,6 +122,31 @@ export function VisitTourOptimizePanel({ companies, onPlanChange }: VisitTourOpt
     [destination?.point, onPlanChange, origin]
   );
 
+  useEffect(() => {
+    if (!loadedTour) {
+      return;
+    }
+
+    setOriginType(loadedTour.originType);
+    setDestinationType(loadedTour.destinationType);
+    setOriginCompanyId(loadedTour.originCompanyId);
+    setDestinationCompanyId(loadedTour.destinationCompanyId);
+    setOrigin(loadedTour.origin);
+    setOriginLabel(loadedTour.originLabel);
+    setDestination(loadedTour.destination);
+    setConstraints(loadedTour.constraints);
+    setTourName(loadedTour.name);
+    setNotes(loadedTour.notes ?? "");
+    setMessage(`Giro "${loadedTour.name}" caricato con ${loadedTour.stops.length} tappe.`);
+    setError(null);
+    syncPlan(
+      loadedTour.stops,
+      loadedTour.plan,
+      loadedTour.origin,
+      loadedTour.destination.point
+    );
+  }, [loadedTour, syncPlan]);
+
   const resolveOrigin = useCallback(async (): Promise<{
     point: GeoPoint;
     label: string;
@@ -130,7 +158,7 @@ export function VisitTourOptimizePanel({ companies, onPlanChange }: VisitTourOpt
     }
 
     if (originType === "company") {
-      const company = companies.find((item) => item.id === originCompanyId);
+      const company = companyById.get(originCompanyId);
       if (!company) {
         throw new Error("Seleziona il punto di partenza.");
       }
@@ -146,11 +174,11 @@ export function VisitTourOptimizePanel({ companies, onPlanChange }: VisitTourOpt
     }
 
     return { point: origin, label: originLabel };
-  }, [companies, origin, originCompanyId, originLabel, originType]);
+  }, [companyById, origin, originCompanyId, originLabel, originType]);
 
   const resolveDestination = useCallback((): VisitTourDestination => {
     if (destinationType === "company") {
-      const company = companies.find((item) => item.id === destinationCompanyId);
+      const company = companyById.get(destinationCompanyId);
       if (!company) {
         throw new Error("Seleziona il punto di arrivo.");
       }
@@ -167,7 +195,7 @@ export function VisitTourOptimizePanel({ companies, onPlanChange }: VisitTourOpt
     }
 
     return destination;
-  }, [companies, destination, destinationCompanyId, destinationType]);
+  }, [companyById, destination, destinationCompanyId, destinationType]);
 
   const runOptimize = useCallback(
     (recalculate: boolean) => {
@@ -189,11 +217,18 @@ export function VisitTourOptimizePanel({ companies, onPlanChange }: VisitTourOpt
           setOrigin(originResolved.point);
           setOriginLabel(originResolved.label);
           setDestination(destinationResolved);
+          const corridorCompanies = await loadForPoints(
+            [originResolved.point, destinationResolved.point],
+            VISIT_TOUR_ROUTE_BUFFER_KM,
+            true
+          );
+          const scopedCompanies =
+            corridorCompanies.length > 0 ? corridorCompanies : companies;
 
           const nextPlan = optimizeVisitTour({
             origin: originResolved.point,
             destination: destinationResolved.point,
-            companies,
+            companies: scopedCompanies,
             context,
             constraints,
             existingStops: recalculate ? stops : [],
@@ -219,6 +254,7 @@ export function VisitTourOptimizePanel({ companies, onPlanChange }: VisitTourOpt
     [
       companies,
       constraints,
+      loadForPoints,
       optimizeContext,
       resolveDestination,
       resolveOrigin,
@@ -315,7 +351,7 @@ export function VisitTourOptimizePanel({ companies, onPlanChange }: VisitTourOpt
       return;
     }
 
-    const company = companies.find((item) => item.id === manualCompanyId);
+    const company = companyById.get(manualCompanyId);
     if (!company) {
       return;
     }
@@ -346,7 +382,7 @@ export function VisitTourOptimizePanel({ companies, onPlanChange }: VisitTourOpt
       setManualCompanyId("");
       setMessage("Tappa aggiunta manualmente.");
     });
-  }, [companies, destination, manualCompanyId, optimizeContext, origin, plan, stops, syncPlan]);
+  }, [companyById, destination, manualCompanyId, optimizeContext, origin, plan, stops, syncPlan]);
 
   const handleSaveTour = useCallback(() => {
     if (!plan || !origin || !destination) {
@@ -359,7 +395,8 @@ export function VisitTourOptimizePanel({ companies, onPlanChange }: VisitTourOpt
 
     startTransition(async () => {
       const result = await saveVisitTourAction({
-        tourDate: new Date().toISOString().slice(0, 10),
+        name: tourName.trim() || null,
+        tourDate: loadedTour?.tourDate ?? new Date().toISOString().slice(0, 10),
         origin: {
           ...origin,
           label: originLabel,
@@ -388,6 +425,7 @@ export function VisitTourOptimizePanel({ companies, onPlanChange }: VisitTourOpt
   }, [
     constraints,
     destination,
+    loadedTour,
     notes,
     origin,
     originCompanyId,
@@ -395,6 +433,7 @@ export function VisitTourOptimizePanel({ companies, onPlanChange }: VisitTourOpt
     originType,
     plan,
     stops,
+    tourName,
   ]);
 
   const googleMapsTourUrl =
@@ -444,18 +483,12 @@ export function VisitTourOptimizePanel({ companies, onPlanChange }: VisitTourOpt
         </div>
 
         {originType === "company" && (
-          <select
+          <VisitTourCompanySelect
             value={originCompanyId}
-            onChange={(event) => setOriginCompanyId(event.target.value)}
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-          >
-            <option value="">Seleziona partenza</option>
-            {companies.map((company) => (
-              <option key={company.id} value={company.id}>
-                {company.name}
-              </option>
-            ))}
-          </select>
+            onChange={setOriginCompanyId}
+            placeholder="Seleziona partenza"
+            pinnedIds={originCompanyId ? [originCompanyId] : []}
+          />
         )}
 
         {originType === "address" && (
@@ -509,18 +542,12 @@ export function VisitTourOptimizePanel({ companies, onPlanChange }: VisitTourOpt
         </div>
 
         {destinationType === "company" ? (
-          <select
+          <VisitTourCompanySelect
             value={destinationCompanyId}
-            onChange={(event) => setDestinationCompanyId(event.target.value)}
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-          >
-            <option value="">Seleziona arrivo</option>
-            {companies.map((company) => (
-              <option key={company.id} value={company.id}>
-                {company.name}
-              </option>
-            ))}
-          </select>
+            onChange={setDestinationCompanyId}
+            placeholder="Seleziona arrivo"
+            pinnedIds={destinationCompanyId ? [destinationCompanyId] : []}
+          />
         ) : (
           <div className="space-y-2">
             <input
@@ -659,18 +686,14 @@ export function VisitTourOptimizePanel({ companies, onPlanChange }: VisitTourOpt
       <div className="space-y-2">
         <label className="block text-xs font-medium text-slate-700">
           Aggiungi tappa manualmente
-          <select
-            value={manualCompanyId}
-            onChange={(event) => setManualCompanyId(event.target.value)}
-            className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-          >
-            <option value="">Seleziona azienda</option>
-            {availableManualCompanies.map((company) => (
-              <option key={company.id} value={company.id}>
-                {company.name}
-              </option>
-            ))}
-          </select>
+          <div className="mt-1">
+            <VisitTourCompanySelect
+              value={manualCompanyId}
+              onChange={setManualCompanyId}
+              placeholder="Seleziona azienda"
+              pinnedIds={stops.map((stop) => stop.id)}
+            />
+          </div>
         </label>
         <button
           type="button"
@@ -681,6 +704,17 @@ export function VisitTourOptimizePanel({ companies, onPlanChange }: VisitTourOpt
           Aggiungi tappa
         </button>
       </div>
+
+      <label className="block text-xs font-medium text-slate-700">
+        Nome giro
+        <input
+          type="text"
+          value={tourName}
+          onChange={(event) => setTourName(event.target.value)}
+          className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+          placeholder="Es. Giro Milano nord"
+        />
+      </label>
 
       <label className="block text-xs font-medium text-slate-700">
         Note giro

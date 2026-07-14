@@ -1,8 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState } from "react";
 import { Sparkles } from "lucide-react";
 import { authenticateAction, type AuthFormState } from "../actions/auth";
+import { PASSWORD_RESET_SUCCESS_MESSAGE } from "../utils/password-reset-messages";
 import { APP_NAME } from "@/lib/constants/navigation";
 
 const initialState: AuthFormState = {};
@@ -11,9 +13,17 @@ interface LoginFormProps {
   configured: boolean;
   showSignup: boolean;
   inviteCode?: string | null;
+  redirectedFrom?: string | null;
+  resetSuccess?: boolean;
 }
 
-export function LoginForm({ configured, showSignup, inviteCode = null }: LoginFormProps) {
+export function LoginForm({
+  configured,
+  showSignup,
+  inviteCode = null,
+  redirectedFrom = null,
+  resetSuccess = false,
+}: LoginFormProps) {
   const [state, formAction, pending] = useActionState(
     authenticateAction,
     initialState
@@ -61,12 +71,20 @@ export function LoginForm({ configured, showSignup, inviteCode = null }: LoginFo
             </div>
 
             <div>
-              <label
-                htmlFor="password"
-                className="mb-1 block text-sm font-medium text-slate-700"
-              >
-                Password
-              </label>
+              <div className="mb-1 flex items-center justify-between gap-2">
+                <label
+                  htmlFor="password"
+                  className="block text-sm font-medium text-slate-700"
+                >
+                  Password
+                </label>
+                <Link
+                  href="/login/forgot-password"
+                  className="text-xs font-medium text-indigo-600 hover:text-indigo-700"
+                >
+                  Password dimenticata?
+                </Link>
+              </div>
               <input
                 id="password"
                 name="password"
@@ -77,6 +95,12 @@ export function LoginForm({ configured, showSignup, inviteCode = null }: LoginFo
                 placeholder="••••••••"
               />
             </div>
+
+            {resetSuccess && (
+              <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+                {PASSWORD_RESET_SUCCESS_MESSAGE}
+              </p>
+            )}
 
             {state.error && (
               <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
@@ -91,6 +115,10 @@ export function LoginForm({ configured, showSignup, inviteCode = null }: LoginFo
 
             {inviteCode ? (
               <input type="hidden" name="invite_code" value={inviteCode} />
+            ) : null}
+
+            {redirectedFrom ? (
+              <input type="hidden" name="redirectedFrom" value={redirectedFrom} />
             ) : null}
 
             <button

@@ -2,7 +2,7 @@ import { Route } from "lucide-react";
 import { EmptyState, PageHeader } from "@/components/ui";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { VisitTourClient } from "./components/visit-tour-client";
-import { getVisitTourCompanies } from "./services/visit-tour-data.service";
+import { listVisitTourAgents } from "./services/visit-tour-saved.service";
 
 export async function RoutesPage() {
   if (!isSupabaseConfigured()) {
@@ -18,16 +18,7 @@ export async function RoutesPage() {
     );
   }
 
-  const { data: companies, error } = await getVisitTourCompanies();
+  const agentsResult = await listVisitTourAgents();
 
-  if (error) {
-    return (
-      <div className="space-y-6">
-        <PageHeader title="Giro Visite" subtitle="Pianifica il percorso di visita sul campo." />
-        <EmptyState icon={Route} title="Impossibile caricare le aziende" message={error} />
-      </div>
-    );
-  }
-
-  return <VisitTourClient companies={companies} />;
+  return <VisitTourClient agents={agentsResult.data ?? []} />;
 }

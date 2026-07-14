@@ -5,7 +5,16 @@ import { resolveCompanyDisplayFields } from "@/features/companies/services/compa
 import { createServerClient } from "@/lib/supabase/server";
 import { describeDbError } from "@/lib/supabase/errors";
 import type { CommercialStatus, CompanyStatus, Json } from "@/lib/supabase/types";
-import type { VisitTourCompany } from "../types/visit-tour";
+import {
+  VISIT_TOUR_FETCH_PAGE_SIZE,
+  VISIT_TOUR_MAX_FETCH_PER_BOUNDS,
+  VISIT_TOUR_SEARCH_LIMIT,
+} from "../constants/visit-tour-fetch";
+import type {
+  VisitTourCompaniesFetchResult,
+  VisitTourCompany,
+  VisitTourGeoBounds,
+} from "../types/visit-tour";
 
 const TOUR_COMPANY_COLUMNS =
   "id,name,city,province,latitude,longitude,commercial_status,status,revenue,last_visit_at,phone,contact_phone,mobile,phone_secondary,import_headers,import_payload";
@@ -68,6 +77,126 @@ function mapTourCompany(row: TourCompanyRow): VisitTourCompany | null {
   };
 }
 
+function mapTourCompanies(rows: TourCompanyRow[]): VisitTourCompany[] {
+  return rows
+    .map((row) => mapTourCompany(row))
+    .filter((company): company is VisitTourCompany => company !== null);
+}
+
+export async function getVisitTourCompaniesInBounds(
+  bounds: VisitTourGeoBounds,
+  offset = 0
+): Promise<VisitTourCompaniesFetchResult> {
+  const supabase = await createServerClient();
+  const safeOffset = Math.max(0, offset);
+
+  if (safeOffset >= VISIT_TOUR_MAX_FETCH_PER_BOUNDS) {
+    return { data: [], error: null, hasMore: false, loadedCount: 0 };
+  }
+
+  const pageSize = Math.min(
+    VISIT_TOUR_FETCH_PAGE_SIZE,
+    VISIT_TOUR_MAX_FETCH_PER_BOUNDS - safeOffset
+  );
+
+  const query = supabase
+    .from("companies")
+    .select(TOUR_COMPANY_COLUMNS)
+    .not("latitude", "is", null)
+    .not("longitude", "is", null)
+    .gte("latitude", bounds.south)
+    .lte("latitude", bounds.north)
+    .gte("longitude", bounds.west)
+    .lte("longitude", bounds.east);
+
+  const { data, error } = await query
+    .order("name", { ascending: true })
+    .range(safeOffset, safeOffset + pageSize - 1);
+
+  if (error) {
+    return { data: [], error: describeDbError(error), hasMore: false, loadedCount: 0 };
+  }
+
+  const companies = mapTourCompanies((data ?? []) as TourCompanyRow[]);
+
+  return {
+    data: companies,
+    error: null,
+    hasMore: companies.length === pageSize,
+    loadedCount: companies.length,
+  };
+}
+
+export async function getVisitTourCompaniesByIds(ids: string[]): Promise<{
+  data: VisitTourCompany[];
+  error: string | null;
+}> {
+  const uniqueIds = [...new Set(ids.filter(Boolean))];
+  if (uniqueIds.length === 0) {
+    return { data: [], error: null };
+  }
+
+  const supabase = await createServerClient();
+  const companies: VisitTourCompany[] = [];
+  const chunkSize = 100;
+
+  for (let index = 0; index < uniqueIds.length; index += chunkSize) {
+    const chunk = uniqueIds.slice(index, index + chunkSize);
+    const { data, error } = await supabase
+      .from("companies")
+      .select(TOUR_COMPANY_COLUMNS)
+      .in("id", chunk)
+      .not("latitude", "is", null)
+      .not("longitude", "is", null);
+
+    if (error) {
+      return { data: [], error: describeDbError(error) };
+    }
+
+    companies.push(...mapTourCompanies((data ?? []) as TourCompanyRow[]));
+  }
+
+  return { data: companies, error: null };
+}
+
+export async function searchVisitTourCompanies(
+  queryText: string,
+  bounds: VisitTourGeoBounds | null = null,
+  limit = VISIT_TOUR_SEARCH_LIMIT
+): Promise<{ data: VisitTourCompany[]; error: string | null }> {
+  const trimmed = queryText.trim();
+  if (trimmed.length < 2) {
+    return { data: [], error: null };
+  }
+
+  const supabase = await createServerClient();
+  let query = supabase
+    .from("companies")
+    .select(TOUR_COMPANY_COLUMNS)
+    .not("latitude", "is", null)
+    .not("longitude", "is", null)
+    .ilike("name", `%${trimmed}%`)
+    .order("name", { ascending: true })
+    .limit(limit);
+
+  if (bounds) {
+    query = query
+      .gte("latitude", bounds.south)
+      .lte("latitude", bounds.north)
+      .gte("longitude", bounds.west)
+      .lte("longitude", bounds.east);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    return { data: [], error: describeDbError(error) };
+  }
+
+  return { data: mapTourCompanies((data ?? []) as TourCompanyRow[]), error: null };
+}
+
+/** @deprecated Usare getVisitTourCompaniesInBounds o getVisitTourCompaniesByIds. */
 export async function getVisitTourCompanies(): Promise<{
   data: VisitTourCompany[];
   error: string | null;
@@ -79,15 +208,12 @@ export async function getVisitTourCompanies(): Promise<{
     .select(TOUR_COMPANY_COLUMNS)
     .not("latitude", "is", null)
     .not("longitude", "is", null)
-    .order("name", { ascending: true });
+    .order("name", { ascending: true })
+    .limit(VISIT_TOUR_FETCH_PAGE_SIZE);
 
   if (error) {
     return { data: [], error: describeDbError(error) };
   }
 
-  const companies = (data ?? [])
-    .map((row) => mapTourCompany(row as TourCompanyRow))
-    .filter((company): company is VisitTourCompany => company !== null);
-
-  return { data: companies, error: null };
+  return { data: mapTourCompanies((data ?? []) as TourCompanyRow[]), error: null };
 }

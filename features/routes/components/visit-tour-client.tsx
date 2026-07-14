@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import type { VisitTourCompany } from "../types/visit-tour";
+import { VisitTourCompaniesProvider } from "./visit-tour-companies-provider";
 
 const VisitTourPlanner = dynamic(
   () => import("./visit-tour-planner").then((module) => module.VisitTourPlanner),
@@ -16,9 +16,13 @@ const VisitTourPlanner = dynamic(
 );
 
 interface VisitTourClientProps {
-  companies: VisitTourCompany[];
+  agents: Array<{ id: string; label: string }>;
 }
 
-export function VisitTourClient({ companies }: VisitTourClientProps) {
-  return <VisitTourPlanner companies={companies} />;
+export function VisitTourClient({ agents }: VisitTourClientProps) {
+  return (
+    <VisitTourCompaniesProvider>
+      <VisitTourPlanner agents={agents} />
+    </VisitTourCompaniesProvider>
+  );
 }

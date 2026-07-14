@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { INTEREST_LEVEL_OPTIONS } from "@/lib/constants/product-catalog";
+import { resetCompaniesPageParam } from "../utils/companies-filter-navigation";
 
 export function InterestLevelFilter() {
   const router = useRouter();
@@ -18,6 +19,7 @@ export function InterestLevelFilter() {
       params.delete("interest_level");
     }
 
+    resetCompaniesPageParam(params);
     const query = params.toString();
     router.push(query ? `/companies?${query}` : "/companies");
   }

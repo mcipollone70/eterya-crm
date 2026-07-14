@@ -75,7 +75,7 @@ export function MissionControlNextVisitCard({ nextVisit }: MissionControlNextVis
       <CardHeader className="pb-3">
         <CardTitle className="text-lg sm:text-xl">{nextVisit.companyName}</CardTitle>
         <p className="text-sm text-slate-500">
-          Oggi alle {nextVisit.scheduledLabel} · Distanza {distanceLabel}
+          {nextVisit.scheduledDayLabel} alle {nextVisit.scheduledLabel} · Distanza {distanceLabel}
         </p>
       </CardHeader>
       <CardContent className="space-y-4 pt-0">

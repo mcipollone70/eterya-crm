@@ -2,6 +2,7 @@ import "server-only";
 
 import { createServerClient } from "@/lib/supabase/server";
 import { describeDbError } from "@/lib/supabase/errors";
+import type { PostgrestError } from "@supabase/supabase-js";
 import {
   DASHBOARD_COMMERCIAL_STATUSES,
   normalizeCommercialStatus,
@@ -31,6 +32,14 @@ import {
 } from "./commercial-priority.service";
 import { resolveCompanyIdsForProductFilters } from "@/features/products/services/company-product-interests.service";
 import type { CompanyInsert } from "../utils/build-db-rows";
+import {
+  COMPANIES_DEFAULT_PAGE,
+  COMPANIES_DEFAULT_PAGE_SIZE,
+  COMPANIES_PRIORITY_FETCH_BATCH_SIZE,
+  COMPANIES_PRIORITY_MAX_ROWS,
+  clampCompaniesPage,
+  isCompaniesPageSize,
+} from "../constants/companies-pagination";
 
 export type Company = Tables<"companies">;
 export type CompanyUpdate = UpdateTables<"companies">;
@@ -62,9 +71,9 @@ export interface ListCompaniesOptions {
   productFamily?: ProductFamily | null;
   interestLevel?: InterestLevel | null;
   purchasedProductId?: string | null;
+  page?: number;
+  pageSize?: number;
 }
-
-const PRIORITY_LIST_FETCH_LIMIT = 5000;
 
 export type CommercialStatusCounts = Record<DashboardCommercialStatus, number>;
 
@@ -382,18 +391,10 @@ function mapListItem(row: CompanyListRow): Omit<
   };
 }
 
-function mapListItems(rows: CompanyListRow[]): CompanyListItem[] {
-  return rows.map((row) => ({
-    ...mapListItem(row),
-    priority_score: 0,
-    priority_tier: "none",
-    priority_excluded: false,
-  }));
-}
-
 async function enrichListItemsWithPriority(
   rows: CompanyListRow[],
-  options?: ListCompaniesOptions
+  options?: ListCompaniesOptions,
+  { filterExcluded = true }: { filterExcluded?: boolean } = {}
 ): Promise<CompanyListItem[]> {
   const openOpportunityCompanyIds = await fetchOpenOpportunityCompanyIds();
   const openOpportunitySet = new Set(openOpportunityCompanyIds);
@@ -413,8 +414,11 @@ async function enrichListItemsWithPriority(
         ...base,
         ...priority,
       };
-    })
-    .filter((item) => !item.priority_excluded);
+    });
+
+  if (filterExcluded) {
+    items = items.filter((item) => !item.priority_excluded);
+  }
 
   if (options?.priorityTier) {
     items = items.filter((item) => matchesPriorityFilter(item.priority_tier, options.priorityTier!));
@@ -475,11 +479,55 @@ function applyLastVisitFilter<
  * quando l'ambiente pubblico non è presente.
  */
 
+async function fetchCompanyRowsInBatches(
+  runQuery: (from: number, to: number) => Promise<{
+    data: CompanyListRow[] | null;
+    count: number | null;
+    error: PostgrestError | null;
+  }>,
+  maxRows = COMPANIES_PRIORITY_MAX_ROWS
+): Promise<{ rows: CompanyListRow[]; count: number | null; error: string | null }> {
+  const rows: CompanyListRow[] = [];
+  let offset = 0;
+  let totalCount: number | null = null;
+
+  while (offset < maxRows) {
+    const batchSize = Math.min(COMPANIES_PRIORITY_FETCH_BATCH_SIZE, maxRows - offset);
+    const result = await runQuery(offset, offset + batchSize - 1);
+
+    if (result.error) {
+      return { rows: [], count: null, error: describeDbError(result.error) };
+    }
+
+    const page = result.data ?? [];
+    if (totalCount === null) {
+      totalCount = result.count;
+    }
+
+    if (page.length === 0) {
+      break;
+    }
+
+    rows.push(...page);
+    offset += page.length;
+
+    if (page.length < batchSize) {
+      break;
+    }
+  }
+
+  return { rows, count: totalCount, error: null };
+}
+
 export async function listCompanies(
-  limit = 100,
   commercialStatus?: CommercialStatus | null,
   options?: ListCompaniesOptions
 ): Promise<{ data: CompanyListItem[]; count: number; error: string | null }> {
+  const page = Math.max(COMPANIES_DEFAULT_PAGE, options?.page ?? COMPANIES_DEFAULT_PAGE);
+  const pageSize = isCompaniesPageSize(options?.pageSize ?? COMPANIES_DEFAULT_PAGE_SIZE)
+    ? options!.pageSize!
+    : COMPANIES_DEFAULT_PAGE_SIZE;
+  const offset = (page - 1) * pageSize;
   const usePriorityProcessing = Boolean(options?.priorityTier || options?.sortByPriority);
   const supabase = await createServerClient();
 
@@ -506,9 +554,7 @@ export async function listCompanies(
   }
 
   if (!usePriorityProcessing) {
-    query = query.limit(limit);
-  } else {
-    query = query.limit(PRIORITY_LIST_FETCH_LIMIT);
+    query = query.range(offset, offset + pageSize - 1);
   }
 
   if (commercialStatus) {
@@ -525,11 +571,46 @@ export async function listCompanies(
 
   let data: CompanyListRow[] | null = null;
   let count: number | null = null;
+  let error: PostgrestError | null = null;
 
-  const primary = await query;
-  data = (primary.data ?? null) as CompanyListRow[] | null;
-  count = primary.count;
-  let error = primary.error;
+  if (!usePriorityProcessing) {
+    const primary = await query;
+    data = (primary.data ?? null) as CompanyListRow[] | null;
+    count = primary.count;
+    error = primary.error;
+
+    if (
+      (data?.length ?? 0) === 0 &&
+      (count ?? 0) > 0 &&
+      offset >= (count ?? 0)
+    ) {
+      const safePage = clampCompaniesPage(page, count ?? 0, pageSize);
+      const safeOffset = (safePage - 1) * pageSize;
+
+      let retryQuery = supabase.from("companies").select(COMPANY_LIST_COLUMNS, { count: "exact" });
+
+      if (options?.sortByLastVisit && !options?.sortByPriority) {
+        retryQuery = retryQuery.order("last_visit_at", { ascending: false, nullsFirst: true });
+      } else {
+        retryQuery = retryQuery.order("created_at", { ascending: false });
+      }
+
+      if (commercialStatus) {
+        retryQuery = applyCommercialStatusFilter(retryQuery, commercialStatus);
+      }
+      if (productFilterResult.companyIds) {
+        retryQuery = retryQuery.in("id", productFilterResult.companyIds);
+      }
+      if (options?.lastVisitFilter) {
+        retryQuery = applyLastVisitFilter(retryQuery, options.lastVisitFilter);
+      }
+
+      const retried = await retryQuery.range(safeOffset, safeOffset + pageSize - 1);
+      data = (retried.data ?? null) as CompanyListRow[] | null;
+      count = retried.count;
+      error = retried.error;
+    }
+  }
 
   if (error && /commercial_status/i.test(error.message)) {
     let fallbackQuery = supabase
@@ -543,8 +624,8 @@ export async function listCompanies(
     }
 
     fallbackQuery = usePriorityProcessing
-      ? fallbackQuery.limit(PRIORITY_LIST_FETCH_LIMIT)
-      : fallbackQuery.limit(limit);
+      ? fallbackQuery
+      : fallbackQuery.range(offset, offset + pageSize - 1);
 
     if (commercialStatus && commercialStatus !== "prospect") {
       return { data: [], count: 0, error: describeDbError(error) };
@@ -572,8 +653,8 @@ export async function listCompanies(
         .order("created_at", { ascending: false });
 
       legacyQuery = usePriorityProcessing
-        ? legacyQuery.limit(PRIORITY_LIST_FETCH_LIMIT)
-        : legacyQuery.limit(limit);
+        ? legacyQuery
+        : legacyQuery.range(offset, offset + pageSize - 1);
 
       if (commercialStatus) {
         legacyQuery = applyCommercialStatusFilter(legacyQuery, commercialStatus);
@@ -594,16 +675,47 @@ export async function listCompanies(
       }));
 
       if (usePriorityProcessing) {
-        const enriched = await enrichListItemsWithPriority(legacyRows, options);
+        const batched = await fetchCompanyRowsInBatches(async (from, to) => {
+          let batchQuery = supabase
+            .from("companies")
+            .select(COMPANY_LIST_COLUMNS_FALLBACK.replace(",last_visit_at", ""), { count: "exact" })
+            .order("created_at", { ascending: false });
+
+          if (commercialStatus) {
+            batchQuery = applyCommercialStatusFilter(batchQuery, commercialStatus);
+          }
+
+          if (productFilterResult.companyIds) {
+            batchQuery = batchQuery.in("id", productFilterResult.companyIds);
+          }
+
+          const result = await batchQuery.range(from, to);
+          return {
+            data: ((result.data ?? []) as unknown as CompanyListRow[]).map((row) => ({
+              ...row,
+              last_visit_at: null,
+            })),
+            count: result.count,
+            error: result.error,
+          };
+        });
+
+        if (batched.error) {
+          return { data: [], count: 0, error: batched.error };
+        }
+
+        const enriched = await enrichListItemsWithPriority(batched.rows, options);
+        const safePage = clampCompaniesPage(page, enriched.length, pageSize);
+        const pageOffset = (safePage - 1) * pageSize;
         return {
-          data: enriched.slice(0, limit),
+          data: enriched.slice(pageOffset, pageOffset + pageSize),
           count: enriched.length,
           error: null,
         };
       }
 
       return {
-        data: mapListItems(legacyRows),
+        data: await enrichListItemsWithPriority(legacyRows, options, { filterExcluded: false }),
         count: legacy.count ?? 0,
         error: null,
       };
@@ -613,7 +725,40 @@ export async function listCompanies(
   }
 
   if (usePriorityProcessing) {
-    const enriched = await enrichListItemsWithPriority(data ?? [], options);
+    const batched = await fetchCompanyRowsInBatches(async (from, to) => {
+      let batchQuery = supabase.from("companies").select(COMPANY_LIST_COLUMNS, { count: "exact" });
+
+      if (options?.sortByLastVisit && !options?.sortByPriority) {
+        batchQuery = batchQuery.order("last_visit_at", { ascending: false, nullsFirst: true });
+      } else {
+        batchQuery = batchQuery.order("created_at", { ascending: false });
+      }
+
+      if (commercialStatus) {
+        batchQuery = applyCommercialStatusFilter(batchQuery, commercialStatus);
+      }
+
+      if (productFilterResult.companyIds) {
+        batchQuery = batchQuery.in("id", productFilterResult.companyIds);
+      }
+
+      if (options?.lastVisitFilter) {
+        batchQuery = applyLastVisitFilter(batchQuery, options.lastVisitFilter);
+      }
+
+      const result = await batchQuery.range(from, to);
+      return {
+        data: (result.data ?? []) as CompanyListRow[],
+        count: result.count,
+        error: result.error,
+      };
+    });
+
+    if (batched.error) {
+      return { data: [], count: 0, error: batched.error };
+    }
+
+    const enriched = await enrichListItemsWithPriority(batched.rows, options);
     const sorted = options?.sortByLastVisit
       ? [...enriched].sort((a, b) => {
           if (!a.last_visit_at && !b.last_visit_at) {
@@ -628,15 +773,18 @@ export async function listCompanies(
           return new Date(b.last_visit_at).getTime() - new Date(a.last_visit_at).getTime();
         })
       : enriched;
+    const safePage = clampCompaniesPage(page, sorted.length, pageSize);
+    const pageOffset = (safePage - 1) * pageSize;
+
     return {
-      data: sorted.slice(0, limit),
+      data: sorted.slice(pageOffset, pageOffset + pageSize),
       count: sorted.length,
       error: null,
     };
   }
 
   return {
-    data: mapListItems(data ?? []),
+    data: await enrichListItemsWithPriority(data ?? [], options, { filterExcluded: false }),
     count: count ?? 0,
     error: null,
   };

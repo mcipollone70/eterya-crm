@@ -17,6 +17,8 @@ export default async function Page({
     product_family?: string;
     interest_level?: string;
     purchased_product?: string;
+    page?: string;
+    page_size?: string;
   }>;
 }) {
   const {
@@ -27,6 +29,8 @@ export default async function Page({
     product_family,
     interest_level,
     purchased_product,
+    page,
+    page_size,
   } = await searchParams;
   return (
     <CompaniesPage
@@ -37,6 +41,8 @@ export default async function Page({
       productFamily={product_family}
       interestLevel={interest_level}
       purchasedProduct={purchased_product}
+      page={page}
+      pageSize={page_size}
     />
   );
 }

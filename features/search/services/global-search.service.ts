@@ -36,6 +36,20 @@ import { escapeIlikePattern } from "../utils/escape-ilike";
 const PER_CATEGORY_LIMIT = 3;
 const MAX_TOTAL_RESULTS = 8;
 const MIN_QUERY_LENGTH = 2;
+const COMPANY_ID_LOOKUP_LIMIT = 50;
+
+const COMPANY_TEXT_SEARCH_FIELDS = [
+  "name",
+  "legal_name",
+  "vat_number",
+  "tax_code",
+  "email",
+  "phone",
+  "mobile",
+  "city",
+  "contact_email",
+  "contact_phone",
+] as const;
 
 const VISIT_STATUS_LABELS: Record<VisitStatus, string> = {
   scheduled: "Pianificata",
@@ -150,6 +164,33 @@ function buildOrFilter(fields: string[], pattern: string): string {
   return fields.map((field) => `${field}.ilike.${pattern}`).join(",");
 }
 
+function buildEntityOrFilter(
+  textFields: string[],
+  pattern: string,
+  companyIds: string[]
+): string {
+  const clauses = textFields.map((field) => `${field}.ilike.${pattern}`);
+  if (companyIds.length > 0) {
+    clauses.push(`company_id.in.(${companyIds.join(",")})`);
+  }
+  return clauses.join(",");
+}
+
+async function findMatchingCompanyIds(pattern: string): Promise<string[]> {
+  const supabase = await createServerClient();
+  const { data, error } = await supabase
+    .from("companies")
+    .select("id")
+    .or(buildOrFilter([...COMPANY_TEXT_SEARCH_FIELDS], pattern))
+    .limit(COMPANY_ID_LOOKUP_LIMIT);
+
+  if (error || !data) {
+    return [];
+  }
+
+  return data.map((row) => row.id);
+}
+
 function capResults(
   buckets: Partial<Record<GlobalSearchCategory, GlobalSearchResult[]>>
 ): GlobalSearchGroup[] {
@@ -181,23 +222,7 @@ async function searchCompanies(pattern: string): Promise<GlobalSearchResult[]> {
   const { data, error } = await supabase
     .from("companies")
     .select("id,name,city,province,vat_number,email,commercial_status")
-    .or(
-      buildOrFilter(
-        [
-          "name",
-          "legal_name",
-          "vat_number",
-          "tax_code",
-          "email",
-          "phone",
-          "mobile",
-          "city",
-          "contact_email",
-          "contact_phone",
-        ],
-        pattern
-      )
-    )
+    .or(buildOrFilter([...COMPANY_TEXT_SEARCH_FIELDS], pattern))
     .order("name", { ascending: true })
     .limit(PER_CATEGORY_LIMIT);
 
@@ -227,12 +252,21 @@ async function searchCompanies(pattern: string): Promise<GlobalSearchResult[]> {
   });
 }
 
-async function searchContacts(pattern: string): Promise<GlobalSearchResult[]> {
+async function searchContacts(
+  pattern: string,
+  companyIds: string[]
+): Promise<GlobalSearchResult[]> {
   const supabase = await createServerClient();
   const { data, error } = await supabase
     .from("contacts")
     .select("id,full_name,email,phone,mobile,role,is_primary,company:companies(name)")
-    .or(buildOrFilter(["full_name", "email", "phone", "mobile", "role"], pattern))
+    .or(
+      buildEntityOrFilter(
+        ["full_name", "email", "phone", "mobile", "role"],
+        pattern,
+        companyIds
+      )
+    )
     .order("full_name", { ascending: true })
     .limit(PER_CATEGORY_LIMIT);
 
@@ -259,16 +293,16 @@ async function searchContacts(pattern: string): Promise<GlobalSearchResult[]> {
   });
 }
 
-async function searchOpportunities(pattern: string): Promise<GlobalSearchResult[]> {
+async function searchOpportunities(
+  pattern: string,
+  companyIds: string[]
+): Promise<GlobalSearchResult[]> {
   const supabase = await createServerClient();
   const { data, error } = await supabase
     .from("opportunities")
     .select("id,title,stage,company_id,companies(name)")
     .or(
-      buildOrFilter(
-        ["title", "product_interest", "notes", "companies.name"],
-        pattern
-      )
+      buildEntityOrFilter(["title", "product_interest", "notes"], pattern, companyIds)
     )
     .order("updated_at", { ascending: false })
     .limit(PER_CATEGORY_LIMIT);
@@ -288,20 +322,21 @@ async function searchOpportunities(pattern: string): Promise<GlobalSearchResult[
       subtitle: company?.name ?? null,
       statusLabel: OPPORTUNITY_STAGE_LABELS[stage],
       statusVariant: OPPORTUNITY_STAGE_VARIANT[stage] ?? "info",
-      href: "/opportunities",
+      href: `/opportunities/${row.id}`,
       quickActionLabel: "Vedi opportunità",
     };
   });
 }
 
-async function searchVisits(pattern: string): Promise<GlobalSearchResult[]> {
+async function searchVisits(
+  pattern: string,
+  companyIds: string[]
+): Promise<GlobalSearchResult[]> {
   const supabase = await createServerClient();
   const { data, error } = await supabase
     .from("visits")
     .select("id,company_id,scheduled_at,status,notes,outcome,companies(name,city)")
-    .or(
-      buildOrFilter(["notes", "outcome", "companies.name"], pattern)
-    )
+    .or(buildEntityOrFilter(["notes", "outcome"], pattern, companyIds))
     .order("scheduled_at", { ascending: false })
     .limit(PER_CATEGORY_LIMIT);
 
@@ -332,12 +367,15 @@ async function searchVisits(pattern: string): Promise<GlobalSearchResult[]> {
   });
 }
 
-async function searchFollowUps(pattern: string): Promise<GlobalSearchResult[]> {
+async function searchFollowUps(
+  pattern: string,
+  companyIds: string[]
+): Promise<GlobalSearchResult[]> {
   const supabase = await createServerClient();
   const { data, error } = await supabase
     .from("follow_ups")
     .select("id,company_id,activity_type,description,status,scheduled_at,companies(name)")
-    .or(buildOrFilter(["description", "companies.name"], pattern))
+    .or(buildEntityOrFilter(["description"], pattern, companyIds))
     .order("scheduled_at", { ascending: false })
     .limit(PER_CATEGORY_LIMIT);
 
@@ -369,12 +407,15 @@ async function searchFollowUps(pattern: string): Promise<GlobalSearchResult[]> {
   });
 }
 
-async function searchReminders(pattern: string): Promise<GlobalSearchResult[]> {
+async function searchReminders(
+  pattern: string,
+  companyIds: string[]
+): Promise<GlobalSearchResult[]> {
   const supabase = await createServerClient();
   const { data, error } = await supabase
     .from("agenda_reminders")
     .select("id,title,notes,status,scheduled_at,company_id,companies(name)")
-    .or(buildOrFilter(["title", "notes", "companies.name"], pattern))
+    .or(buildEntityOrFilter(["title", "notes"], pattern, companyIds))
     .order("scheduled_at", { ascending: false })
     .limit(PER_CATEGORY_LIMIT);
 
@@ -439,23 +480,20 @@ export async function globalSearch(query: string): Promise<GlobalSearchResponse>
     return { groups: [], total: 0, error: null };
   }
 
-  const [
-    companies,
-    contacts,
-    opportunities,
-    visits,
-    followUps,
-    reminders,
-    products,
-  ] = await Promise.all([
+  const [companies, companyIds] = await Promise.all([
     searchCompanies(pattern),
-    searchContacts(pattern),
-    searchOpportunities(pattern),
-    searchVisits(pattern),
-    searchFollowUps(pattern),
-    searchReminders(pattern),
-    searchProducts(pattern),
+    findMatchingCompanyIds(pattern),
   ]);
+
+  const [contacts, opportunities, visits, followUps, reminders, products] =
+    await Promise.all([
+      searchContacts(pattern, companyIds),
+      searchOpportunities(pattern, companyIds),
+      searchVisits(pattern, companyIds),
+      searchFollowUps(pattern, companyIds),
+      searchReminders(pattern, companyIds),
+      searchProducts(pattern),
+    ]);
 
   const groups = capResults({
     company: companies,

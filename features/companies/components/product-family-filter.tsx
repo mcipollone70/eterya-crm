@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { PRODUCT_FAMILY_OPTIONS } from "@/lib/constants/product-catalog";
+import { resetCompaniesPageParam } from "../utils/companies-filter-navigation";
 
 export function ProductFamilyFilter() {
   const router = useRouter();
@@ -18,6 +19,7 @@ export function ProductFamilyFilter() {
       params.delete("product_family");
     }
 
+    resetCompaniesPageParam(params);
     const query = params.toString();
     router.push(query ? `/companies?${query}` : "/companies");
   }

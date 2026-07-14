@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { PRIORITY_FILTER_OPTIONS } from "@/lib/constants/priority-tier";
+import { resetCompaniesPageParam } from "../utils/companies-filter-navigation";
 
 export function PriorityFilter() {
   const router = useRouter();
@@ -18,6 +19,7 @@ export function PriorityFilter() {
       params.delete("priority_tier");
     }
 
+    resetCompaniesPageParam(params);
     const query = params.toString();
     router.push(query ? `/companies?${query}` : "/companies");
   }

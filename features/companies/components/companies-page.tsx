@@ -29,10 +29,27 @@ import { ProductFamilyFilter } from "./product-family-filter";
 import { InterestLevelFilter } from "./interest-level-filter";
 import { PurchasedProductFilter } from "./purchased-product-filter";
 import { listProducts } from "@/features/products/services/products.service";
+import { CompaniesPagination } from "./companies-pagination";
+import {
+  clampCompaniesPage,
+  formatCompaniesVisibleRange,
+  parseCompaniesPage,
+  parseCompaniesPageSize,
+} from "../constants/companies-pagination";
 import { DEFAULT_GEOAPIFY_CONFIG } from "../types/geocoding";
 import type { CommercialStatus } from "@/lib/supabase/types";
 
-const PAGE_SIZE = 100;
+interface CompaniesPageProps {
+  commercialStatus?: string;
+  priorityTier?: string;
+  lastVisit?: string;
+  sort?: string;
+  productFamily?: string;
+  interestLevel?: string;
+  purchasedProduct?: string;
+  page?: string;
+  pageSize?: string;
+}
 
 function ImportCta() {
   return (
@@ -65,16 +82,6 @@ const HeaderActions = (
   </>
 );
 
-interface CompaniesPageProps {
-  commercialStatus?: string;
-  priorityTier?: string;
-  lastVisit?: string;
-  sort?: string;
-  productFamily?: string;
-  interestLevel?: string;
-  purchasedProduct?: string;
-}
-
 export async function CompaniesPage({
   commercialStatus,
   priorityTier,
@@ -83,6 +90,8 @@ export async function CompaniesPage({
   productFamily,
   interestLevel,
   purchasedProduct,
+  page,
+  pageSize,
 }: CompaniesPageProps) {
   const statusFilter: CommercialStatus | null = isCommercialStatus(commercialStatus)
     ? commercialStatus
@@ -94,6 +103,8 @@ export async function CompaniesPage({
   const productFamilyFilter = isProductFamily(productFamily) ? productFamily : null;
   const interestLevelFilter = isInterestLevel(interestLevel) ? interestLevel : null;
   const purchasedProductFilter = purchasedProduct?.trim() || null;
+  const requestedPage = parseCompaniesPage(page);
+  const requestedPageSize = parseCompaniesPageSize(pageSize);
 
   if (!isSupabaseConfigured()) {
     return (
@@ -109,7 +120,7 @@ export async function CompaniesPage({
   }
 
   const [{ data: companies, count, error }, geocodingSummaryResult, productsResult] = await Promise.all([
-    listCompanies(PAGE_SIZE, statusFilter, {
+    listCompanies(statusFilter, {
       priorityTier: priorityFilter,
       sortByPriority,
       lastVisitFilter,
@@ -117,6 +128,8 @@ export async function CompaniesPage({
       productFamily: productFamilyFilter,
       interestLevel: interestLevelFilter,
       purchasedProductId: purchasedProductFilter,
+      page: requestedPage,
+      pageSize: requestedPageSize,
     }),
     getGeocodingSummary(),
     listProducts({ activeOnly: true }),
@@ -130,6 +143,8 @@ export async function CompaniesPage({
   };
   const geoapifyConfig = getGeoapifyConfigView() ?? DEFAULT_GEOAPIFY_CONFIG;
   const catalogProducts = productsResult.data;
+  const currentPage = clampCompaniesPage(requestedPage, count, requestedPageSize);
+  const visibleRangeLabel = formatCompaniesVisibleRange(currentPage, requestedPageSize, count);
 
   if (error) {
     return (
@@ -140,7 +155,7 @@ export async function CompaniesPage({
     );
   }
 
-  if (companies.length === 0 && !statusFilter) {
+  if (companies.length === 0 && !statusFilter && count === 0) {
     return (
       <div className="space-y-6">
         <PageHeader
@@ -162,12 +177,8 @@ export async function CompaniesPage({
     <div className="space-y-6">
       <PageHeader
         title="Aziende"
-        subtitle={`${count.toLocaleString("it-IT")} aziende${
-          statusFilter ? " con filtro attivo" : " nel database"
-        }${
-          count > companies.length
-            ? ` · prime ${companies.length.toLocaleString("it-IT")} mostrate`
-            : ""
+        subtitle={`${visibleRangeLabel}${
+          statusFilter ? " · filtro attivo" : ""
         }.`}
         actions={HeaderActions}
       />
@@ -265,6 +276,13 @@ export async function CompaniesPage({
                 </tbody>
               </table>
             </div>
+            <Suspense fallback={null}>
+              <CompaniesPagination
+                total={count}
+                page={currentPage}
+                pageSize={requestedPageSize}
+              />
+            </Suspense>
           </CardContent>
         </Card>
       )}

@@ -24,6 +24,7 @@ import type {
   OpportunityRadarItem,
 } from "../types";
 import { RADAR_COMMERCIAL_STATUSES } from "../types";
+import { getValidMapCoordinates } from "../utils/map-coordinates";
 
 const RADAR_STATUS_SET = new Set<string>(RADAR_COMMERCIAL_STATUSES);
 
@@ -196,7 +197,8 @@ export async function analyzeOpportunityRadar(
   const items: OpportunityRadarItem[] = [];
 
   for (const row of rows) {
-    if (row.latitude == null || row.longitude == null) {
+    const coords = getValidMapCoordinates(row.latitude, row.longitude);
+    if (!coords) {
       continue;
     }
 
@@ -208,8 +210,8 @@ export async function analyzeOpportunityRadar(
     const distanceKm = getDistanceKm(
       input.centerLat,
       input.centerLng,
-      row.latitude,
-      row.longitude
+      coords.latitude,
+      coords.longitude
     );
 
     if (distanceKm > input.radiusKm) {
@@ -221,8 +223,8 @@ export async function analyzeOpportunityRadar(
       name: row.name,
       status: row.status,
       commercial_status: commercialStatus,
-      latitude: row.latitude,
-      longitude: row.longitude,
+      latitude: coords.latitude,
+      longitude: coords.longitude,
       import_payload: row.import_payload,
       lastVisitAt: row.last_visit_at,
     };
@@ -274,8 +276,8 @@ export async function analyzeOpportunityRadar(
       city: row.city,
       province: row.province,
       phone: resolvePhone(row),
-      latitude: row.latitude,
-      longitude: row.longitude,
+      latitude: coords.latitude,
+      longitude: coords.longitude,
       commercialStatus,
       distanceKm,
       score: scored.score,

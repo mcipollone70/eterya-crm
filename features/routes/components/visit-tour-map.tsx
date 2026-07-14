@@ -3,7 +3,12 @@
 import { useEffect } from "react";
 import { CircleMarker, Polyline, TileLayer, useMap } from "react-leaflet";
 import { COMMERCIAL_STATUS_MARKER_COLORS } from "@/features/maps/constants/map-config";
-import type { GeoPoint, VisitTourCandidate, VisitTourDestination } from "../types/visit-tour";
+import type {
+  GeoPoint,
+  VisitTourCandidate,
+  VisitTourDestination,
+  VisitTourGeoBounds,
+} from "../types/visit-tour";
 
 interface VisitTourMapProps {
   routeCoordinates: GeoPoint[];
@@ -11,6 +16,7 @@ interface VisitTourMapProps {
   selectedCompanies: VisitTourCandidate[];
   origin: GeoPoint | null;
   orderedStopIds?: string[];
+  onViewportChange?: (bounds: VisitTourGeoBounds, zoom: number) => void;
 }
 
 function FitTourBounds({
@@ -18,7 +24,7 @@ function FitTourBounds({
   destination,
   selectedCompanies,
   origin,
-}: VisitTourMapProps) {
+}: Omit<VisitTourMapProps, "onViewportChange">) {
   const map = useMap();
 
   useEffect(() => {
@@ -46,12 +52,51 @@ function FitTourBounds({
   return null;
 }
 
+function MapViewportReporter({
+  onViewportChange,
+}: {
+  onViewportChange?: (bounds: VisitTourGeoBounds, zoom: number) => void;
+}) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!onViewportChange) {
+      return;
+    }
+
+    const report = () => {
+      const bounds = map.getBounds();
+      onViewportChange(
+        {
+          north: bounds.getNorth(),
+          south: bounds.getSouth(),
+          east: bounds.getEast(),
+          west: bounds.getWest(),
+        },
+        map.getZoom()
+      );
+    };
+
+    report();
+    map.on("moveend", report);
+    map.on("zoomend", report);
+
+    return () => {
+      map.off("moveend", report);
+      map.off("zoomend", report);
+    };
+  }, [map, onViewportChange]);
+
+  return null;
+}
+
 export function VisitTourMap({
   routeCoordinates,
   destination,
   selectedCompanies,
   origin,
   orderedStopIds,
+  onViewportChange,
 }: VisitTourMapProps) {
   const selectedIds = new Set(selectedCompanies.map((company) => company.id));
 
@@ -83,6 +128,7 @@ export function VisitTourMap({
         selectedCompanies={selectedCompanies}
         origin={origin}
       />
+      <MapViewportReporter onViewportChange={onViewportChange} />
 
       {routeCoordinates.length > 1 && (
         <Polyline

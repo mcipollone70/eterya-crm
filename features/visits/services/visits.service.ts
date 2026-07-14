@@ -161,6 +161,76 @@ async function resolveVisitUserId(): Promise<string | null> {
   return user?.id ?? null;
 }
 
+function mergeVisitNotes(
+  existingNotes: string | null | undefined,
+  incomingNotes: string | null | undefined
+): string | null {
+  const existing = existingNotes?.trim();
+  const incoming = incomingNotes?.trim();
+
+  if (!incoming) {
+    return existing || null;
+  }
+  if (!existing) {
+    return incoming;
+  }
+  if (existing.includes(incoming)) {
+    return existing;
+  }
+
+  return `${existing}\n\n${incoming}`;
+}
+
+async function findCompletableVisitForCompany(
+  companyId: string,
+  userId: string
+): Promise<{ id: string; notes: string | null } | null> {
+  const supabase = await createServerClient();
+  const todayStart = startOfTodayIso();
+  const todayEnd = endOfTodayIso();
+
+  const { data, error } = await supabase
+    .from("visits")
+    .select("id,notes,scheduled_at,status")
+    .eq("company_id", companyId)
+    .eq("user_id", userId)
+    .in("status", ["scheduled", "in_progress"])
+    .order("scheduled_at", { ascending: true })
+    .limit(20);
+
+  if (error || !data?.length) {
+    return null;
+  }
+
+  const rows = data as Array<{
+    id: string;
+    notes: string | null;
+    scheduled_at: string;
+    status: VisitStatus;
+  }>;
+
+  const todayVisit = rows.find(
+    (row) => row.scheduled_at >= todayStart && row.scheduled_at <= todayEnd
+  );
+  if (todayVisit) {
+    return { id: todayVisit.id, notes: todayVisit.notes };
+  }
+
+  const inProgressVisit = rows.find((row) => row.status === "in_progress");
+  if (inProgressVisit) {
+    return { id: inProgressVisit.id, notes: inProgressVisit.notes };
+  }
+
+  const overdueVisit = rows.find(
+    (row) => row.status === "scheduled" && row.scheduled_at < todayStart
+  );
+  if (overdueVisit) {
+    return { id: overdueVisit.id, notes: overdueVisit.notes };
+  }
+
+  return null;
+}
+
 export async function syncCompanyLastVisit(companyId: string): Promise<{ error: string | null }> {
   const supabase = await createServerClient();
 
@@ -219,10 +289,31 @@ async function finalizeCompletedVisit(
 
 export async function saveCompletedVisit(
   input: SaveVisitInput
-): Promise<{ visitId: string | null; error: string | null }> {
+): Promise<{ visitId: string | null; completedExisting: boolean; error: string | null }> {
   const userId = await resolveVisitUserId();
   if (!userId) {
-    return { visitId: null, error: "Utente non autenticato. Accedi per registrare una visita." };
+    return {
+      visitId: null,
+      completedExisting: false,
+      error: "Utente non autenticato. Accedi per registrare una visita.",
+    };
+  }
+
+  const openVisit = await findCompletableVisitForCompany(input.companyId, userId);
+  if (openVisit) {
+    const { error } = await completeScheduledVisit(openVisit.id, {
+      completedAt: input.completedAt,
+      outcome: input.outcome,
+      notes: mergeVisitNotes(openVisit.notes, input.notes),
+      durationMinutes: input.durationMinutes,
+      nextCallbackAt: input.nextCallbackAt,
+    });
+
+    return {
+      visitId: openVisit.id,
+      completedExisting: true,
+      error,
+    };
   }
 
   const supabase = await createServerClient();
@@ -244,7 +335,7 @@ export async function saveCompletedVisit(
     .single();
 
   if (error) {
-    return { visitId: null, error: describeDbError(error) };
+    return { visitId: null, completedExisting: false, error: describeDbError(error) };
   }
 
   const finalizeResult = await finalizeCompletedVisit(data.id, input.companyId, {
@@ -256,10 +347,10 @@ export async function saveCompletedVisit(
   });
 
   if (finalizeResult.error) {
-    return { visitId: data.id, error: finalizeResult.error };
+    return { visitId: data.id, completedExisting: false, error: finalizeResult.error };
   }
 
-  return { visitId: data.id, error: null };
+  return { visitId: data.id, completedExisting: false, error: null };
 }
 
 export async function scheduleVisit(

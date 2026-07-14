@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
+import { resetCompaniesPageParam } from "../utils/companies-filter-navigation";
 
 export function PrioritySortToggle() {
   const router = useRouter();
@@ -16,6 +17,7 @@ export function PrioritySortToggle() {
       params.set("sort", "priority");
     }
 
+    resetCompaniesPageParam(params);
     const query = params.toString();
     router.push(query ? `/companies?${query}` : "/companies");
   }

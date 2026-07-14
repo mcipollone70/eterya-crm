@@ -5,13 +5,21 @@ export { OpportunitiesPage } from "./opportunities-page";
 export {
   saveOpportunityAction,
   updateOpportunityStageAction,
+  updateOpportunityAction,
+  deleteOpportunityAction,
+  closeOpportunityAction,
 } from "./actions/opportunity-actions";
 export {
   listOpportunities,
   getCompanyOpportunitySummary,
   getOpportunityDashboardMetrics,
+  getOpportunityById,
+  listOpportunityStageHistory,
   saveOpportunity,
+  updateOpportunity,
   updateOpportunityStage,
+  deleteOpportunity,
   type OpportunityListItem,
+  type OpportunityStageHistoryItem,
   type OpportunityDashboardMetrics,
 } from "./services/opportunities.service";

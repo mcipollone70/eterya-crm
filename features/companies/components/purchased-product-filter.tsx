@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import type { ProductListItem } from "@/features/products/services/products.service";
+import { resetCompaniesPageParam } from "../utils/companies-filter-navigation";
 
 interface PurchasedProductFilterProps {
   products: ProductListItem[];
@@ -22,6 +23,7 @@ export function PurchasedProductFilter({ products }: PurchasedProductFilterProps
       params.delete("purchased_product");
     }
 
+    resetCompaniesPageParam(params);
     const query = params.toString();
     router.push(query ? `/companies?${query}` : "/companies");
   }

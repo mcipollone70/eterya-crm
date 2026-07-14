@@ -47,6 +47,15 @@ export interface OpportunityListItem {
   updated_at: string;
 }
 
+export interface OpportunityStageHistoryItem {
+  id: string;
+  from_stage: OpportunityStage | null;
+  to_stage: OpportunityStage;
+  changed_at: string;
+  changed_by_name: string | null;
+  notes: string | null;
+}
+
 export interface SaveOpportunityInput {
   companyId: string;
   contactId?: string | null;
@@ -59,6 +68,10 @@ export interface SaveOpportunityInput {
   stage?: OpportunityStage;
   expectedCloseAt?: string | null;
   notes?: string | null;
+}
+
+export interface UpdateOpportunityInput extends SaveOpportunityInput {
+  stage?: OpportunityStage;
 }
 
 export interface CompanyOpportunitySummary {
@@ -349,7 +362,7 @@ export async function saveOpportunity(
   return { opportunityId: data.id, error: null };
 }
 
-async function getOpportunityById(id: string): Promise<OpportunityListItem | null> {
+export async function getOpportunityById(id: string): Promise<OpportunityListItem | null> {
   const supabase = await createServerClient();
   let result = await supabase.from("opportunities").select(OPPORTUNITY_SELECT).eq("id", id).maybeSingle();
 
@@ -371,6 +384,127 @@ async function getOpportunityById(id: string): Promise<OpportunityListItem | nul
   }
 
   return mapOpportunityRow(result.data as unknown as OpportunityRow);
+}
+
+export async function listOpportunityStageHistory(
+  opportunityId: string
+): Promise<{ data: OpportunityStageHistoryItem[]; error: string | null }> {
+  const supabase = await createServerClient();
+  const { data, error } = await supabase
+    .from("opportunity_stage_history")
+    .select("id,from_stage,to_stage,changed_at,notes,users(full_name)")
+    .eq("opportunity_id", opportunityId)
+    .order("changed_at", { ascending: false });
+
+  if (error) {
+    if (/opportunity_stage_history/i.test(error.message)) {
+      return { data: [], error: null };
+    }
+    return { data: [], error: describeDbError(error) };
+  }
+
+  const items = (data ?? []).map((row) => {
+    const typed = row as {
+      id: string;
+      from_stage: OpportunityStage | null;
+      to_stage: OpportunityStage;
+      changed_at: string;
+      notes: string | null;
+      users: { full_name: string } | { full_name: string }[] | null;
+    };
+    const user = relationOne(typed.users);
+    return {
+      id: typed.id,
+      from_stage: typed.from_stage,
+      to_stage: typed.to_stage,
+      changed_at: typed.changed_at,
+      changed_by_name: user?.full_name ?? null,
+      notes: typed.notes,
+    };
+  });
+
+  return { data: items, error: null };
+}
+
+export async function updateOpportunity(
+  opportunityId: string,
+  input: UpdateOpportunityInput
+): Promise<{ error: string | null }> {
+  const opportunity = await getOpportunityById(opportunityId);
+  if (!opportunity) {
+    return { error: "Opportunità non trovata." };
+  }
+
+  const userId = await resolveOpportunityUserId();
+  const stage = input.stage ?? opportunity.stage;
+  const supabase = await createServerClient();
+  const now = new Date().toISOString();
+
+  const productNames: string[] = [];
+  if (input.productIds && input.productIds.length > 0) {
+    const { data: products } = await supabase
+      .from("products")
+      .select("id,name")
+      .in("id", input.productIds);
+    for (const product of products ?? []) {
+      productNames.push(product.name);
+    }
+  }
+
+  const { error } = await supabase
+    .from("opportunities")
+    .update({
+      contact_id: input.contactId ?? null,
+      title: input.title.trim(),
+      product_interest:
+        input.productInterest?.trim() ||
+        (productNames.length > 0 ? productNames.join(", ") : PRODUCT_FAMILY_LABELS[input.productFamily]),
+      product_family: input.productFamily,
+      total_amount: input.estimatedValue ?? 0,
+      probability: input.probability ?? 50,
+      stage,
+      status: legacyStatusForStage(stage),
+      expected_close_at: input.expectedCloseAt ?? null,
+      notes: input.notes?.trim() || null,
+      updated_at: now,
+      ...(stage === CLOSED_WON_STAGE ? { accepted_at: now } : {}),
+    })
+    .eq("id", opportunityId);
+
+  if (error) {
+    return { error: describeDbError(error) };
+  }
+
+  await supabase.from("opportunity_products").delete().eq("opportunity_id", opportunityId);
+  if (input.productIds && input.productIds.length > 0) {
+    await supabase.from("opportunity_products").insert(
+      input.productIds.map((productId) => ({
+        opportunity_id: opportunityId,
+        product_id: productId,
+      }))
+    );
+  }
+
+  if (opportunity.stage !== stage) {
+    await supabase.from("opportunity_stage_history").insert({
+      opportunity_id: opportunityId,
+      from_stage: opportunity.stage,
+      to_stage: stage,
+      changed_by: userId,
+      changed_at: now,
+      notes: "Aggiornamento da scheda opportunità",
+    });
+  }
+
+  return { error: null };
+}
+
+export async function deleteOpportunity(
+  opportunityId: string
+): Promise<{ error: string | null }> {
+  const supabase = await createServerClient();
+  const { error } = await supabase.from("opportunities").delete().eq("id", opportunityId);
+  return { error: describeDbError(error) };
 }
 
 export async function updateOpportunityStage(

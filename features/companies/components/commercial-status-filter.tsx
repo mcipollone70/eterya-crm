@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { COMMERCIAL_STATUS_OPTIONS } from "@/lib/constants/commercial-status";
+import { resetCompaniesPageParam } from "../utils/companies-filter-navigation";
 
 export function CommercialStatusFilter() {
   const router = useRouter();
@@ -18,6 +19,7 @@ export function CommercialStatusFilter() {
       params.delete("commercial_status");
     }
 
+    resetCompaniesPageParam(params);
     const query = params.toString();
     router.push(query ? `/companies?${query}` : "/companies");
   }

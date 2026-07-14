@@ -1,5 +1,10 @@
 import type { CommercialStatus, CompanyStatus, Json } from "@/lib/supabase/types";
 import type { PriorityTier } from "@/lib/commercial-priority/types";
+import type {
+  VisitTourConstraints,
+  VisitTourOptimizePlan,
+  VisitTourOptimizeStop,
+} from "@/lib/visit-tour/optimize";
 
 export type VisitTourDestinationType = "company" | "address";
 
@@ -57,6 +62,79 @@ export const ROUTE_BAND_LIMITS_KM = {
 export type VisitTourPlannerMode = "corridor" | "optimize";
 
 export type VisitTourSaveStatus = "draft" | "planned" | "completed" | "cancelled";
+
+export type VisitTourListSortKey = "date" | "name";
+
+export interface VisitTourGeoBounds {
+  north: number;
+  south: number;
+  east: number;
+  west: number;
+}
+
+export interface VisitTourCompaniesFetchResult {
+  data: VisitTourCompany[];
+  error: string | null;
+  hasMore: boolean;
+  loadedCount: number;
+}
+
+export interface VisitTourStoredPoint {
+  lat: number;
+  lng: number;
+  label: string;
+  companyId?: string;
+}
+
+export interface VisitTourStoredStop {
+  id: string;
+  order: number;
+  locked: boolean;
+  score: number;
+  reason: string;
+  deviationKm: number;
+  legDistanceKm: number;
+  detourKm: number;
+  companyId: string;
+  companyName: string;
+}
+
+export interface VisitTourListItem {
+  id: string;
+  name: string;
+  tourDate: string;
+  userId: string;
+  agentLabel: string;
+  stopCount: number;
+  totalDistanceKm: number | null;
+  estimatedMinutes: number | null;
+  status: VisitTourSaveStatus;
+  updatedAt: string;
+}
+
+export interface VisitTourListFilters {
+  tourDate?: string | null;
+  agentId?: string | null;
+  sortBy?: VisitTourListSortKey;
+  sortAscending?: boolean;
+}
+
+export interface VisitTourLoadedState {
+  id: string;
+  name: string;
+  tourDate: string;
+  notes: string | null;
+  originType: "current" | VisitTourDestinationType;
+  originCompanyId: string;
+  originLabel: string;
+  origin: GeoPoint;
+  destinationType: VisitTourDestinationType;
+  destinationCompanyId: string;
+  destination: VisitTourDestination;
+  constraints: VisitTourConstraints;
+  stops: VisitTourOptimizeStop[];
+  plan: VisitTourOptimizePlan;
+}
 
 export type {
   VisitTourConstraints,

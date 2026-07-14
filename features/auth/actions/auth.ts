@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { createServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
+import { resolvePostLoginRedirect } from "../utils/post-login-redirect";
 import { ensureUserProfile } from "../services/user-provisioning.service";
 import {
   canProcessSignup,
@@ -84,7 +85,8 @@ export async function authenticateAction(
     }
   }
 
-  redirect("/");
+  const redirectedFrom = String(formData.get("redirectedFrom") ?? "").trim() || null;
+  redirect(resolvePostLoginRedirect(redirectedFrom));
 }
 
 export async function signOutAction(): Promise<void> {

@@ -77,10 +77,10 @@ export async function CompanyOpportunitiesSection({
                   </div>
                 </div>
                 <Link
-                  href="/opportunities"
+                  href={`/opportunities/${item.id}`}
                   className="text-xs font-medium text-indigo-600 hover:underline"
                 >
-                  Vai al Kanban
+                  Apri scheda
                 </Link>
               </li>
             ))}

@@ -1,5 +1,6 @@
 import "server-only";
 
+import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/features/auth/session";
 import { fetchPriorityContext } from "@/features/companies/services/commercial-priority.service";
 import { getFollowUpEffectiveDate } from "@/lib/constants/follow-up";
@@ -14,8 +15,10 @@ import type {
   VisitTourOptimizeStop,
   VisitTourSaveStatus,
 } from "../types/visit-tour";
+import { buildDefaultTourName } from "../utils/visit-tour-restore";
 
 export interface SaveVisitTourInput {
+  name?: string | null;
   tourDate: string;
   origin: GeoPoint & { label: string; companyId?: string };
   destination: GeoPoint & { label: string; companyId?: string };
@@ -99,10 +102,15 @@ export async function saveVisitTour(
     companyName: stop.company.name,
   }));
 
+  const tourName =
+    input.name?.trim() ||
+    buildDefaultTourName(input.tourDate, input.stops.length);
+
   const { data, error } = await supabase
     .from("visit_tours")
     .insert({
       user_id: user.id,
+      name: tourName,
       tour_date: input.tourDate,
       mode: "optimize",
       origin: input.origin as unknown as Json,
@@ -121,6 +129,8 @@ export async function saveVisitTour(
   if (error) {
     return { success: false, message: describeDbError(error) ?? "Salvataggio non riuscito." };
   }
+
+  revalidatePath("/routes");
 
   return {
     success: true,

@@ -37,7 +37,7 @@ export async function saveVisitAction(
     return { success: false, message: "Azienda non valida." };
   }
 
-  const { visitId, error } = await saveCompletedVisit({
+  const { visitId, completedExisting, error } = await saveCompletedVisit({
     companyId: input.companyId,
     completedAt: input.completedAt || new Date().toISOString(),
     outcome: input.outcome?.trim() || null,
@@ -55,7 +55,12 @@ export async function saveVisitAction(
 
   revalidateVisitPaths(input.companyId);
 
-  return { success: true, message: "Visita registrata." };
+  await syncVisitCalendar(visitId, "complete");
+
+  return {
+    success: true,
+    message: completedExisting ? "Visita completata." : "Visita registrata.",
+  };
 }
 
 export async function scheduleVisitAction(

@@ -517,6 +517,7 @@ export interface Database {
         Row: {
           id: string;
           user_id: string;
+          name: string | null;
           tour_date: string;
           mode: string;
           origin: Json;
@@ -534,6 +535,7 @@ export interface Database {
         Insert: {
           id?: string;
           user_id: string;
+          name?: string | null;
           tour_date?: string;
           mode?: string;
           origin: Json;

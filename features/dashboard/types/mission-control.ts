@@ -36,6 +36,7 @@ export interface MissionControlNextVisit {
   companyId: string;
   companyName: string;
   scheduledAt: string;
+  scheduledDayLabel: string;
   scheduledLabel: string;
   phone: string | null;
   notes: string | null;

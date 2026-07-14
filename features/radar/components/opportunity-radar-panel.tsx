@@ -25,6 +25,7 @@ import { buildGoogleMapsDirectionsUrl } from "@/features/maps/utils/map-filters"
 import { analyzeOpportunityRadarAction } from "../actions/opportunity-radar-action";
 import type { OpportunityRadarItem, RadarCompanySource } from "../types";
 import { collectRadarCompanyIds } from "../utils/filter-radar-companies";
+import { getValidMapCoordinates } from "../utils/map-coordinates";
 import { cn } from "@/utils/cn";
 
 interface OpportunityRadarPanelProps {
@@ -46,6 +47,7 @@ function formatOpportunityValue(value: number): string {
 
 function RadarResultCard({ item, rank }: { item: OpportunityRadarItem; rank: number }) {
   const phoneHref = item.phone ? `tel:${item.phone.replace(/\s+/g, "")}` : null;
+  const mapCoords = getValidMapCoordinates(item.latitude, item.longitude);
 
   return (
     <li className="space-y-3 rounded-lg border border-slate-100 bg-slate-50/70 p-3">
@@ -87,15 +89,22 @@ function RadarResultCard({ item, rank }: { item: OpportunityRadarItem; rank: num
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <a
-          href={buildGoogleMapsDirectionsUrl(item.latitude, item.longitude)}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex min-h-10 items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 hover:bg-slate-50"
-        >
-          <Navigation className="h-3.5 w-3.5" />
-          Naviga
-        </a>
+        {mapCoords ? (
+          <a
+            href={buildGoogleMapsDirectionsUrl(mapCoords.latitude, mapCoords.longitude)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex min-h-10 items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 hover:bg-slate-50"
+          >
+            <Navigation className="h-3.5 w-3.5" />
+            Naviga
+          </a>
+        ) : (
+          <span className="inline-flex min-h-10 items-center gap-1 rounded-lg border border-slate-100 bg-slate-50 px-3 text-xs text-slate-400">
+            <Navigation className="h-3.5 w-3.5" />
+            Naviga
+          </span>
+        )}
         {phoneHref ? (
           <a
             href={phoneHref}
