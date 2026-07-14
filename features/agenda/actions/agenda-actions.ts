@@ -55,6 +55,10 @@ export async function agendaScheduleVisitAction(input: {
     return { success: false, message: NOT_CONFIGURED_MESSAGE };
   }
 
+  if (!input.companyId.trim()) {
+    return { success: false, message: "Seleziona un'azienda." };
+  }
+
   const { visitId, error } = await scheduleVisit(input);
   if (error || !visitId) {
     return { success: false, message: error ?? "Pianificazione visita non riuscita." };
@@ -79,6 +83,10 @@ export async function agendaSaveFollowUpAction(input: {
 
   if (!isContactHistoryType(input.activityType)) {
     return { success: false, message: "Tipo attività non valido." };
+  }
+
+  if (!input.companyId.trim()) {
+    return { success: false, message: "Seleziona un'azienda." };
   }
 
   const { followUpId, error } = await saveFollowUp({

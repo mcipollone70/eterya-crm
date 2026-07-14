@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useTransition } from "react";
 import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { AGENDA_VIEW_OPTIONS, type AgendaView } from "@/lib/constants/agenda";
-import { shiftDateKey, toDateKey } from "@/lib/agenda/calendar";
+import { shiftDateKey, shiftMonthDateKey, toDateKey } from "@/lib/agenda/calendar";
 
 interface AgendaViewTabsProps {
   referenceDate: string;
@@ -38,7 +38,11 @@ export function AgendaViewTabs({ referenceDate, rangeLabel }: AgendaViewTabsProp
   }
 
   function navigate(delta: number) {
-    const step = view === "month" ? 30 : view === "week" ? 7 : 1;
+    if (view === "month") {
+      pushParams({ date: shiftMonthDateKey(referenceDate, delta) });
+      return;
+    }
+    const step = view === "week" ? 7 : 1;
     pushParams({ date: shiftDateKey(referenceDate, delta * step) });
   }
 

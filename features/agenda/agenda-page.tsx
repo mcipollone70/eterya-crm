@@ -80,11 +80,6 @@ export async function AgendaPage({
       <PageHeader
         title="Agenda"
         subtitle={`${itemsResult.data.length.toLocaleString("it-IT")} appuntamenti · visite, follow-up e promemoria`}
-        actions={
-          <div className="hidden lg:block">
-            <AgendaCreatePanel companies={companies} />
-          </div>
-        }
       />
 
       <Suspense fallback={<PageLoadingSkeleton rows={2} />}>

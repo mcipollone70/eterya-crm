@@ -101,6 +101,25 @@ export async function updateAgendaReminder(
 
 export async function completeAgendaReminder(id: string): Promise<{ error: string | null }> {
   const supabase = await createServerClient();
+  const { data: existing, error: loadError } = await supabase
+    .from("agenda_reminders")
+    .select("status")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (loadError) {
+    return { error: describeDbError(loadError) };
+  }
+  if (!existing) {
+    return { error: "Promemoria non trovato." };
+  }
+  if (existing.status === "completed") {
+    return { error: "Promemoria già completato." };
+  }
+  if (existing.status === "cancelled") {
+    return { error: "Promemoria annullato." };
+  }
+
   const { error } = await supabase
     .from("agenda_reminders")
     .update({
@@ -114,6 +133,25 @@ export async function completeAgendaReminder(id: string): Promise<{ error: strin
 
 export async function cancelAgendaReminder(id: string): Promise<{ error: string | null }> {
   const supabase = await createServerClient();
+  const { data: existing, error: loadError } = await supabase
+    .from("agenda_reminders")
+    .select("status")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (loadError) {
+    return { error: describeDbError(loadError) };
+  }
+  if (!existing) {
+    return { error: "Promemoria non trovato." };
+  }
+  if (existing.status === "cancelled") {
+    return { error: "Promemoria già annullato." };
+  }
+  if (existing.status === "completed") {
+    return { error: "Impossibile annullare un promemoria completato." };
+  }
+
   const { error } = await supabase
     .from("agenda_reminders")
     .update({ status: "cancelled" as FollowUpStatus })

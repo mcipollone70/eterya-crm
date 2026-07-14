@@ -267,7 +267,7 @@ export function AgendaItemRow({
           )}
           {item.opportunityId && (
             <Link
-              href="/opportunities"
+              href={`/opportunities/${item.opportunityId}`}
               className="inline-flex shrink-0 items-center gap-1 rounded-md border border-white/60 bg-white/70 px-2.5 py-2 text-xs font-medium hover:bg-white"
             >
               <Target className="h-3 w-3" />

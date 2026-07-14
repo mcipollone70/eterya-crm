@@ -12,12 +12,11 @@ import {
   type FollowUpStatus,
 } from "@/lib/constants/follow-up";
 import {
-  matchesAgendaStatusFilter,
   type AgendaFilters,
   type AgendaItem,
   type AgendaItemKind,
+  type AgendaStatusFilter,
 } from "@/lib/constants/agenda";
-import { OPEN_OPPORTUNITY_STAGES } from "@/lib/constants/opportunity-pipeline";
 import { resolveAgendaRange } from "@/lib/agenda/calendar";
 import { createServerClient } from "@/lib/supabase/server";
 import { describeDbError } from "@/lib/supabase/errors";
@@ -191,57 +190,87 @@ function applyAgendaFilters(items: AgendaItem[], filters: AgendaFilters): Agenda
     if (filters.kind && item.kind !== filters.kind) {
       return false;
     }
-    if (!matchesAgendaStatusFilter(item.kind, String(item.status), filters.status)) {
-      return false;
-    }
     return true;
   });
 }
 
-async function enrichOpportunityLinks(
-  supabase: Awaited<ReturnType<typeof createServerClient>>,
-  items: AgendaItem[]
-): Promise<AgendaItem[]> {
-  const companyIds = [
-    ...new Set(
-      items
-        .filter((item) => item.companyId && !item.opportunityId)
-        .map((item) => item.companyId as string)
-    ),
-  ];
-
-  if (companyIds.length === 0) {
-    return items;
+function applyVisitStatusToQuery<T extends { in: (col: string, vals: string[]) => T; eq: (col: string, val: string) => T; or: (filters: string) => T; gte: (col: string, val: string) => T; lte: (col: string, val: string) => T }>(
+  query: T,
+  status: AgendaStatusFilter,
+  range: { startIso: string; endIso: string }
+): T {
+  if (status === "open") {
+    return query
+      .in("status", ["scheduled", "in_progress"])
+      .gte("scheduled_at", range.startIso)
+      .lte("scheduled_at", range.endIso);
+  }
+  if (status === "completed") {
+    return query
+      .eq("status", "completed")
+      .gte("completed_at", range.startIso)
+      .lte("completed_at", range.endIso);
+  }
+  if (status === "cancelled") {
+    return query
+      .in("status", ["cancelled", "no_show"])
+      .gte("scheduled_at", range.startIso)
+      .lte("scheduled_at", range.endIso);
   }
 
-  const { data } = await supabase
-    .from("opportunities")
-    .select("id,company_id,title")
-    .in("company_id", companyIds)
-    .in("stage", [...OPEN_OPPORTUNITY_STAGES])
-    .order("total_amount", { ascending: false });
+  return query.or(
+    `and(status.in.(scheduled,in_progress),scheduled_at.gte.${range.startIso},scheduled_at.lte.${range.endIso}),and(status.eq.completed,completed_at.gte.${range.startIso},completed_at.lte.${range.endIso})`
+  );
+}
 
-  const byCompany = new Map<string, { id: string; title: string }>();
-  for (const row of data ?? []) {
-    if (!byCompany.has(row.company_id)) {
-      byCompany.set(row.company_id, { id: row.id, title: row.title });
-    }
+function applyFollowUpStatusToQuery<T extends { in: (col: string, vals: string[]) => T; eq: (col: string, val: string) => T; or: (filters: string) => T; gte: (col: string, val: string) => T; lte: (col: string, val: string) => T }>(
+  query: T,
+  status: AgendaStatusFilter,
+  range: { startIso: string; endIso: string }
+): T {
+  if (status === "open") {
+    return query
+      .in("status", ["todo", "postponed"])
+      .or(
+        `and(scheduled_at.gte.${range.startIso},scheduled_at.lte.${range.endIso}),and(postponed_to.gte.${range.startIso},postponed_to.lte.${range.endIso})`
+      );
+  }
+  if (status === "completed") {
+    return query
+      .eq("status", "completed")
+      .gte("completed_at", range.startIso)
+      .lte("completed_at", range.endIso);
+  }
+  if (status === "cancelled") {
+    return query
+      .eq("status", "cancelled")
+      .gte("scheduled_at", range.startIso)
+      .lte("scheduled_at", range.endIso);
   }
 
-  return items.map((item) => {
-    if (!item.companyId || item.opportunityId) {
-      return item;
-    }
-    const opportunity = byCompany.get(item.companyId);
-    if (!opportunity) {
-      return item;
-    }
-    return {
-      ...item,
-      opportunityId: opportunity.id,
-      opportunityTitle: opportunity.title,
-    };
-  });
+  return query.or(
+    `and(scheduled_at.gte.${range.startIso},scheduled_at.lte.${range.endIso}),and(postponed_to.gte.${range.startIso},postponed_to.lte.${range.endIso})`
+  );
+}
+
+function applyReminderStatusToQuery<T extends { in: (col: string, vals: string[]) => T; eq: (col: string, val: string) => T; gte: (col: string, val: string) => T; lte: (col: string, val: string) => T }>(
+  query: T,
+  status: AgendaStatusFilter,
+  range: { startIso: string; endIso: string }
+): T {
+  query = query.gte("scheduled_at", range.startIso).lte("scheduled_at", range.endIso);
+
+  if (status === "open") {
+    return query.in("status", ["todo", "postponed"]);
+  }
+  if (status === "completed") {
+    return query.eq("status", "completed");
+  }
+  if (status === "cancelled") {
+    return query.eq("status", "cancelled");
+  }
+
+  return query;
 }
 
 export async function listAgendaItems(
@@ -264,11 +293,10 @@ export async function listAgendaItems(
           .select(
             "id,company_id,user_id,scheduled_at,completed_at,status,notes,companies(name),users(full_name,email)"
           )
-          .or(
-            `and(status.in.(scheduled,in_progress),scheduled_at.gte.${range.startIso},scheduled_at.lte.${range.endIso}),and(status.eq.completed,completed_at.gte.${range.startIso},completed_at.lte.${range.endIso})`
-          )
           .order("scheduled_at", { ascending: true })
           .limit(500);
+
+        query = applyVisitStatusToQuery(query, filters.status, range);
 
         if (filters.agentId) {
           query = query.eq("user_id", filters.agentId);
@@ -310,11 +338,10 @@ export async function listAgendaItems(
         let query = supabase
           .from("follow_ups")
           .select(FOLLOW_UP_SELECT)
-          .or(
-            `and(scheduled_at.gte.${range.startIso},scheduled_at.lte.${range.endIso}),and(postponed_to.gte.${range.startIso},postponed_to.lte.${range.endIso})`
-          )
           .order("scheduled_at", { ascending: true })
           .limit(500);
+
+        query = applyFollowUpStatusToQuery(query, filters.status, range);
 
         if (filters.agentId) {
           query = query.eq("user_id", filters.agentId);
@@ -344,10 +371,10 @@ export async function listAgendaItems(
         let query = supabase
           .from("agenda_reminders")
           .select(REMINDER_SELECT)
-          .gte("scheduled_at", range.startIso)
-          .lte("scheduled_at", range.endIso)
           .order("scheduled_at", { ascending: true })
           .limit(500);
+
+        query = applyReminderStatusToQuery(query, filters.status, range);
 
         if (filters.agentId) {
           query = query.eq("user_id", filters.agentId);
@@ -376,7 +403,6 @@ export async function listAgendaItems(
 
   let items = results.flatMap((result) => result.data);
   items = applyAgendaFilters(items, filters);
-  items = await enrichOpportunityLinks(supabase, items);
   items.sort((left, right) => left.scheduledAt.localeCompare(right.scheduledAt));
 
   return { data: items, rangeLabel: range.label, error: null };

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { CalendarDays } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, ListEmptyState } from "@/components/ui";
 import type { AgendaItem } from "@/lib/constants/agenda";
-import { groupAgendaItemsByDay, parseReferenceDate, toDateKey } from "@/lib/agenda/calendar";
+import { groupAgendaItemsByDay, parseReferenceDate, scheduledAtToDateKey, toDateKey } from "@/lib/agenda/calendar";
 import { AgendaItemRow } from "./agenda-item-row";
 
 interface AgendaDayViewProps {
@@ -18,7 +18,9 @@ export function AgendaDayView({
   referenceDate,
   calendarSyncStatuses = {},
 }: AgendaDayViewProps) {
-  const dayItems = items.filter((item) => item.scheduledAt.slice(0, 10) === referenceDate);
+  const dayItems = items.filter(
+    (item) => scheduledAtToDateKey(item.scheduledAt) === referenceDate
+  );
 
   return (
     <Card>

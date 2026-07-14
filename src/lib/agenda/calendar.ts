@@ -26,6 +26,16 @@ export function shiftDateKey(dateKey: string, days: number): string {
   return toDateKey(date);
 }
 
+export function shiftMonthDateKey(dateKey: string, months: number): string {
+  const date = parseReferenceDate(dateKey);
+  date.setMonth(date.getMonth() + months);
+  return toDateKey(date);
+}
+
+export function scheduledAtToDateKey(iso: string): string {
+  return toDateKey(new Date(iso));
+}
+
 export function getDayRange(dateKey: string): AgendaDateRange {
   const start = parseReferenceDate(dateKey);
   const end = new Date(start);
@@ -138,7 +148,7 @@ export function groupAgendaItemsByDay(items: AgendaItem[]): Map<string, AgendaIt
   const groups = new Map<string, AgendaItem[]>();
 
   for (const item of items) {
-    const dayKey = item.scheduledAt.slice(0, 10);
+    const dayKey = scheduledAtToDateKey(item.scheduledAt);
     const current = groups.get(dayKey) ?? [];
     current.push(item);
     groups.set(dayKey, current);
@@ -158,5 +168,5 @@ export function isSameMonth(date: Date, referenceDateKey: string): boolean {
 }
 
 export function isToday(dateKey: string): boolean {
-  return dateKey === new Date().toISOString().slice(0, 10);
+  return dateKey === toDateKey(new Date());
 }
