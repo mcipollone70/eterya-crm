@@ -21,7 +21,6 @@ import { OPEN_OPPORTUNITY_STAGES } from "@/lib/constants/opportunity-pipeline";
 import { endOfTodayIso, startOfTodayIso } from "@/lib/last-visit/format";
 import { companyRegisterVisitHref } from "@/lib/constants/visit-workflow";
 import { createServerClient } from "@/lib/supabase/server";
-import { describeDbError } from "@/lib/supabase/errors";
 import {
   formatScheduledDayLabel,
   formatScheduledTimeLabel,
