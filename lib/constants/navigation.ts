@@ -20,6 +20,10 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Report", href: "/reports", icon: "BarChart3" },
 ];
 
+export const ADMIN_NAV_ITEMS: NavItem[] = [
+  { label: "Amministrazione", href: "/admin/users", icon: "Shield" },
+];
+
 export const NAV_BOTTOM: NavItem[] = [
   { label: "Impostazioni", href: "/settings", icon: "Settings" },
 ];
@@ -54,6 +58,8 @@ export const PAGE_TITLES: Record<string, string> = {
   "/products": "Prodotti",
   "/reports": "Dashboard Commerciale Avanzata",
   "/settings": "Impostazioni",
+  "/admin/users": "Amministrazione utenti",
+  "/admin/users/new": "Nuovo utente",
 };
 
 export const APP_NAME = "Eterya CRM";

@@ -22,10 +22,11 @@ import {
   FileUp,
   Car,
   Bot,
+  Shield,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/utils/cn";
-import { APP_NAME, NAV_BOTTOM, NAV_ITEMS } from "@/lib/constants/navigation";
+import { ADMIN_NAV_ITEMS, APP_NAME, NAV_BOTTOM, NAV_ITEMS } from "@/lib/constants/navigation";
 
 const iconMap: Record<string, LucideIcon> = {
   LayoutDashboard,
@@ -45,6 +46,7 @@ const iconMap: Record<string, LucideIcon> = {
   Sparkles,
   Car,
   Bot,
+  Shield,
 };
 
 function isNavActive(pathname: string, href: string): boolean {
@@ -63,10 +65,17 @@ interface SidebarProps {
   collapsed?: boolean;
   onToggle?: () => void;
   onNavigate?: () => void;
+  showAdminNav?: boolean;
 }
 
-export function Sidebar({ collapsed = false, onToggle, onNavigate }: SidebarProps) {
+export function Sidebar({
+  collapsed = false,
+  onToggle,
+  onNavigate,
+  showAdminNav = false,
+}: SidebarProps) {
   const pathname = usePathname();
+  const adminItems = showAdminNav ? ADMIN_NAV_ITEMS : [];
 
   return (
     <aside
@@ -113,6 +122,29 @@ export function Sidebar({ collapsed = false, onToggle, onNavigate }: SidebarProp
       </nav>
 
       <div className="border-t border-slate-800 px-3 py-3">
+        {adminItems.map((item) => {
+          const Icon = iconMap[item.icon];
+          const isActive = isNavActive(pathname, item.href);
+
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              onClick={onNavigate}
+              className={cn(
+                "mb-1 flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                isActive
+                  ? "bg-indigo-600/20 text-indigo-300"
+                  : "text-slate-400 hover:bg-slate-800 hover:text-white"
+              )}
+              title={collapsed ? item.label : undefined}
+            >
+              {Icon && <Icon className="h-[18px] w-[18px] shrink-0" />}
+              {!collapsed && <span>{item.label}</span>}
+            </Link>
+          );
+        })}
+
         {NAV_BOTTOM.map((item) => {
           const Icon = iconMap[item.icon];
           const isActive = isNavActive(pathname, item.href);

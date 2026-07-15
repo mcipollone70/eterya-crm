@@ -78,9 +78,13 @@ export async function authenticateAction(
     }
 
     if (data.user) {
-      const { error: profileError } = await ensureUserProfile(supabase, data.user);
+      const { profile, error: profileError } = await ensureUserProfile(supabase, data.user);
       if (profileError) {
         return { error: profileError };
+      }
+      if (profile && !profile.is_active) {
+        await supabase.auth.signOut();
+        return { error: "Account disattivato. Contatta un amministratore." };
       }
     }
   }

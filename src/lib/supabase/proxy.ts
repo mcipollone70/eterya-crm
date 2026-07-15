@@ -1,5 +1,6 @@
 import { createServerClient as createSsrServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { isAdminRole } from "@/features/admin/constants/user-roles";
 import { resolvePostLoginRedirect } from "@/features/auth/utils/post-login-redirect";
 import type { Database } from "./types";
 import { getSupabasePublicEnv } from "./env";
@@ -42,6 +43,18 @@ function redirectAfterLogin(request: NextRequest, redirectedFrom: string | null)
   redirectUrl.search = parsed.search;
   redirectUrl.hash = "";
   return NextResponse.redirect(redirectUrl);
+}
+
+function redirectAccessDenied(request: NextRequest): NextResponse {
+  const redirectUrl = request.nextUrl.clone();
+  redirectUrl.pathname = "/";
+  redirectUrl.search = "?access=denied";
+  redirectUrl.hash = "";
+  return NextResponse.redirect(redirectUrl);
+}
+
+function isAdminRoute(pathname: string): boolean {
+  return pathname === "/admin" || pathname.startsWith("/admin/");
 }
 
 /**
@@ -98,6 +111,25 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
 
   if (!user && !isPublicRoute(pathname)) {
     return redirectToLogin(request, pathname);
+  }
+
+  if (user && !isPublicRoute(pathname)) {
+    const { data: profile, error: profileError } = await supabase
+      .from("users")
+      .select("role,is_active")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (profileError || !profile || !profile.is_active) {
+      const loginUrl = request.nextUrl.clone();
+      loginUrl.pathname = "/login";
+      loginUrl.search = "?error=deactivated";
+      return NextResponse.redirect(loginUrl);
+    }
+
+    if (isAdminRoute(pathname) && !isAdminRole(profile.role)) {
+      return redirectAccessDenied(request);
+    }
   }
 
   if (user && isPublicRoute(pathname)) {

@@ -30,6 +30,18 @@ export const getCurrentUser = cache(async (): Promise<AuthUser | null> => {
     }
 
     await ensureUserProfile(supabase, user);
+
+    const { data: profile } = await supabase
+      .from("users")
+      .select("is_active")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (profile && !profile.is_active) {
+      await supabase.auth.signOut();
+      return null;
+    }
+
     return user;
   } catch {
     return null;

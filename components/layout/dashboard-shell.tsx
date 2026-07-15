@@ -10,9 +10,14 @@ import { cn } from "@/utils/cn";
 interface DashboardShellProps {
   children: React.ReactNode;
   userEmail?: string | null;
+  showAdminNav?: boolean;
 }
 
-export function DashboardShell({ children, userEmail }: DashboardShellProps) {
+export function DashboardShell({
+  children,
+  userEmail,
+  showAdminNav = false,
+}: DashboardShellProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -23,6 +28,7 @@ export function DashboardShell({ children, userEmail }: DashboardShellProps) {
         <Sidebar
           collapsed={sidebarCollapsed}
           onToggle={() => setSidebarCollapsed((prev) => !prev)}
+          showAdminNav={showAdminNav}
         />
       </div>
 
@@ -35,7 +41,10 @@ export function DashboardShell({ children, userEmail }: DashboardShellProps) {
             aria-label="Chiudi menu"
           />
           <div className="relative z-50 h-full w-64">
-            <Sidebar onNavigate={() => setMobileOpen(false)} />
+            <Sidebar
+              onNavigate={() => setMobileOpen(false)}
+              showAdminNav={showAdminNav}
+            />
           </div>
         </div>
       )}
