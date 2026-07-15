@@ -92,7 +92,7 @@ function MapViewportLoader({ filters }: { filters: MapFiltersState }) {
       );
     };
 
-    report();
+    map.whenReady(report);
     map.on("moveend", report);
     map.on("zoomend", report);
 

@@ -20,6 +20,12 @@ export const MAP_VIEWPORT_FETCH_PAGE_SIZE = 500;
 /** Limite totale per singola area geografica (evita timeout su zone dense). */
 export const MAP_MAX_FETCH_PER_BOUNDS = 1500;
 
+/** Profondità massima suddivisione bounds quando si raggiunge il limite per area. */
+export const MAP_BOUNDS_MAX_SUBDIVIDE_DEPTH = 8;
+
+/** Span minimo (gradi) sotto il quale non si suddivide ulteriormente un bounds. */
+export const MAP_BOUNDS_MIN_SPAN_DEGREES = 0.002;
+
 /** Raggio iniziale attorno al centro mappa o posizione utente (km). */
 export const MAP_INITIAL_RADIUS_KM = 60;
 

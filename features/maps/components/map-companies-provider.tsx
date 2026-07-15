@@ -21,7 +21,9 @@ import type { MapCompaniesStats, MapCompany, MapFiltersState, MapGeoBounds } fro
 import {
   boundsFromCenter,
   boundsRequestKey,
+  canSubdivideBounds,
   expandBounds,
+  subdivideBounds,
 } from "../utils/map-bounds";
 
 interface MapCompaniesContextValue {
@@ -48,26 +50,41 @@ const MapCompaniesContext = createContext<MapCompaniesContextValue | null>(null)
 
 async function fetchAllPagesForBounds(
   bounds: MapGeoBounds,
-  filters: MapFiltersState
+  filters: MapFiltersState,
+  depth = 0
 ): Promise<{ companies: MapCompany[]; error: string | null }> {
-  const companies: MapCompany[] = [];
+  const byId = new Map<string, MapCompany>();
   let offset = 0;
+  let hasMore = true;
 
-  while (offset < MAP_MAX_FETCH_PER_BOUNDS) {
+  while (offset < MAP_MAX_FETCH_PER_BOUNDS && hasMore) {
     const page = await fetchMapCompaniesInBoundsAction(bounds, filters, offset);
     if (page.error) {
-      return { companies, error: page.error };
+      return { companies: Array.from(byId.values()), error: page.error };
     }
 
-    companies.push(...page.data);
-    offset += page.loadedCount;
+    for (const company of page.data) {
+      byId.set(company.id, company);
+    }
 
-    if (!page.hasMore || page.loadedCount === 0) {
-      break;
+    offset += page.loadedCount;
+    hasMore = page.hasMore;
+  }
+
+  if (hasMore && canSubdivideBounds(bounds, depth)) {
+    for (const quadrant of subdivideBounds(bounds)) {
+      const subResult = await fetchAllPagesForBounds(quadrant, filters, depth + 1);
+      if (subResult.error) {
+        return { companies: Array.from(byId.values()), error: subResult.error };
+      }
+
+      for (const company of subResult.companies) {
+        byId.set(company.id, company);
+      }
     }
   }
 
-  return { companies, error: null };
+  return { companies: Array.from(byId.values()), error: null };
 }
 
 interface MapCompaniesProviderProps {

@@ -20,10 +20,55 @@ export interface ContactListItem {
   is_primary: boolean;
   company_id: string;
   company: { name: string } | null;
+  /** Referente ancora solo sull'anagrafica azienda (import Excel), senza riga in `contacts`. */
+  fromCompanyReferent?: boolean;
 }
 
 const LIST_COLUMNS =
   "id,full_name,role,email,phone,mobile,is_primary,company_id,company:companies(name)";
+
+/** Colonna referente tipica nei file Excel importati (non mappata su `contact_name` in import). */
+const IMPORT_REFERENT_PAYLOAD_KEY = "NOME CAPO GRUPPO";
+
+const COMPANY_REFERENT_COLUMNS =
+  "id,name,contact_name,contact_email,contact_phone,contact_role,import_payload";
+
+interface CompanyReferentSource {
+  id: string;
+  name: string;
+  contact_name: string | null;
+  contact_email: string | null;
+  contact_phone: string | null;
+  contact_role: string | null;
+  import_payload: Record<string, unknown> | null;
+}
+
+function resolveCompanyReferentName(row: CompanyReferentSource): string | null {
+  const structured = row.contact_name?.trim();
+  if (structured) return structured;
+
+  const payload = row.import_payload;
+  if (!payload || typeof payload !== "object") return null;
+
+  const fromPayload = payload[IMPORT_REFERENT_PAYLOAD_KEY];
+  const name = typeof fromPayload === "string" ? fromPayload.trim() : "";
+  return name.length > 0 ? name : null;
+}
+
+function companyReferentToListItem(row: CompanyReferentSource): ContactListItem {
+  return {
+    id: row.id,
+    full_name: resolveCompanyReferentName(row) ?? row.name,
+    role: row.contact_role,
+    email: row.contact_email,
+    phone: row.contact_phone,
+    mobile: null,
+    is_primary: true,
+    company_id: row.id,
+    company: { name: row.name },
+    fromCompanyReferent: true,
+  };
+}
 
 /**
  * L'accesso avviene con il client server auth-scoped (`@supabase/ssr`): le query
@@ -35,16 +80,51 @@ export async function listContacts(
   limit = 200
 ): Promise<{ data: ContactListItem[]; count: number; error: string | null }> {
   const supabase = await createServerClient();
-  const { data, count, error } = await supabase
-    .from("contacts")
-    .select(LIST_COLUMNS, { count: "exact" })
-    .order("full_name", { ascending: true })
-    .limit(limit);
+
+  const [contactsResult, referentsResult] = await Promise.all([
+    supabase
+      .from("contacts")
+      .select(LIST_COLUMNS, { count: "exact" })
+      .order("full_name", { ascending: true }),
+    supabase
+      .from("companies")
+      .select(COMPANY_REFERENT_COLUMNS)
+      .or(
+        `contact_name.not.is.null,import_payload->>${IMPORT_REFERENT_PAYLOAD_KEY}.neq.`
+      )
+      .order("name", { ascending: true }),
+  ]);
+
+  const contactsError = describeDbError(contactsResult.error);
+  const referentsError = describeDbError(referentsResult.error);
+  if (contactsError) {
+    return { data: [], count: 0, error: contactsError };
+  }
+  if (referentsError) {
+    return { data: [], count: 0, error: referentsError };
+  }
+
+  const tableContacts = (contactsResult.data ?? []) as unknown as ContactListItem[];
+  const companyIdsWithContactRow = new Set(
+    tableContacts.map((contact) => contact.company_id)
+  );
+
+  const companyReferents = (referentsResult.data ?? [])
+    .map((row) => row as unknown as CompanyReferentSource)
+    .filter(
+      (row) =>
+        !companyIdsWithContactRow.has(row.id) && resolveCompanyReferentName(row) !== null
+    )
+    .map(companyReferentToListItem);
+
+  const merged = [...tableContacts, ...companyReferents].sort((a, b) =>
+    a.full_name.localeCompare(b.full_name, "it", { sensitivity: "base" })
+  );
 
   return {
-    data: (data ?? []) as unknown as ContactListItem[],
-    count: count ?? 0,
-    error: describeDbError(error),
+    data: merged.slice(0, limit),
+    count: tableContacts.length + companyReferents.length,
+    error: null,
   };
 }
 

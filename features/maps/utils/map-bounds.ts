@@ -1,4 +1,6 @@
 import {
+  MAP_BOUNDS_MAX_SUBDIVIDE_DEPTH,
+  MAP_BOUNDS_MIN_SPAN_DEGREES,
   MAP_BOUNDS_PADDING_RATIO,
   MAP_INITIAL_RADIUS_KM,
 } from "../constants/map-config";
@@ -77,4 +79,32 @@ export function boundsRequestKey(
   }
 ): string {
   return `${boundsKey(bounds)}::${filtersKey(filters)}`;
+}
+
+export function boundsSpan(bounds: MapGeoBounds): { lat: number; lng: number } {
+  return {
+    lat: bounds.north - bounds.south,
+    lng: bounds.east - bounds.west,
+  };
+}
+
+export function canSubdivideBounds(bounds: MapGeoBounds, depth: number): boolean {
+  if (depth >= MAP_BOUNDS_MAX_SUBDIVIDE_DEPTH) {
+    return false;
+  }
+
+  const span = boundsSpan(bounds);
+  return span.lat > MAP_BOUNDS_MIN_SPAN_DEGREES && span.lng > MAP_BOUNDS_MIN_SPAN_DEGREES;
+}
+
+export function subdivideBounds(bounds: MapGeoBounds): MapGeoBounds[] {
+  const midLat = (bounds.north + bounds.south) / 2;
+  const midLng = (bounds.east + bounds.west) / 2;
+
+  return [
+    { north: bounds.north, south: midLat, east: midLng, west: bounds.west },
+    { north: bounds.north, south: midLat, east: bounds.east, west: midLng },
+    { north: midLat, south: bounds.south, east: midLng, west: bounds.west },
+    { north: midLat, south: bounds.south, east: bounds.east, west: midLng },
+  ];
 }

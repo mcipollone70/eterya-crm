@@ -317,13 +317,14 @@ export async function getMapCompaniesInBounds(
     return { data: [], error: describeDbError(error), hasMore: false, loadedCount: 0 };
   }
 
-  const companies = mapMapCompanies((data ?? []) as MapCompanyRow[]);
+  const rows = (data ?? []) as MapCompanyRow[];
+  const companies = mapMapCompanies(rows);
 
   return {
     data: companies,
     error: null,
-    hasMore: companies.length === pageSize,
-    loadedCount: companies.length,
+    hasMore: rows.length === pageSize,
+    loadedCount: rows.length,
   };
 }
 

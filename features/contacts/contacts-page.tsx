@@ -95,15 +95,27 @@ export async function ContactsPage() {
               <tbody>
                 {contacts.map((contact) => (
                   <tr
-                    key={contact.id}
+                    key={contact.fromCompanyReferent ? `company-ref-${contact.company_id}` : contact.id}
                     className="border-b border-slate-100 last:border-0 hover:bg-slate-50"
                   >
                     <td className="px-4 py-3 font-medium text-indigo-600">
                       <span className="flex items-center gap-2">
-                        <Link href={`/contacts/${contact.id}`} className="hover:underline">
-                          {contact.full_name}
-                        </Link>
+                        {contact.fromCompanyReferent ? (
+                          <Link
+                            href={`/companies/${contact.company_id}`}
+                            className="hover:underline"
+                          >
+                            {contact.full_name}
+                          </Link>
+                        ) : (
+                          <Link href={`/contacts/${contact.id}`} className="hover:underline">
+                            {contact.full_name}
+                          </Link>
+                        )}
                         {contact.is_primary && <Badge variant="info">Principale</Badge>}
+                        {contact.fromCompanyReferent && (
+                          <Badge variant="muted">Da anagrafica</Badge>
+                        )}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-slate-700">
