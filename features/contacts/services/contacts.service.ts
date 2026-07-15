@@ -4,6 +4,14 @@ import { createServerClient } from "@/lib/supabase/server";
 import { describeDbError } from "@/lib/supabase/errors";
 import type { SelectOption } from "@/lib/forms";
 import type { InsertTables, Tables, UpdateTables } from "@/lib/supabase/types";
+import {
+  CONTACTS_DEFAULT_PAGE,
+  CONTACTS_DEFAULT_PAGE_SIZE,
+  CONTACTS_FETCH_BATCH_SIZE,
+  clampContactsPage,
+  isContactsPageSize,
+  type ContactsPageSize,
+} from "../constants/contacts-pagination";
 
 export type Contact = Tables<"contacts">;
 export type ContactInsert = InsertTables<"contacts">;
@@ -181,57 +189,166 @@ function companyReferentToListItem(
   };
 }
 
-/**
- * L'accesso avviene con il client server auth-scoped (`@supabase/ssr`): le query
- * girano come ruolo `authenticated` e sono soggette alle policy RLS. I chiamanti
- * verificano `isSupabaseConfigured()` per il degrado grazioso lato UI.
- */
+export interface ListContactsOptions {
+  page?: number;
+  pageSize?: ContactsPageSize;
+}
 
-export async function listContacts(
-  limit = 200
-): Promise<{ data: ContactListItem[]; count: number; error: string | null }> {
-  const supabase = await createServerClient();
+export type ListContactsInput = number | ListContactsOptions | undefined;
 
-  const [contactsResult, referentsResult] = await Promise.all([
-    supabase
+export interface ListContactsResult {
+  data: ContactListItem[];
+  count: number;
+  page: number;
+  pageSize: number;
+  error: string | null;
+}
+
+type SupabaseServerClient = Awaited<ReturnType<typeof createServerClient>>;
+
+async function fetchTableContactsInBatches(
+  supabase: SupabaseServerClient
+): Promise<{ data: ContactListItem[]; error: string | null }> {
+  const rows: ContactListItem[] = [];
+  let offset = 0;
+
+  while (true) {
+    const { data, error } = await supabase
       .from("contacts")
-      .select(LIST_COLUMNS, { count: "exact" })
-      .order("full_name", { ascending: true }),
-    supabase
+      .select(LIST_COLUMNS)
+      .order("full_name", { ascending: true })
+      .range(offset, offset + CONTACTS_FETCH_BATCH_SIZE - 1);
+
+    const dbError = describeDbError(error);
+    if (dbError) {
+      return { data: [], error: dbError };
+    }
+
+    const page = (data ?? []) as unknown as ContactListItem[];
+    rows.push(...page);
+
+    if (page.length < CONTACTS_FETCH_BATCH_SIZE) {
+      break;
+    }
+
+    offset += CONTACTS_FETCH_BATCH_SIZE;
+  }
+
+  return { data: rows, error: null };
+}
+
+async function fetchCompanyReferentSourcesInBatches(
+  supabase: SupabaseServerClient
+): Promise<{ data: CompanyReferentSource[]; error: string | null }> {
+  const rows: CompanyReferentSource[] = [];
+  let offset = 0;
+
+  while (true) {
+    const { data, error } = await supabase
       .from("companies")
       .select(COMPANY_REFERENT_COLUMNS)
       .or(COMPANY_REFERENT_FETCH_OR)
-      .order("name", { ascending: true }),
-  ]);
+      .order("name", { ascending: true })
+      .range(offset, offset + CONTACTS_FETCH_BATCH_SIZE - 1);
 
-  const contactsError = describeDbError(contactsResult.error);
-  const referentsError = describeDbError(referentsResult.error);
-  if (contactsError) {
-    return { data: [], count: 0, error: contactsError };
-  }
-  if (referentsError) {
-    return { data: [], count: 0, error: referentsError };
+    const dbError = describeDbError(error);
+    if (dbError) {
+      return { data: [], error: dbError };
+    }
+
+    const page = (data ?? []) as unknown as CompanyReferentSource[];
+    rows.push(...page);
+
+    if (page.length < CONTACTS_FETCH_BATCH_SIZE) {
+      break;
+    }
+
+    offset += CONTACTS_FETCH_BATCH_SIZE;
   }
 
-  const tableContacts = (contactsResult.data ?? []) as unknown as ContactListItem[];
+  return { data: rows, error: null };
+}
+
+function buildMergedContactList(
+  tableContacts: ContactListItem[],
+  referentSources: CompanyReferentSource[]
+): ContactListItem[] {
   const companyIdsWithContactRow = new Set(
     tableContacts.map((contact) => contact.company_id)
   );
 
-  const companyReferents = (referentsResult.data ?? [])
-    .map((row) => row as unknown as CompanyReferentSource)
+  const companyReferents = referentSources
     .filter((row) => !companyIdsWithContactRow.has(row.id))
     .map((row) => ({ row, fullName: resolveCompanyReferentName(row) }))
     .filter((entry): entry is { row: CompanyReferentSource; fullName: string } => entry.fullName !== null)
     .map(({ row, fullName }) => companyReferentToListItem(row, fullName));
 
-  const merged = [...tableContacts, ...companyReferents].sort((a, b) =>
+  return [...tableContacts, ...companyReferents].sort((a, b) =>
     a.full_name.localeCompare(b.full_name, "it", { sensitivity: "base" })
   );
+}
+
+/**
+ * L'accesso avviene con il client server auth-scoped (`@supabase/ssr`): le query
+ * girano come ruolo `authenticated` e sono soggette alle policy RLS. I chiamanti
+ * verificano `isSupabaseConfigured()` per il degrado grazioso lato UI.
+ *
+ * Accetta un numero (limite legacy, prima pagina) oppure `{ page, pageSize }` per
+ * la paginazione server-side dell'elenco contatti.
+ */
+export async function listContacts(
+  input?: ListContactsInput
+): Promise<ListContactsResult> {
+  const legacyLimit = typeof input === "number" ? input : undefined;
+  const options = typeof input === "object" ? input : undefined;
+
+  const requestedPage = Math.max(CONTACTS_DEFAULT_PAGE, options?.page ?? CONTACTS_DEFAULT_PAGE);
+  const requestedPageSize = options?.pageSize ?? CONTACTS_DEFAULT_PAGE_SIZE;
+  const pageSize = legacyLimit
+    ? legacyLimit
+    : isContactsPageSize(requestedPageSize)
+      ? requestedPageSize
+      : CONTACTS_DEFAULT_PAGE_SIZE;
+
+  const supabase = await createServerClient();
+
+  const [contactsResult, referentsResult] = await Promise.all([
+    fetchTableContactsInBatches(supabase),
+    fetchCompanyReferentSourcesInBatches(supabase),
+  ]);
+
+  if (contactsResult.error) {
+    return {
+      data: [],
+      count: 0,
+      page: CONTACTS_DEFAULT_PAGE,
+      pageSize,
+      error: contactsResult.error,
+    };
+  }
+  if (referentsResult.error) {
+    return {
+      data: [],
+      count: 0,
+      page: CONTACTS_DEFAULT_PAGE,
+      pageSize,
+      error: referentsResult.error,
+    };
+  }
+
+  const merged = buildMergedContactList(contactsResult.data, referentsResult.data);
+  const total = merged.length;
+  const page = legacyLimit
+    ? CONTACTS_DEFAULT_PAGE
+    : clampContactsPage(requestedPage, total, pageSize);
+  const offset = legacyLimit ? 0 : (page - 1) * pageSize;
+  const limit = legacyLimit ?? pageSize;
 
   return {
-    data: merged.slice(0, limit),
-    count: tableContacts.length + companyReferents.length,
+    data: merged.slice(offset, offset + limit),
+    count: total,
+    page,
+    pageSize,
     error: null,
   };
 }

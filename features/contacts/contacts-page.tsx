@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { Plus, Users } from "lucide-react";
 import {
   Badge,
@@ -8,9 +9,18 @@ import {
   PageHeader,
 } from "@/components/ui";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
+import { ContactsPagination } from "./components/contacts-pagination";
+import {
+  formatContactsVisibleRange,
+  parseContactsPage,
+  parseContactsPageSize,
+} from "./constants/contacts-pagination";
 import { listContacts } from "./services/contacts.service";
 
-const PAGE_SIZE = 200;
+interface ContactsPageProps {
+  page?: string;
+  pageSize?: string;
+}
 
 function CreateCta() {
   return (
@@ -24,7 +34,10 @@ function CreateCta() {
   );
 }
 
-export async function ContactsPage() {
+export async function ContactsPage({ page, pageSize }: ContactsPageProps) {
+  const requestedPage = parseContactsPage(page);
+  const requestedPageSize = parseContactsPageSize(pageSize);
+
   if (!isSupabaseConfigured()) {
     return (
       <div className="space-y-6">
@@ -38,7 +51,11 @@ export async function ContactsPage() {
     );
   }
 
-  const { data: contacts, count, error } = await listContacts(PAGE_SIZE);
+  const { data: contacts, count, page: currentPage, error } =
+    await listContacts({
+      page: requestedPage,
+      pageSize: requestedPageSize,
+    });
 
   if (error) {
     return (
@@ -49,7 +66,7 @@ export async function ContactsPage() {
     );
   }
 
-  if (contacts.length === 0) {
+  if (count === 0) {
     return (
       <div className="space-y-6">
         <PageHeader
@@ -71,11 +88,7 @@ export async function ContactsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Contatti"
-        subtitle={`${count.toLocaleString("it-IT")} contatti nel database${
-          count > contacts.length
-            ? ` · primi ${contacts.length.toLocaleString("it-IT")} mostrati`
-            : ""
-        }.`}
+        subtitle={formatContactsVisibleRange(currentPage, currentPageSize, count)}
         actions={<CreateCta />}
       />
 
@@ -136,6 +149,13 @@ export async function ContactsPage() {
               </tbody>
             </table>
           </div>
+          <Suspense fallback={null}>
+            <ContactsPagination
+              total={count}
+              page={currentPage}
+              pageSize={requestedPageSize}
+            />
+          </Suspense>
         </CardContent>
       </Card>
     </div>

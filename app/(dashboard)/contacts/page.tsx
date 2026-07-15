@@ -4,6 +4,15 @@ export const dynamic = "force-dynamic";
 
 export const metadata = { title: "Contatti" };
 
-export default function Page() {
-  return <ContactsPage />;
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<{
+    page?: string;
+    page_size?: string;
+  }>;
+}) {
+  const { page, page_size } = await searchParams;
+
+  return <ContactsPage page={page} pageSize={page_size} />;
 }
