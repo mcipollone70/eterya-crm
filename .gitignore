@@ -23,6 +23,11 @@
 # misc
 .DS_Store
 *.pem
+.tmp-*
+*.tmp
+
+# local debug probes (keep scripts/ in repo; ignore ad-hoc copies)
+scripts/.probe-*
 
 # debug
 npm-debug.log*
