@@ -27,8 +27,51 @@ export interface ContactListItem {
 const LIST_COLUMNS =
   "id,full_name,role,email,phone,mobile,is_primary,company_id,company:companies(name)";
 
-/** Colonna referente tipica nei file Excel importati (non mappata su `contact_name` in import). */
-const IMPORT_REFERENT_PAYLOAD_KEY = "NOME CAPO GRUPPO";
+/**
+ * Chiavi payload Excel che indicano un referente persona (case-insensitive sul nome chiave).
+ * Esclude esplicitamente "NOME CAPO GRUPPO" (ragione sociale capogruppo / banca, non persona).
+ */
+const REFERENT_PAYLOAD_KEY_KEYWORDS = [
+  "referente",
+  "contatto",
+  "contact",
+  "nome referente",
+  "persona di contatto",
+] as const;
+
+const EXCLUDED_REFERENT_PAYLOAD_KEY_PATTERNS = [
+  /capo\s*gruppo/i,
+  /fatturato/i,
+  /ragione\s*sociale/i,
+  /denominazione/i,
+  /\bbanca\b/i,
+  /\bpec\b/i,
+  /partita\s*iva/i,
+  /codice\s*fiscale/i,
+  /carica\s*esponente/i,
+] as const;
+
+const COMPANY_NAME_VALUE_PATTERNS = [
+  /\bs\.?\s*p\.?\s*a\.?\b/i,
+  /\bs\.?\s*r\.?\s*l\.?\b/i,
+  /\bs\.?\s*a\.?\s*s\.?\b/i,
+  /\bbanca\b/i,
+  /\bsociet[aà]/i,
+  /\bgruppo\b/i,
+  /\bholding\b/i,
+  /\binc\.?\b/i,
+  /\bltd\.?\b/i,
+  /\bgmbh\b/i,
+] as const;
+
+const COMPANY_REFERENT_FETCH_OR = [
+  "contact_name.not.is.null",
+  "import_payload->>Esponente 1.neq.",
+  "import_payload->>Esponente 2.neq.",
+  "import_payload->>Esponente 3.neq.",
+  "import_payload->>Esponente 4.neq.",
+  "import_payload->>Esponente 5.neq.",
+].join(",");
 
 const COMPANY_REFERENT_COLUMNS =
   "id,name,contact_name,contact_email,contact_phone,contact_role,import_payload";
@@ -43,22 +86,90 @@ interface CompanyReferentSource {
   import_payload: Record<string, unknown> | null;
 }
 
+function normalizePayloadKey(key: string): string {
+  return key
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isExcludedReferentPayloadKey(key: string): boolean {
+  const normalized = normalizePayloadKey(key);
+  return EXCLUDED_REFERENT_PAYLOAD_KEY_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
+function isReferentPayloadKey(key: string): boolean {
+  if (isExcludedReferentPayloadKey(key)) return false;
+
+  const normalized = normalizePayloadKey(key);
+  if (/^esponente\s*\d+$/.test(normalized)) return true;
+
+  return REFERENT_PAYLOAD_KEY_KEYWORDS.some((keyword) => normalized.includes(keyword));
+}
+
+function referentPayloadKeyPriority(key: string): number {
+  const normalized = normalizePayloadKey(key);
+  const esponenteMatch = normalized.match(/^esponente\s*(\d+)$/);
+  if (esponenteMatch) return Number(esponenteMatch[1]);
+
+  if (normalized.includes("referente") || normalized.includes("contatto") || normalized.includes("contact")) {
+    return 0;
+  }
+
+  return 50;
+}
+
+function looksLikeCompanyOrBankName(value: string, companyName: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return true;
+  if (trimmed.localeCompare(companyName.trim(), "it", { sensitivity: "accent" }) === 0) {
+    return true;
+  }
+  return COMPANY_NAME_VALUE_PATTERNS.some((pattern) => pattern.test(trimmed));
+}
+
+function payloadReferentCandidates(
+  payload: Record<string, unknown>
+): Array<{ key: string; value: string; priority: number }> {
+  const candidates: Array<{ key: string; value: string; priority: number }> = [];
+
+  for (const [key, raw] of Object.entries(payload)) {
+    if (!isReferentPayloadKey(key)) continue;
+    const value = typeof raw === "string" ? raw.trim() : "";
+    if (!value) continue;
+    candidates.push({ key, value, priority: referentPayloadKeyPriority(key) });
+  }
+
+  return candidates.sort((a, b) => a.priority - b.priority);
+}
+
 function resolveCompanyReferentName(row: CompanyReferentSource): string | null {
   const structured = row.contact_name?.trim();
-  if (structured) return structured;
+  if (structured && !looksLikeCompanyOrBankName(structured, row.name)) {
+    return structured;
+  }
 
   const payload = row.import_payload;
   if (!payload || typeof payload !== "object") return null;
 
-  const fromPayload = payload[IMPORT_REFERENT_PAYLOAD_KEY];
-  const name = typeof fromPayload === "string" ? fromPayload.trim() : "";
-  return name.length > 0 ? name : null;
+  for (const { value } of payloadReferentCandidates(payload)) {
+    if (!looksLikeCompanyOrBankName(value, row.name)) {
+      return value;
+    }
+  }
+
+  return null;
 }
 
-function companyReferentToListItem(row: CompanyReferentSource): ContactListItem {
+function companyReferentToListItem(
+  row: CompanyReferentSource,
+  fullName: string
+): ContactListItem {
   return {
     id: row.id,
-    full_name: resolveCompanyReferentName(row) ?? row.name,
+    full_name: fullName,
     role: row.contact_role,
     email: row.contact_email,
     phone: row.contact_phone,
@@ -89,9 +200,7 @@ export async function listContacts(
     supabase
       .from("companies")
       .select(COMPANY_REFERENT_COLUMNS)
-      .or(
-        `contact_name.not.is.null,import_payload->>${IMPORT_REFERENT_PAYLOAD_KEY}.neq.`
-      )
+      .or(COMPANY_REFERENT_FETCH_OR)
       .order("name", { ascending: true }),
   ]);
 
@@ -111,11 +220,10 @@ export async function listContacts(
 
   const companyReferents = (referentsResult.data ?? [])
     .map((row) => row as unknown as CompanyReferentSource)
-    .filter(
-      (row) =>
-        !companyIdsWithContactRow.has(row.id) && resolveCompanyReferentName(row) !== null
-    )
-    .map(companyReferentToListItem);
+    .filter((row) => !companyIdsWithContactRow.has(row.id))
+    .map((row) => ({ row, fullName: resolveCompanyReferentName(row) }))
+    .filter((entry): entry is { row: CompanyReferentSource; fullName: string } => entry.fullName !== null)
+    .map(({ row, fullName }) => companyReferentToListItem(row, fullName));
 
   const merged = [...tableContacts, ...companyReferents].sort((a, b) =>
     a.full_name.localeCompare(b.full_name, "it", { sensitivity: "base" })
