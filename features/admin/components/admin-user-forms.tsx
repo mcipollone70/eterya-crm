@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import type { FormState } from "@/lib/forms";
 import {
   Card,
@@ -19,26 +19,62 @@ import {
 const controlClass =
   "w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/30";
 
+type CreateUserMode = "password" | "invite";
+
 interface CreateAdminUserFormProps {
-  action: (prevState: FormState, formData: FormData) => Promise<FormState>;
+  action: (prevState: FormState & { message?: string }, formData: FormData) => Promise<FormState & { message?: string }>;
 }
 
 export function CreateAdminUserForm({ action }: CreateAdminUserFormProps) {
   const [state, formAction, pending] = useActionState(action, {});
+  const [createMode, setCreateMode] = useState<CreateUserMode>("password");
+  const inviteMode = createMode === "invite";
 
   return (
     <form action={formAction} className="space-y-6">
+      <input type="hidden" name="create_mode" value={createMode} />
+
       {state.error && (
         <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{state.error}</p>
+      )}
+      {state.message && (
+        <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{state.message}</p>
       )}
 
       <Card>
         <CardHeader>
           <CardTitle>Nuovo utente</CardTitle>
           <CardDescription>
-            Crea l&apos;account in Supabase Auth e il profilo CRM. Comunica la password
-            provvisoria all&apos;agente in modo sicuro.
+            {inviteMode
+              ? "Invia un invito via email: l'utente imposterà la password al primo accesso."
+              : "Crea l'account in Supabase Auth e il profilo CRM. Comunica la password provvisoria all'agente in modo sicuro."}
           </CardDescription>
+          <div className="pt-2">
+            <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
+              <button
+                type="button"
+                onClick={() => setCreateMode("password")}
+                className={`rounded-md px-4 py-1.5 text-sm font-medium ${
+                  createMode === "password"
+                    ? "bg-indigo-600 text-white"
+                    : "text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                Password provvisoria
+              </button>
+              <button
+                type="button"
+                onClick={() => setCreateMode("invite")}
+                className={`rounded-md px-4 py-1.5 text-sm font-medium ${
+                  createMode === "invite"
+                    ? "bg-indigo-600 text-white"
+                    : "text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                Invia invito via email
+              </button>
+            </div>
+          </div>
         </CardHeader>
         <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="sm:col-span-2">
@@ -77,25 +113,27 @@ export function CreateAdminUserForm({ action }: CreateAdminUserFormProps) {
             )}
           </div>
 
-          <div>
-            <label htmlFor="password" className="mb-1 block text-sm font-medium text-slate-700">
-              Password provvisoria <span className="text-red-500">*</span>
-            </label>
-            <input
-              id="password"
-              name="password"
-              type="password"
-              required
-              minLength={6}
-              autoComplete="new-password"
-              className={controlClass}
-            />
-            {state.fieldErrors?.password && (
-              <p className="mt-1 text-xs text-red-600">{state.fieldErrors.password}</p>
-            )}
-          </div>
+          {!inviteMode && (
+            <div>
+              <label htmlFor="password" className="mb-1 block text-sm font-medium text-slate-700">
+                Password provvisoria <span className="text-red-500">*</span>
+              </label>
+              <input
+                id="password"
+                name="password"
+                type="password"
+                required
+                minLength={6}
+                autoComplete="new-password"
+                className={controlClass}
+              />
+              {state.fieldErrors?.password && (
+                <p className="mt-1 text-xs text-red-600">{state.fieldErrors.password}</p>
+              )}
+            </div>
+          )}
 
-          <div>
+          <div className={inviteMode ? "sm:col-span-2" : undefined}>
             <label htmlFor="is_active" className="mb-1 block text-sm font-medium text-slate-700">
               Stato
             </label>
@@ -114,7 +152,13 @@ export function CreateAdminUserForm({ action }: CreateAdminUserFormProps) {
           </Button>
         </Link>
         <Button type="submit" disabled={pending}>
-          {pending ? "Creazione…" : "Crea utente"}
+          {pending
+            ? inviteMode
+              ? "Invio invito…"
+              : "Creazione…"
+            : inviteMode
+              ? "Invia invito"
+              : "Crea utente"}
         </Button>
       </div>
     </form>

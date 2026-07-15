@@ -258,12 +258,61 @@ export async function listAssignableAgents(): Promise<{
   };
 }
 
-export interface CreateAdminUserInput {
+export interface AdminUserProfileInput {
   fullName: string;
   email: string;
   role: UserRole;
-  password: string;
   isActive: boolean;
+}
+
+export interface CreateAdminUserInput extends AdminUserProfileInput {
+  password: string;
+}
+
+export type InviteAdminUserInput = AdminUserProfileInput;
+
+function buildInviteRedirectUrl(): string {
+  const next = encodeURIComponent("/login/reset-password");
+  return `${getAuthAppBaseUrl()}/auth/callback?next=${next}`;
+}
+
+async function syncAdminUserProfile(
+  userId: string,
+  input: AdminUserProfileInput,
+  admin: ReturnType<typeof createAdminClient>,
+  profileFailureFallback = "Creazione profilo non riuscita."
+): Promise<{ error: string | null }> {
+  const { dbError: profileError, sessionError: profileSessionError } = await withAdminDbClient(
+    async (client) => {
+      const result = await client.from("users").upsert(
+        {
+          id: userId,
+          email: input.email,
+          full_name: input.fullName,
+          role: input.role,
+          is_active: input.isActive,
+        },
+        { onConflict: "id" }
+      );
+      return { data: null, error: result.error };
+    }
+  );
+
+  const profileFailure = resolveDbFailure(
+    profileError,
+    profileSessionError,
+    profileFailureFallback
+  );
+  if (profileFailure) {
+    await admin.auth.admin.deleteUser(userId);
+    return { error: profileFailure };
+  }
+
+  if (!input.isActive) {
+    await admin.auth.admin.updateUserById(userId, { ban_duration: "876000h" });
+  }
+
+  return { error: null };
 }
 
 export async function createAdminUser(
@@ -294,37 +343,56 @@ export async function createAdminUser(
   }
 
   const userId = authData.user.id;
-
-  const { dbError: profileError, sessionError: profileSessionError } = await withAdminDbClient(
-    async (client) => {
-      const result = await client.from("users").upsert(
-        {
-          id: userId,
-          email: input.email,
-          full_name: input.fullName,
-          role: input.role,
-          is_active: input.isActive,
-        },
-        { onConflict: "id" }
-      );
-      return { data: null, error: result.error };
-    }
-  );
-
-  const profileFailure = resolveDbFailure(profileError, profileSessionError, "Creazione profilo non riuscita.");
-  if (profileFailure) {
-    await admin.auth.admin.deleteUser(userId);
-    return { id: null, error: profileFailure };
-  }
-
-  if (!input.isActive) {
-    await admin.auth.admin.updateUserById(userId, { ban_duration: "876000h" });
+  const profileResult = await syncAdminUserProfile(userId, input, admin);
+  if (profileResult.error) {
+    return { id: null, error: profileResult.error };
   }
 
   return {
     id: userId,
     error: null,
     message: `Utente ${input.email} creato con successo. Può accedere con la password provvisoria impostata.`,
+  };
+}
+
+export async function inviteAdminUser(
+  input: InviteAdminUserInput
+): Promise<{ id: string | null; error: string | null; message?: string }> {
+  if (!isAdminClientConfigured()) {
+    return { id: null, error: NOT_CONFIGURED_MESSAGE };
+  }
+
+  if (!isAssignableRole(input.role)) {
+    return { id: null, error: "Ruolo non valido." };
+  }
+
+  const admin = createAdminClient();
+
+  const { data: authData, error: authError } = await admin.auth.admin.inviteUserByEmail(
+    input.email,
+    {
+      data: { full_name: input.fullName },
+      redirectTo: buildInviteRedirectUrl(),
+    }
+  );
+
+  if (authError || !authData.user) {
+    return {
+      id: null,
+      error: mapAuthAdminError(authError?.message ?? "Invio invito non riuscito."),
+    };
+  }
+
+  const userId = authData.user.id;
+  const profileResult = await syncAdminUserProfile(userId, input, admin);
+  if (profileResult.error) {
+    return { id: null, error: profileResult.error };
+  }
+
+  return {
+    id: userId,
+    error: null,
+    message: `Invito inviato a ${input.email}. L'utente potrà impostare la password al primo accesso.`,
   };
 }
 

@@ -13,6 +13,7 @@ import {
 import {
   createAdminUser,
   deactivateAdminUser,
+  inviteAdminUser,
   sendAdminPasswordReset,
   updateAdminUser,
 } from "../services/admin-users.service";
@@ -52,12 +53,14 @@ export async function createAdminUserAction(
   const role = String(formData.get("role") ?? "").trim();
   const password = String(formData.get("password") ?? "");
   const isActive = formData.get("is_active") !== "false";
+  const createMode = String(formData.get("create_mode") ?? "password").trim();
+  const inviteMode = createMode === "invite";
 
   const fieldErrors: Record<string, string> = {};
   if (!fullName) fieldErrors.full_name = "Il nome è obbligatorio.";
   if (!email) fieldErrors.email = "L'email è obbligatoria.";
   if (!isAssignableRole(role)) fieldErrors.role = "Seleziona un ruolo valido.";
-  if (password.length < 6) {
+  if (!inviteMode && password.length < 6) {
     fieldErrors.password = "La password deve contenere almeno 6 caratteri.";
   }
 
@@ -65,20 +68,25 @@ export async function createAdminUserAction(
     return { fieldErrors };
   }
 
-  const { id, error, message } = await createAdminUser({
+  const profileInput = {
     fullName,
     email,
     role: role as UserRole,
-    password,
     isActive,
-  });
+  };
+
+  const { id, error } = inviteMode
+    ? await inviteAdminUser(profileInput)
+    : await createAdminUser({ ...profileInput, password });
 
   if (error || !id) {
-    return { error: error ?? "Creazione utente non riuscita." };
+    return {
+      error: error ?? (inviteMode ? "Invio invito non riuscito." : "Creazione utente non riuscita."),
+    };
   }
 
   revalidateAdminUsers();
-  redirect(`${ADMIN_PATH}/${id}/edit?created=1`);
+  redirect(`${ADMIN_PATH}/${id}/edit?${inviteMode ? "invited=1" : "created=1"}`);
 }
 
 export async function updateAdminUserAction(

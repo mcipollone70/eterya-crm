@@ -13,9 +13,10 @@ import {
 interface EditAdminUserPageProps {
   userId: string;
   created?: string;
+  invited?: string;
 }
 
-export async function EditAdminUserPage({ userId, created }: EditAdminUserPageProps) {
+export async function EditAdminUserPage({ userId, created, invited }: EditAdminUserPageProps) {
   const currentAdmin = await assertAdminPageAccess();
 
   const [{ data: user, error }, { data: agents }] = await Promise.all([
@@ -34,9 +35,11 @@ export async function EditAdminUserPage({ userId, created }: EditAdminUserPagePr
 
   const boundUpdate = updateAdminUserAction.bind(null, userId);
   const flashMessage =
-    created === "1"
-      ? "Utente creato con successo. Comunica la password provvisoria in modo sicuro."
-      : null;
+    invited === "1"
+      ? "Invito inviato con successo. L'utente riceverà un'email per attivare l'account e impostare la password."
+      : created === "1"
+        ? "Utente creato con successo. Comunica la password provvisoria in modo sicuro."
+        : null;
 
   return (
     <div className="space-y-6">

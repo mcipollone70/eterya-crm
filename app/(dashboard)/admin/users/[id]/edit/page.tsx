@@ -9,10 +9,10 @@ export default async function Page({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ created?: string }>;
+  searchParams: Promise<{ created?: string; invited?: string }>;
 }) {
   const { id } = await params;
-  const { created } = await searchParams;
+  const { created, invited } = await searchParams;
 
-  return <EditAdminUserPage userId={id} created={created} />;
+  return <EditAdminUserPage userId={id} created={created} invited={invited} />;
 }
