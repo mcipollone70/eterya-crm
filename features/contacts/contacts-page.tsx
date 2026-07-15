@@ -88,7 +88,7 @@ export async function ContactsPage({ page, pageSize }: ContactsPageProps) {
     <div className="space-y-6">
       <PageHeader
         title="Contatti"
-        subtitle={formatContactsVisibleRange(currentPage, currentPageSize, count)}
+        subtitle={formatContactsVisibleRange(currentPage, requestedPageSize, count)}
         actions={<CreateCta />}
       />
 
