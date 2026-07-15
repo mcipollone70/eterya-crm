@@ -27,5 +27,9 @@ export function describeDbError(error: PostgrestError | null): string | null {
     return "La colonna commercial_status non esiste ancora nel database. Esegui supabase/migrations/20260713_commercial_status_backfill.sql nel SQL Editor di Supabase.";
   }
 
+  if (/visit_tours\.name/i.test(error.message) && /does not exist|column/i.test(error.message)) {
+    return "La colonna visit_tours.name non esiste ancora nel database. Esegui supabase/migrations/20260715_visit_tours_name.sql nel SQL Editor di Supabase.";
+  }
+
   return error.message;
 }

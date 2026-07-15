@@ -51,6 +51,7 @@ interface VisitTourOptimizePanelProps {
     origin: GeoPoint | null,
     destination: GeoPoint | null
   ) => void;
+  onTourSaved?: () => void;
 }
 
 function requestCurrentLocation(): Promise<GeoPoint> {
@@ -82,6 +83,7 @@ function normalizeStopsOrder(stops: VisitTourOptimizeStop[]): VisitTourOptimizeS
 export function VisitTourOptimizePanel({
   loadedTour = null,
   onPlanChange,
+  onTourSaved,
 }: VisitTourOptimizePanelProps) {
   const { companies, companyById, loadForPoints } = useVisitTourCompanies();
   const [originType, setOriginType] = useState<"current" | VisitTourDestinationType>("current");
@@ -468,12 +470,14 @@ export function VisitTourOptimizePanel({
         setSavedTourId(result.tourId);
       }
       setMessage(result.message);
+      onTourSaved?.();
     });
   }, [
     constraints,
     destination,
     loadedTour,
     notes,
+    onTourSaved,
     origin,
     originCompanyId,
     originLabel,

@@ -11,6 +11,12 @@ import type {
   VisitTourSaveStatus,
 } from "../types/visit-tour";
 import { buildDefaultTourName } from "../utils/visit-tour-restore";
+import {
+  isMissingVisitTourNameColumn,
+  VISIT_TOUR_NAME_MIGRATION_HINT,
+  VISIT_TOUR_ROW_SELECT_WITH_AGENT,
+  VISIT_TOUR_ROW_SELECT_WITH_AGENT_NO_NAME,
+} from "./visit-tour-db-compat";
 
 type VisitTourRow = {
   id: string;
@@ -88,37 +94,49 @@ export async function listVisitTours(filters: VisitTourListFilters = {}): Promis
 }> {
   const supabase = await createServerClient();
 
-  let query = supabase
-    .from("visit_tours")
-    .select(
-      "id,user_id,name,tour_date,mode,origin,destination,constraints,stops,total_distance_km,estimated_minutes,deviation_km,status,notes,created_at,updated_at,users(full_name,email)"
-    );
+  async function runQuery(
+    selectColumns: string,
+    canSortByName: boolean,
+    activeFilters: VisitTourListFilters
+  ) {
+    let query = supabase.from("visit_tours").select(selectColumns);
 
-  if (filters.tourDate) {
-    query = query.eq("tour_date", filters.tourDate);
+    if (activeFilters.tourDate) {
+      query = query.eq("tour_date", activeFilters.tourDate);
+    }
+
+    if (activeFilters.agentId) {
+      query = query.eq("user_id", activeFilters.agentId);
+    }
+
+    const sortBy = activeFilters.sortBy ?? "date";
+    const ascending = activeFilters.sortAscending ?? false;
+
+    if (sortBy === "name" && canSortByName) {
+      query = query.order("name", { ascending, nullsFirst: false });
+    } else {
+      query = query.order("tour_date", { ascending }).order("updated_at", { ascending });
+    }
+
+    return query;
   }
 
-  if (filters.agentId) {
-    query = query.eq("user_id", filters.agentId);
+  let { data, error } = await runQuery(VISIT_TOUR_ROW_SELECT_WITH_AGENT, true, filters);
+
+  if (error && isMissingVisitTourNameColumn(error)) {
+    ({ data, error } = await runQuery(
+      VISIT_TOUR_ROW_SELECT_WITH_AGENT_NO_NAME,
+      false,
+      { ...filters, sortBy: filters.sortBy === "name" ? "date" : filters.sortBy }
+    ));
   }
-
-  const sortBy = filters.sortBy ?? "date";
-  const ascending = filters.sortAscending ?? false;
-
-  if (sortBy === "name") {
-    query = query.order("name", { ascending, nullsFirst: false });
-  } else {
-    query = query.order("tour_date", { ascending }).order("updated_at", { ascending });
-  }
-
-  const { data, error } = await query;
 
   if (error) {
     return { data: [], error: describeDbError(error) };
   }
 
   return {
-    data: (data ?? []).map((row) => mapListItem(row as VisitTourRow)),
+    data: ((data ?? []) as unknown as VisitTourRow[]).map((row) => mapListItem(row)),
     error: null,
   };
 }
@@ -128,13 +146,19 @@ export async function getVisitTourById(tourId: string): Promise<{
   error: string | null;
 }> {
   const supabase = await createServerClient();
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from("visit_tours")
-    .select(
-      "id,user_id,name,tour_date,mode,origin,destination,constraints,stops,total_distance_km,estimated_minutes,deviation_km,status,notes,created_at,updated_at,users(full_name,email)"
-    )
+    .select(VISIT_TOUR_ROW_SELECT_WITH_AGENT)
     .eq("id", tourId)
     .maybeSingle();
+
+  if (error && isMissingVisitTourNameColumn(error)) {
+    ({ data, error } = await supabase
+      .from("visit_tours")
+      .select(VISIT_TOUR_ROW_SELECT_WITH_AGENT_NO_NAME)
+      .eq("id", tourId)
+      .maybeSingle());
+  }
 
   if (error) {
     return { data: null, error: describeDbError(error) };
@@ -168,6 +192,9 @@ export async function renameVisitTour(
     .eq("id", tourId);
 
   if (error) {
+    if (isMissingVisitTourNameColumn(error)) {
+      return { success: false, message: VISIT_TOUR_NAME_MIGRATION_HINT };
+    }
     return { success: false, message: describeDbError(error) ?? "Rinomina non riuscita." };
   }
 
@@ -184,13 +211,23 @@ export async function duplicateVisitTour(
   }
 
   const supabase = await createServerClient();
-  const { data: source, error: fetchError } = await supabase
+  let { data: source, error: fetchError } = await supabase
     .from("visit_tours")
     .select(
       "name,tour_date,mode,origin,destination,constraints,stops,total_distance_km,estimated_minutes,deviation_km,status,notes"
     )
     .eq("id", tourId)
     .maybeSingle();
+
+  if (fetchError && isMissingVisitTourNameColumn(fetchError)) {
+    ({ data: source, error: fetchError } = await supabase
+      .from("visit_tours")
+      .select(
+        "tour_date,mode,origin,destination,constraints,stops,total_distance_km,estimated_minutes,deviation_km,status,notes"
+      )
+      .eq("id", tourId)
+      .maybeSingle());
+  }
 
   if (fetchError) {
     return { success: false, message: describeDbError(fetchError) ?? "Duplicazione non riuscita." };
@@ -200,31 +237,49 @@ export async function duplicateVisitTour(
     return { success: false, message: "Giro non trovato." };
   }
 
-  const baseName = source.name?.trim() || buildDefaultTourName(source.tour_date, parseStopCount(source.stops));
+  const sourceRow = source as typeof source & { name?: string | null };
+  const baseName =
+    sourceRow.name?.trim() ||
+    buildDefaultTourName(sourceRow.tour_date, parseStopCount(sourceRow.stops));
   const copyName = `${baseName} (copia)`;
 
-  const { data, error } = await supabase
+  const insertPayload = {
+    user_id: user.id,
+    name: copyName,
+    tour_date: source.tour_date,
+    mode: source.mode,
+    origin: source.origin,
+    destination: source.destination,
+    constraints: source.constraints,
+    stops: source.stops,
+    total_distance_km: source.total_distance_km,
+    estimated_minutes: source.estimated_minutes,
+    deviation_km: source.deviation_km,
+    status: "planned" as VisitTourSaveStatus,
+    notes: source.notes,
+  };
+
+  let { data, error } = await supabase
     .from("visit_tours")
-    .insert({
-      user_id: user.id,
-      name: copyName,
-      tour_date: source.tour_date,
-      mode: source.mode,
-      origin: source.origin,
-      destination: source.destination,
-      constraints: source.constraints,
-      stops: source.stops,
-      total_distance_km: source.total_distance_km,
-      estimated_minutes: source.estimated_minutes,
-      deviation_km: source.deviation_km,
-      status: "planned" as VisitTourSaveStatus,
-      notes: source.notes,
-    })
+    .insert(insertPayload)
     .select("id")
     .single();
 
+  if (error && isMissingVisitTourNameColumn(error)) {
+    const { name: _name, ...insertPayloadWithoutName } = insertPayload;
+    ({ data, error } = await supabase
+      .from("visit_tours")
+      .insert(insertPayloadWithoutName)
+      .select("id")
+      .single());
+  }
+
   if (error) {
     return { success: false, message: describeDbError(error) ?? "Duplicazione non riuscita." };
+  }
+
+  if (!data) {
+    return { success: false, message: "Duplicazione non riuscita." };
   }
 
   revalidateVisitTourPaths();

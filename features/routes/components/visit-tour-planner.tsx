@@ -20,9 +20,9 @@ import type {
   VisitTourSortKey,
 } from "../types/visit-tour";
 import { fetchPriorityContextAction } from "../actions/fetch-priority-context";
+import { fetchDrivingRouteAction } from "../actions/fetch-driving-route";
 import { findCompaniesAlongRoute, toGeoPoint } from "../utils/find-route-candidates";
 import { buildGoogleMapsTourUrl } from "../utils/google-maps-tour-url";
-import { fetchDrivingRoute } from "../utils/osrm-routing";
 import { sortVisitTourCandidates } from "../utils/visit-tour-sort";
 import { VisitTourCandidatesList } from "./visit-tour-candidates-list";
 import { useVisitTourCompanies } from "./visit-tour-companies-provider";
@@ -94,6 +94,7 @@ export function VisitTourPlanner({ agents }: VisitTourPlannerProps) {
   const [radarCenter, setRadarCenter] = useState<GeoPoint | null>(null);
   const [radarLocationError, setRadarLocationError] = useState<string | null>(null);
   const [isRadarLocating, setIsRadarLocating] = useState(false);
+  const [savedListRefreshKey, setSavedListRefreshKey] = useState(0);
 
   const radarCompanies = useMemo(
     () =>
@@ -215,7 +216,15 @@ export function VisitTourPlanner({ agents }: VisitTourPlannerProps) {
         }
 
         const currentOrigin = await requestCurrentLocation();
-        const nextRoute = await fetchDrivingRoute(currentOrigin, nextDestination.point);
+        const routeResult = await fetchDrivingRouteAction(
+          currentOrigin,
+          nextDestination.point
+        );
+        if (!routeResult.success) {
+          setError(routeResult.message);
+          return;
+        }
+        const nextRoute = routeResult.route;
         const routeCompanies = await loadForPoints(
           [currentOrigin, nextDestination.point, ...nextRoute.coordinates],
           VISIT_TOUR_ROUTE_BUFFER_KM,
@@ -382,7 +391,11 @@ export function VisitTourPlanner({ agents }: VisitTourPlannerProps) {
       </div>
 
       {pageTab === "saved" ? (
-        <VisitTourSavedList agents={agents} onOpenTour={handleOpenSavedTour} />
+        <VisitTourSavedList
+          key={savedListRefreshKey}
+          agents={agents}
+          onOpenTour={handleOpenSavedTour}
+        />
       ) : (
         <>
       <div className="flex flex-wrap gap-2">
@@ -542,6 +555,7 @@ export function VisitTourPlanner({ agents }: VisitTourPlannerProps) {
             key={loadedTour?.id ?? "new-tour"}
             loadedTour={loadedTour}
             onPlanChange={handleOptimizePlanChange}
+            onTourSaved={() => setSavedListRefreshKey((current) => current + 1)}
           />
           </>
         )}

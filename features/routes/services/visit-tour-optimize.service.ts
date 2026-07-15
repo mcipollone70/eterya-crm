@@ -17,6 +17,7 @@ import type {
   VisitTourSaveStatus,
 } from "../types/visit-tour";
 import { buildDefaultTourName } from "../utils/visit-tour-restore";
+import { isMissingVisitTourNameColumn } from "./visit-tour-db-compat";
 
 export interface SaveVisitTourInput {
   tourId?: string | null;
@@ -124,42 +125,44 @@ export async function saveVisitTour(
     notes: input.notes ?? null,
   };
 
-  if (input.tourId) {
-    const { data, error } = await supabase
-      .from("visit_tours")
-      .update(rowPayload)
-      .eq("id", input.tourId)
-      .select("id")
-      .single();
+  const rowPayloadWithoutName = (({ name: _name, ...rest }) => rest)(rowPayload);
 
-    if (error) {
-      return { success: false, message: describeDbError(error) ?? "Aggiornamento non riuscito." };
+  async function persistTour(
+    payload: typeof rowPayload | typeof rowPayloadWithoutName,
+    tourId?: string | null
+  ) {
+    if (tourId) {
+      return supabase.from("visit_tours").update(payload).eq("id", tourId).select("id").single();
     }
 
-    revalidatePath("/routes");
+    return supabase.from("visit_tours").insert(payload).select("id").single();
+  }
 
+  let { data, error } = await persistTour(rowPayload, input.tourId);
+
+  if (error && isMissingVisitTourNameColumn(error)) {
+    ({ data, error } = await persistTour(rowPayloadWithoutName, input.tourId));
+  }
+
+  if (error) {
     return {
-      success: true,
-      message: "Giro visite aggiornato.",
-      tourId: data.id,
+      success: false,
+      message: describeDbError(error) ?? (input.tourId ? "Aggiornamento non riuscito." : "Salvataggio non riuscito."),
     };
   }
 
-  const { data, error } = await supabase
-    .from("visit_tours")
-    .insert(rowPayload)
-    .select("id")
-    .single();
-
-  if (error) {
-    return { success: false, message: describeDbError(error) ?? "Salvataggio non riuscito." };
+  if (!data) {
+    return {
+      success: false,
+      message: input.tourId ? "Aggiornamento non riuscito." : "Salvataggio non riuscito.",
+    };
   }
 
   revalidatePath("/routes");
 
   return {
     success: true,
-    message: "Giro visite salvato.",
+    message: input.tourId ? "Giro visite aggiornato." : "Giro visite salvato.",
     tourId: data.id,
   };
 }
