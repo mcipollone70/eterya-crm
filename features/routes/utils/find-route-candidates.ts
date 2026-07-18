@@ -18,8 +18,10 @@ export function findCompaniesAlongRoute(
   options?: {
     destinationCompanyId?: string;
     origin?: GeoPoint | null;
+    corridorRadiusKm?: number;
   }
 ): VisitTourCandidate[] {
+  const corridorKm = options?.corridorRadiusKm ?? ROUTE_CORRIDOR_KM;
   const candidates: VisitTourCandidate[] = [];
 
   for (const company of companies) {
@@ -32,8 +34,8 @@ export function findCompaniesAlongRoute(
       route.coordinates
     );
 
-    const distanceBand = getRouteDistanceBand(distanceFromRouteKm);
-    if (!distanceBand || distanceFromRouteKm > ROUTE_CORRIDOR_KM) {
+    const distanceBand = getRouteDistanceBand(distanceFromRouteKm, corridorKm);
+    if (!distanceBand || distanceFromRouteKm > corridorKm) {
       continue;
     }
 

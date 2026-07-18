@@ -147,6 +147,14 @@ export async function agendaCompleteItemAction(
     return { success: false, message: "Appuntamento non valido." };
   }
 
+  if (parsed.kind === "google_event") {
+    return {
+      success: false,
+      message:
+        "Gli eventi Google non si completano dal CRM. Modificali in Google Calendar oppure crea un appuntamento CRM separato.",
+    };
+  }
+
   if (parsed.kind === "visit") {
     const result = await completeScheduledVisit(parsed.sourceId, {
       completedAt: new Date().toISOString(),
@@ -171,6 +179,10 @@ export async function agendaCompleteItemAction(
     revalidateAgendaPaths(companyId);
     await syncFollowUpCalendar(parsed.sourceId, "complete");
     return result;
+  }
+
+  if (parsed.kind !== "reminder") {
+    return { success: false, message: "Appuntamento non valido." };
   }
 
   const result = await completeAgendaReminder(parsed.sourceId);
@@ -219,6 +231,14 @@ export async function agendaCancelItemAction(
     return { success: false, message: "Appuntamento non valido." };
   }
 
+  if (parsed.kind === "google_event") {
+    return {
+      success: false,
+      message:
+        "Gli eventi Google non si annullano dal CRM. Modificali in Google Calendar.",
+    };
+  }
+
   if (parsed.kind === "visit") {
     const result = await cancelVisit(parsed.sourceId);
     if (result.error) {
@@ -237,6 +257,10 @@ export async function agendaCancelItemAction(
     revalidateAgendaPaths(companyId);
     await syncFollowUpCalendar(parsed.sourceId, "cancel");
     return result;
+  }
+
+  if (parsed.kind !== "reminder") {
+    return { success: false, message: "Appuntamento non valido." };
   }
 
   const result = await cancelAgendaReminder(parsed.sourceId);
@@ -290,6 +314,14 @@ export async function agendaUpdateItemAction(input: {
   const parsed = parseAgendaItemId(input.compositeId);
   if (!parsed) {
     return { success: false, message: "Appuntamento non valido." };
+  }
+
+  if (parsed.kind === "google_event") {
+    return {
+      success: false,
+      message:
+        "Gli eventi Google non si modificano dal CRM. Modificali in Google Calendar.",
+    };
   }
 
   if (parsed.kind === "visit") {

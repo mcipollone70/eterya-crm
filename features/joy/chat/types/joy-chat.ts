@@ -1,3 +1,5 @@
+import type { JoyConversationMemory } from "./joy-session";
+
 export type JoyChatActionKind =
   | "open_company"
   | "plan_visit"
@@ -37,6 +39,16 @@ export type JoyCopilotOperation =
       scheduledAt: string;
     }
   | {
+      /** Completa visita pianificata o registra visita con esito (schema visits.outcome). */
+      type: "complete_visit";
+      companyId: string;
+      companyName: string;
+      visitId?: string | null;
+      outcome: string;
+      notes?: string | null;
+      completedAt?: string | null;
+    }
+  | {
       type: "cancel_visit";
       visitId: string;
       companyId: string;
@@ -64,18 +76,79 @@ export type JoyCopilotOperation =
       notes?: string | null;
     }
   | {
+      type: "create_opportunity";
+      companyId: string;
+      companyName: string;
+      title: string;
+      probability?: number | null;
+    }
+  | {
+      type: "create_quote";
+      companyId: string;
+      companyName: string;
+      title: string;
+    }
+  | {
+      type: "create_order";
+      companyId: string;
+      companyName: string;
+      title: string;
+    }
+  | {
+      type: "create_sample";
+      companyId: string;
+      companyName: string;
+      title: string;
+    }
+  | {
+      type: "create_service_ticket";
+      companyId: string;
+      companyName: string;
+      title: string;
+    }
+  | {
+      type: "create_note";
+      companyId: string;
+      companyName: string;
+      title: string;
+      notes: string;
+    }
+  | {
       type: "navigate";
       href: string;
       label: string;
     };
 
-export type JoyCopilotPendingStatus = "pending" | "confirmed" | "cancelled" | "executed";
+export type JoyCopilotPendingStatus =
+  | "pending"
+  | "confirmed"
+  | "cancelled"
+  | "executed"
+  | "failed";
+
+/** Campi selezionabili nel debrief (checkbox / voice edit). */
+export type JoyDebriefFieldKey =
+  | "note"
+  | "visitOutcome"
+  | "followUp"
+  | "opportunity"
+  | "reminder";
+
+export interface JoyDebriefFieldToggle {
+  key: JoyDebriefFieldKey;
+  label: string;
+  enabled: boolean;
+}
 
 export interface JoyCopilotPendingAction {
   id: string;
   title: string;
   description: string;
   operation: JoyCopilotOperation;
+  /** Operazioni aggiuntive eseguite in sequenza dopo la conferma (es. debrief multi-step). */
+  followUpOperations?: JoyCopilotOperation[];
+  /** Debrief: checkbox per salvare solo i campi confermati. */
+  debriefFields?: JoyDebriefFieldToggle[];
   status: JoyCopilotPendingStatus;
 }
 
@@ -92,6 +165,10 @@ export interface JoyChatMessage {
 export interface JoyChatResponse {
   message: JoyChatMessage;
   error?: string | null;
+  /** Patch di memoria conversazionale da applicare lato client. */
+  memoryPatch?: JoyConversationMemory;
+  /** Stato sessione suggerito (proposing / confirming / completed). */
+  sessionState?: "proposing" | "confirming" | "completed" | "thinking";
 }
 
 export interface JoyCopilotExecuteResult {

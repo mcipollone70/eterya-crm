@@ -15,6 +15,7 @@ export const AGENDA_KIND_OPTIONS = [
   { value: "visit", label: "Visite" },
   { value: "follow_up", label: "Follow-up" },
   { value: "reminder", label: "Promemoria" },
+  { value: "google_event", label: "Eventi Google" },
 ] as const;
 
 export type AgendaKindFilter = (typeof AGENDA_KIND_OPTIONS)[number]["value"];
@@ -28,7 +29,7 @@ export const AGENDA_STATUS_OPTIONS = [
 
 export type AgendaStatusFilter = (typeof AGENDA_STATUS_OPTIONS)[number]["value"];
 
-export type AgendaItemKind = "visit" | "follow_up" | "reminder";
+export type AgendaItemKind = "visit" | "follow_up" | "reminder" | "google_event";
 
 const AGENDA_VIEW_SET = new Set<string>(AGENDA_VIEW_OPTIONS.map((option) => option.value));
 const AGENDA_KIND_SET = new Set<string>(
@@ -72,12 +73,14 @@ export const AGENDA_KIND_LABELS: Record<AgendaItemKind, string> = {
   visit: "Visita",
   follow_up: "Follow-up",
   reminder: "Promemoria",
+  google_event: "Evento Google",
 };
 
 export const AGENDA_KIND_COLORS: Record<AgendaItemKind, string> = {
   visit: "bg-violet-50 text-violet-800 border-violet-100",
   follow_up: "bg-indigo-50 text-indigo-800 border-indigo-100",
   reminder: "bg-amber-50 text-amber-800 border-amber-100",
+  google_event: "bg-sky-50 text-sky-800 border-sky-100",
 };
 
 export function isAgendaView(value: string | undefined): value is AgendaView {
@@ -138,7 +141,7 @@ export function parseAgendaItemId(
 ): { kind: AgendaItemKind; sourceId: string } | null {
   const [kind, sourceId] = compositeId.split(":");
   if (
-    (kind === "visit" || kind === "follow_up" || kind === "reminder") &&
+    (kind === "visit" || kind === "follow_up" || kind === "reminder" || kind === "google_event") &&
     sourceId
   ) {
     return { kind, sourceId };
@@ -152,6 +155,19 @@ export function matchesAgendaStatusFilter(
   filter: AgendaStatusFilter
 ): boolean {
   if (!filter) {
+    return true;
+  }
+
+  if (kind === "google_event") {
+    if (filter === "cancelled") {
+      return status === "cancelled";
+    }
+    if (filter === "completed") {
+      return false;
+    }
+    if (filter === "open") {
+      return status !== "cancelled";
+    }
     return true;
   }
 

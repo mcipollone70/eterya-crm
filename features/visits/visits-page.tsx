@@ -5,6 +5,7 @@ import { EmptyState, PageHeader, PageLoadingSkeleton } from "@/components/ui";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { isVisitPeriod, VISIT_PERIOD_OPTIONS } from "@/lib/constants/visit-workflow";
 import { CompanyBriefingLoader } from "@/features/assistant/components/company-briefing-loader";
+import { getCompanySelectOptionsByIds } from "@/features/companies/services/company-search.service";
 import { VisitPeriodTabs } from "./components/visit-period-tabs";
 import { VisitFieldLinks } from "./components/visit-field-links";
 import { ScheduleVisitForm } from "./components/schedule-visit-form";
@@ -12,7 +13,6 @@ import { VisitsList } from "./components/visits-list";
 import { VisitsMetricsBar } from "./components/visits-metrics-bar";
 import {
   getVisitDashboardMetrics,
-  listVisitCompanyOptions,
   listVisits,
 } from "./services/visits.service";
 
@@ -43,20 +43,18 @@ export async function VisitsPage({ period, company, briefing }: VisitsPageProps)
     );
   }
 
-  const [{ data: visits, error }, { data: companies }, { data: metrics }] = await Promise.all([
+  const [{ data: visits, error }, { data: metrics }, filteredCompanyResult] = await Promise.all([
     listVisits({
       period: activePeriod,
       companyId: company || undefined,
       limit: 200,
     }),
-    listVisitCompanyOptions(company || undefined),
     getVisitDashboardMetrics(),
+    company ? getCompanySelectOptionsByIds([company]) : Promise.resolve({ data: [], error: null }),
   ]);
 
   const periodTitle = periodLabel(activePeriod);
-  const filteredCompany = company
-    ? companies.find((item) => item.id === company)
-    : null;
+  const filteredCompany = filteredCompanyResult.data[0] ?? null;
 
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -115,7 +113,7 @@ export async function VisitsPage({ period, company, briefing }: VisitsPageProps)
         />
       )}
 
-      <ScheduleVisitForm companies={companies} defaultCompanyId={company} fixedOnMobile />
+      <ScheduleVisitForm defaultCompanyId={company} fixedOnMobile />
     </div>
   );
 }

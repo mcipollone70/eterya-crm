@@ -1,13 +1,37 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
-import { AlertCircle, ExternalLink, Loader2, Navigation, Route } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useSearchParams } from "next/navigation";
+import {
+  AlertCircle,
+  ExternalLink,
+  Save,
+  Sparkles,
+} from "lucide-react";
 import { MapContainer } from "react-leaflet";
 import { PageHeader } from "@/components/ui";
+import { JoyAiPageLink } from "@/features/joy/components/joy-ai-page-link";
+import {
+  clearJoyTourProposal,
+  loadJoyTourProposal,
+} from "@/features/joy/chat/utils/joy-tour-proposal-storage";
 import { DEFAULT_MAP_CENTER, DEFAULT_MAP_ZOOM } from "@/features/maps/constants/map-config";
 import { OpportunityRadarPanel } from "@/features/radar/components/opportunity-radar-panel";
 import type { RadarCompanySource } from "@/features/radar/types";
+import { createManualStop } from "@/lib/visit-tour/optimize";
+import {
+  VISIT_TOUR_DEFAULT_MAX_DEVIATION_KM,
+  VISIT_TOUR_DEFAULT_MAX_DURATION_MIN,
+} from "@/lib/visit-tour/constants";
+import { fetchNextActivitiesForCompaniesAction } from "../actions/fetch-agenda-appointments";
 import { geocodeDestinationAddressAction } from "../actions/geocode-destination";
+import { fetchPriorityContextAction } from "../actions/fetch-priority-context";
+import { fetchDrivingRouteAction } from "../actions/fetch-driving-route";
+import {
+  fetchVisitTourCompaniesByIdsAction,
+  fetchVisitTourOptimizeContextAction,
+  saveVisitTourAction,
+} from "../actions/visit-tour-actions";
 import type {
   GeoPoint,
   VisitTourCandidate,
@@ -15,23 +39,34 @@ import type {
   VisitTourDestinationType,
   VisitTourLoadedState,
   VisitTourOptimizePlan,
+  VisitTourOptimizeStop,
+  VisitTourOriginType,
   VisitTourPlannerMode,
   VisitTourRoute,
   VisitTourSortKey,
+  VisitTourGeoBounds,
 } from "../types/visit-tour";
-import { fetchPriorityContextAction } from "../actions/fetch-priority-context";
-import { fetchDrivingRouteAction } from "../actions/fetch-driving-route";
 import { findCompaniesAlongRoute, toGeoPoint } from "../utils/find-route-candidates";
-import { buildGoogleMapsTourUrl } from "../utils/google-maps-tour-url";
+import {
+  buildGoogleMapsTourUrlDetailed,
+} from "../utils/google-maps-tour-url";
+import { applyVisitTourPlannerFilters } from "../utils/visit-tour-filters";
+import { optimizeNearestNeighborOrder } from "../utils/visit-tour-nearest-neighbor";
 import { sortVisitTourCandidates } from "../utils/visit-tour-sort";
 import { VisitTourCandidatesList } from "./visit-tour-candidates-list";
+import { VisitTourCorridorStopsList } from "./visit-tour-corridor-stops-list";
 import { useVisitTourCompanies } from "./visit-tour-companies-provider";
-import { VisitTourCompanySelect } from "./visit-tour-company-select";
 import { VisitTourMap } from "./visit-tour-map";
+import { VisitTourMapLegend } from "./visit-tour-map-legend";
+import { VisitTourMapPopup } from "./visit-tour-map-popup";
 import { VisitTourOptimizePanel } from "./visit-tour-optimize-panel";
+import {
+  DEFAULT_PLANNER_FORM,
+  VisitTourPlanningForm,
+} from "./visit-tour-planning-form";
 import { VisitTourSavedList } from "./visit-tour-saved-list";
+import { VisitTourSummaryPanel } from "./visit-tour-summary-panel";
 import { VISIT_TOUR_INITIAL_RADIUS_KM, VISIT_TOUR_ROUTE_BUFFER_KM } from "../constants/visit-tour-fetch";
-import type { VisitTourGeoBounds } from "../types/visit-tour";
 
 type VisitTourPageTab = "plan" | "saved";
 
@@ -62,6 +97,8 @@ function requestCurrentLocation(): Promise<GeoPoint> {
 }
 
 export function VisitTourPlanner({ agents }: VisitTourPlannerProps) {
+  const searchParams = useSearchParams();
+  const joyProposalLoadedRef = useRef(false);
   const {
     companies,
     companyById,
@@ -73,6 +110,12 @@ export function VisitTourPlanner({ agents }: VisitTourPlannerProps) {
   } = useVisitTourCompanies();
   const [pageTab, setPageTab] = useState<VisitTourPageTab>("plan");
   const [mode, setMode] = useState<VisitTourPlannerMode>("corridor");
+  const [plannerForm, setPlannerForm] = useState(DEFAULT_PLANNER_FORM);
+  const [originType, setOriginType] = useState<VisitTourOriginType>("current");
+  const [originCompanyId, setOriginCompanyId] = useState("");
+  const [originAddressInput, setOriginAddressInput] = useState("");
+  const [originLabel, setOriginLabel] = useState<string | null>(null);
+  const [selectedAgendaId, setSelectedAgendaId] = useState("");
   const [loadedTour, setLoadedTour] = useState<VisitTourLoadedState | null>(null);
   const [optimizePlan, setOptimizePlan] = useState<VisitTourOptimizePlan | null>(null);
   const [optimizeOrigin, setOptimizeOrigin] = useState<GeoPoint | null>(null);
@@ -87,13 +130,18 @@ export function VisitTourPlanner({ agents }: VisitTourPlannerProps) {
   const [candidates, setCandidates] = useState<VisitTourCandidate[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectionOrder, setSelectionOrder] = useState<string[]>([]);
+  const [isSuggestedOrder, setIsSuggestedOrder] = useState(false);
   const [sortKey, setSortKey] = useState<VisitTourSortKey>("distance");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [mapsWarning, setMapsWarning] = useState<string | null>(null);
+  const [tourName, setTourName] = useState("");
+  const [savedTourId, setSavedTourId] = useState<string | null>(null);
+  const [mapPopupCompany, setMapPopupCompany] = useState<VisitTourCandidate | null>(null);
   const [isPending, startTransition] = useTransition();
   const [radarCenter, setRadarCenter] = useState<GeoPoint | null>(null);
   const [radarLocationError, setRadarLocationError] = useState<string | null>(null);
-  const [isRadarLocating, setIsRadarLocating] = useState(false);
+  const [isRadarLocating, setIsRadarLocating] = useState(true);
   const [savedListRefreshKey, setSavedListRefreshKey] = useState(0);
 
   const radarCompanies = useMemo(
@@ -113,15 +161,32 @@ export function VisitTourPlanner({ agents }: VisitTourPlannerProps) {
     [companies]
   );
 
+  const effectiveRadarCenter = useMemo(() => {
+    if (mode === "corridor" && origin) {
+      return origin;
+    }
+    if (mode === "optimize" && optimizeOrigin) {
+      return optimizeOrigin;
+    }
+    return radarCenter;
+  }, [mode, optimizeOrigin, origin, radarCenter]);
+
   useEffect(() => {
-    setIsRadarLocating(true);
+    let cancelled = false;
+
     requestCurrentLocation()
       .then((point) => {
+        if (cancelled) {
+          return;
+        }
         setRadarCenter(point);
         setRadarLocationError(null);
         loadForCenter(point, VISIT_TOUR_INITIAL_RADIUS_KM, true);
       })
       .catch((locationError) => {
+        if (cancelled) {
+          return;
+        }
         setRadarLocationError(
           locationError instanceof Error
             ? locationError.message
@@ -130,16 +195,16 @@ export function VisitTourPlanner({ agents }: VisitTourPlannerProps) {
         const [lat, lng] = DEFAULT_MAP_CENTER;
         loadForCenter({ lat, lng }, VISIT_TOUR_INITIAL_RADIUS_KM, true);
       })
-      .finally(() => setIsRadarLocating(false));
-  }, [loadForCenter]);
+      .finally(() => {
+        if (!cancelled) {
+          setIsRadarLocating(false);
+        }
+      });
 
-  useEffect(() => {
-    if (mode === "corridor" && origin) {
-      setRadarCenter(origin);
-    } else if (mode === "optimize" && optimizeOrigin) {
-      setRadarCenter(optimizeOrigin);
-    }
-  }, [mode, origin, optimizeOrigin]);
+    return () => {
+      cancelled = true;
+    };
+  }, [loadForCenter]);
 
   const handleRefreshRadarLocation = useCallback(() => {
     setIsRadarLocating(true);
@@ -190,69 +255,150 @@ export function VisitTourPlanner({ agents }: VisitTourPlannerProps) {
     });
   }, []);
 
+  const resolveOrigin = useCallback(async (): Promise<{
+    point: GeoPoint;
+    label: string;
+    companyId?: string;
+  }> => {
+    if (originType === "current") {
+      const point = await requestCurrentLocation();
+      return { point, label: "Posizione corrente" };
+    }
+
+    if (originType === "company") {
+      const company = companyById.get(originCompanyId);
+      if (!company) {
+        throw new Error("Seleziona un'azienda di partenza.");
+      }
+      return {
+        point: toGeoPoint(company),
+        label: company.name,
+        companyId: company.id,
+      };
+    }
+
+    if (!origin) {
+      throw new Error("Geocodifica prima l'indirizzo di partenza.");
+    }
+
+    return { point: origin, label: originLabel ?? "Partenza manuale" };
+  }, [companyById, origin, originCompanyId, originLabel, originType]);
+
+  const resolveDestination = useCallback(async (): Promise<VisitTourDestination> => {
+    if (destinationType === "company") {
+      const company = companyById.get(selectedCompanyId);
+      if (!company) {
+        throw new Error("Seleziona un'azienda di destinazione.");
+      }
+      return {
+        type: "company",
+        label: company.name,
+        point: toGeoPoint(company),
+        companyId: company.id,
+      };
+    }
+
+    if (destinationType === "agenda") {
+      if (!selectedAgendaId) {
+        throw new Error("Seleziona un appuntamento dall'agenda.");
+      }
+
+      const { fetchAgendaAppointmentsForTourAction } = await import(
+        "../actions/fetch-agenda-appointments"
+      );
+      const agendaResult = await fetchAgendaAppointmentsForTourAction(plannerForm.tourDate);
+      const appointment = agendaResult.data.find((item) => item.id === selectedAgendaId);
+      if (!appointment) {
+        throw new Error("Appuntamento agenda non trovato.");
+      }
+
+      if (appointment.lat == null || appointment.lng == null) {
+        throw new Error("Azienda non geolocalizzata: impossibile usare questo appuntamento come destinazione.");
+      }
+
+      return {
+        type: "agenda",
+        label: appointment.label,
+        point: { lat: appointment.lat, lng: appointment.lng },
+        companyId: appointment.companyId ?? undefined,
+      };
+    }
+
+    if (!destination) {
+      throw new Error("Geocodifica prima l'indirizzo di destinazione.");
+    }
+
+    return destination;
+  }, [
+    companyById,
+    destination,
+    destinationType,
+    plannerForm.tourDate,
+    selectedAgendaId,
+    selectedCompanyId,
+  ]);
+
   const handleCalculateRoute = useCallback(() => {
     setMessage(null);
     setError(null);
+    setMapsWarning(null);
 
     startTransition(async () => {
       try {
-        let nextDestination = destination;
+        const [originResolved, nextDestination] = await Promise.all([
+          resolveOrigin(),
+          resolveDestination(),
+        ]);
 
-        if (destinationType === "company") {
-          const company = companyById.get(selectedCompanyId);
-          if (!company) {
-            setError("Seleziona un'azienda di destinazione.");
-            return;
-          }
-          nextDestination = {
-            type: "company",
-            label: company.name,
-            point: toGeoPoint(company),
-            companyId: company.id,
-          };
-        } else if (!nextDestination) {
-          setError("Geocodifica prima l'indirizzo di destinazione.");
-          return;
-        }
-
-        const currentOrigin = await requestCurrentLocation();
         const routeResult = await fetchDrivingRouteAction(
-          currentOrigin,
+          originResolved.point,
           nextDestination.point
         );
         if (!routeResult.success) {
           setError(routeResult.message);
           return;
         }
+
         const nextRoute = routeResult.route;
         const routeCompanies = await loadForPoints(
-          [currentOrigin, nextDestination.point, ...nextRoute.coordinates],
-          VISIT_TOUR_ROUTE_BUFFER_KM,
+          [originResolved.point, nextDestination.point, ...nextRoute.coordinates],
+          Math.max(plannerForm.corridorRadiusKm, VISIT_TOUR_ROUTE_BUFFER_KM),
           true
         );
-        const scopedCompanies =
-          routeCompanies.length > 0
-            ? routeCompanies
-            : companies;
+        const filteredCompanies = applyVisitTourPlannerFilters(
+          routeCompanies.length > 0 ? routeCompanies : companies,
+          plannerForm.filters
+        );
         const priorityContext = await fetchPriorityContextAction();
         const foundCandidates = findCompaniesAlongRoute(
-          scopedCompanies,
+          filteredCompanies,
           nextRoute,
           priorityContext,
           {
             destinationCompanyId: nextDestination.companyId,
-            origin: currentOrigin,
+            origin: originResolved.point,
+            corridorRadiusKm: plannerForm.corridorRadiusKm,
           }
         );
 
-        setOrigin(currentOrigin);
+        const nextActivities = await fetchNextActivitiesForCompaniesAction(
+          foundCandidates.map((company) => company.id)
+        );
+        const enrichedCandidates = foundCandidates.map((company) => ({
+          ...company,
+          nextActivityAt: nextActivities.data[company.id] ?? company.nextActivityAt,
+        }));
+
+        setOrigin(originResolved.point);
+        setOriginLabel(originResolved.label);
         setDestination(nextDestination);
         setRoute(nextRoute);
-        setCandidates(foundCandidates);
+        setCandidates(enrichedCandidates);
         setSelectedIds(new Set());
         setSelectionOrder([]);
+        setIsSuggestedOrder(false);
         setMessage(
-          `Percorso calcolato (${nextRoute.distanceKm.toFixed(1)} km). Trovate ${foundCandidates.length} aziende entro 2 km.`
+          `Percorso calcolato (${nextRoute.distanceKm.toFixed(1)} km). Trovate ${enrichedCandidates.length} aziende entro ${plannerForm.corridorRadiusKm} km.`
         );
       } catch (routeError) {
         setError(
@@ -260,7 +406,31 @@ export function VisitTourPlanner({ agents }: VisitTourPlannerProps) {
         );
       }
     });
-  }, [companies, companyById, destination, destinationType, loadForPoints, selectedCompanyId]);
+  }, [
+    companies,
+    loadForPoints,
+    plannerForm.corridorRadiusKm,
+    plannerForm.filters,
+    resolveDestination,
+    resolveOrigin,
+  ]);
+
+  const handleGeocodeOrigin = useCallback(() => {
+    setMessage(null);
+    setError(null);
+
+    startTransition(async () => {
+      const result = await geocodeDestinationAddressAction(originAddressInput);
+      if (!result.success || result.lat === undefined || result.lng === undefined) {
+        setError(result.message);
+        return;
+      }
+
+      setOrigin({ lat: result.lat, lng: result.lng });
+      setOriginLabel(result.label ?? originAddressInput.trim());
+      setMessage("Partenza geocodificata.");
+    });
+  }, [originAddressInput]);
 
   const handleGeocodeAddress = useCallback(() => {
     setMessage(null);
@@ -290,9 +460,123 @@ export function VisitTourPlanner({ agents }: VisitTourPlannerProps) {
       .filter((company): company is VisitTourCandidate => company !== undefined);
   }, [candidates, selectedIds, selectionOrder]);
 
-  const googleMapsTourUrl =
+  const handleOptimizeStopOrder = useCallback(() => {
+    if (!origin || selectedWaypoints.length === 0) {
+      setError("Seleziona almeno una tappa da ottimizzare.");
+      return;
+    }
+
+    const optimizedOrder = optimizeNearestNeighborOrder(
+      origin,
+      selectedWaypoints,
+      selectionOrder
+    );
+    setSelectionOrder(optimizedOrder);
+    setIsSuggestedOrder(true);
+    setMessage("Ordine suggerito applicato alle tappe selezionate.");
+  }, [origin, selectedWaypoints, selectionOrder]);
+
+  const handleMoveStop = useCallback(
+    (companyId: string, direction: -1 | 1) => {
+      const index = selectionOrder.indexOf(companyId);
+      if (index < 0) {
+        return;
+      }
+
+      const target = index + direction;
+      if (target < 0 || target >= selectionOrder.length) {
+        return;
+      }
+
+      const nextOrder = [...selectionOrder];
+      const current = nextOrder[index]!;
+      nextOrder[index] = nextOrder[target]!;
+      nextOrder[target] = current;
+      setSelectionOrder(nextOrder);
+      setIsSuggestedOrder(false);
+    },
+    [selectionOrder]
+  );
+
+  const handleClearStops = useCallback(() => {
+    setSelectedIds(new Set());
+    setSelectionOrder([]);
+    setIsSuggestedOrder(false);
+  }, []);
+
+  const handleSaveCorridorTour = useCallback(() => {
+    if (!origin || !destination || !route || selectedWaypoints.length === 0) {
+      setError("Calcola il percorso e seleziona almeno una tappa prima di salvare.");
+      return;
+    }
+
+    setMessage(null);
+    setError(null);
+
+    startTransition(async () => {
+      const context = await fetchVisitTourOptimizeContextAction();
+      const stops = selectedWaypoints.map((company, index) =>
+        createManualStop(company, index + 1, origin, destination.point, context)
+      );
+      const visitMinutes = selectedWaypoints.length * plannerForm.visitDurationMin;
+      const drivingMinutes = Math.round((route.distanceKm / 45) * 60);
+
+      const result = await saveVisitTourAction({
+        tourId: savedTourId,
+        name: tourName.trim() || null,
+        tourDate: plannerForm.tourDate,
+        mode: "corridor",
+        origin: {
+          ...origin,
+          label: originLabel ?? "Partenza",
+          companyId: originType === "company" ? originCompanyId : undefined,
+        },
+        destination: {
+          ...destination.point,
+          label: destination.label,
+          companyId: destination.companyId,
+        },
+        constraints: {
+          maxDurationMinutes: drivingMinutes + visitMinutes,
+          maxStops: selectedWaypoints.length,
+          maxDeviationKm: plannerForm.corridorRadiusKm,
+        },
+        stops,
+        totalDistanceKm: route.distanceKm,
+        estimatedMinutes: drivingMinutes + visitMinutes,
+        deviationKm: 0,
+        status: "planned",
+      });
+
+      if (!result.success) {
+        setError(result.message);
+        return;
+      }
+
+      if (result.tourId) {
+        setSavedTourId(result.tourId);
+      }
+      setMessage(result.message);
+      setSavedListRefreshKey((current) => current + 1);
+    });
+  }, [
+    destination,
+    origin,
+    originCompanyId,
+    originLabel,
+    originType,
+    plannerForm.corridorRadiusKm,
+    plannerForm.tourDate,
+    plannerForm.visitDurationMin,
+    route,
+    savedTourId,
+    selectedWaypoints,
+    tourName,
+  ]);
+
+  const googleMapsTour =
     origin && destination
-      ? buildGoogleMapsTourUrl(
+      ? buildGoogleMapsTourUrlDetailed(
           origin,
           destination.point,
           selectedWaypoints.map((company) => ({
@@ -333,6 +617,168 @@ export function VisitTourPlanner({ agents }: VisitTourPlannerProps) {
     [loadByIds, loadForPoints]
   );
 
+  // Carica proposta Joy Drive (query params e/o sessionStorage) in Ottimizza giro.
+  useEffect(() => {
+    if (joyProposalLoadedRef.current) {
+      return;
+    }
+
+    const fromQuery = searchParams.get("joy") === "1";
+    const stored = loadJoyTourProposal();
+    const stopsParam = searchParams.get("stops");
+    const stopIdsFromQuery = stopsParam
+      ? stopsParam.split(",").map((id) => id.trim()).filter(Boolean)
+      : [];
+
+    const stopIds =
+      stopIdsFromQuery.length > 0
+        ? stopIdsFromQuery
+        : stored?.stopCompanyIds ?? [];
+
+    if ((!fromQuery && !stored) || stopIds.length === 0) {
+      return;
+    }
+
+    joyProposalLoadedRef.current = true;
+
+    const olat = Number(searchParams.get("olat") ?? stored?.origin.lat);
+    const olng = Number(searchParams.get("olng") ?? stored?.origin.lng);
+    const dlat = Number(searchParams.get("dlat") ?? stored?.destination.lat);
+    const dlng = Number(searchParams.get("dlng") ?? stored?.destination.lng);
+    const olabel =
+      searchParams.get("olabel") ?? stored?.origin.label ?? "Partenza Joy";
+    const dayParam = searchParams.get("day") ?? stored?.day ?? "today";
+    const hasOrigin = Number.isFinite(olat) && Number.isFinite(olng);
+    const hasDest = Number.isFinite(dlat) && Number.isFinite(dlng);
+
+    void (async () => {
+      const [companiesResult, context] = await Promise.all([
+        fetchVisitTourCompaniesByIdsAction(stopIds),
+        fetchVisitTourOptimizeContextAction(),
+      ]);
+
+      if (companiesResult.error) {
+        setError(companiesResult.error);
+        return;
+      }
+
+      const byId = new Map(companiesResult.data.map((company) => [company.id, company]));
+      const orderedCompanies = stopIds
+        .map((id) => byId.get(id))
+        .filter((company): company is NonNullable<typeof company> => Boolean(company));
+
+      if (orderedCompanies.length === 0) {
+        setError(
+          "Proposta Joy ricevuta ma nessuna azienda geolocalizzata trovata. Verifica i dati CRM."
+        );
+        return;
+      }
+
+      await loadByIds(stopIds);
+
+      const originPoint: GeoPoint = hasOrigin
+        ? { lat: olat, lng: olng }
+        : {
+            lat: orderedCompanies[0]!.latitude,
+            lng: orderedCompanies[0]!.longitude,
+          };
+      const last = orderedCompanies[orderedCompanies.length - 1]!;
+      const destinationPoint: GeoPoint = hasDest
+        ? { lat: dlat, lng: dlng }
+        : { lat: last.latitude, lng: last.longitude };
+
+      const stops: VisitTourOptimizeStop[] = orderedCompanies.map((company, index) =>
+        createManualStop(
+          {
+            id: company.id,
+            name: company.name,
+            city: company.city,
+            province: company.province,
+            latitude: company.latitude,
+            longitude: company.longitude,
+            phone: company.phone,
+            revenue: company.revenue,
+            lastVisitAt: company.lastVisitAt,
+            commercial_status: company.commercial_status,
+            status: company.status,
+            import_payload: company.import_payload,
+          },
+          index + 1,
+          originPoint,
+          destinationPoint,
+          context
+        )
+      );
+
+      const totalDistanceKm =
+        stored?.totalDistanceKm ??
+        stops.reduce((sum, stop) => sum + stop.legDistanceKm, 0);
+      const estimatedMinutes =
+        stored?.estimatedMinutes ??
+        Math.round((totalDistanceKm / 45) * 60) + stops.length * 15;
+
+      const tourDate = (() => {
+        const d = new Date();
+        if (dayParam === "tomorrow") {
+          d.setDate(d.getDate() + 1);
+        }
+        return d.toISOString().slice(0, 10);
+      })();
+
+      const plan: VisitTourOptimizePlan = {
+        stops,
+        totalDistanceKm,
+        estimatedMinutes,
+        totalDeviationKm: 0,
+      };
+
+      const joyTour: VisitTourLoadedState = {
+        id: `joy-proposal-${Date.now()}`,
+        name: `Proposta Joy · ${stops.length} tappe`,
+        tourDate,
+        notes:
+          "Proposta Joy Drive — non salvata automaticamente. Conferma e salva da qui se vuoi.",
+        originType: "address",
+        originCompanyId: "",
+        originLabel: olabel,
+        origin: originPoint,
+        destinationType: "address",
+        destinationCompanyId: last.id,
+        destination: {
+          type: "address",
+          label: searchParams.get("to") ?? last.city ?? last.name,
+          point: destinationPoint,
+          companyId: last.id,
+        },
+        constraints: {
+          maxDurationMinutes: Math.max(estimatedMinutes, VISIT_TOUR_DEFAULT_MAX_DURATION_MIN),
+          maxStops: stops.length,
+          maxDeviationKm: VISIT_TOUR_DEFAULT_MAX_DEVIATION_KM,
+        },
+        stops,
+        plan,
+      };
+
+      handleOpenSavedTour(joyTour);
+      setMessage(
+        `Proposta Joy caricata: ${stops.length} tappe. Nessun salvataggio automatico — usa Salva quando sei pronto.`
+      );
+      clearJoyTourProposal();
+      loadForPoints(
+        [
+          originPoint,
+          destinationPoint,
+          ...orderedCompanies.map((company) => ({
+            lat: company.latitude,
+            lng: company.longitude,
+          })),
+        ],
+        VISIT_TOUR_ROUTE_BUFFER_KM,
+        true
+      );
+    })();
+  }, [handleOpenSavedTour, loadByIds, loadForPoints, searchParams]);
+
   const optimizeMapStops = useMemo(
     () =>
       (optimizePlan?.stops ?? []).map((stop) => ({
@@ -340,13 +786,16 @@ export function VisitTourPlanner({ agents }: VisitTourPlannerProps) {
         name: stop.company.name,
         city: stop.company.city ?? null,
         province: stop.company.province ?? null,
+        address: null,
         phone: stop.company.phone ?? null,
+        email: null,
         commercial_status: stop.company.commercial_status,
         status: stop.company.status,
         latitude: stop.company.latitude,
         longitude: stop.company.longitude,
         revenue: stop.company.revenue ?? null,
         lastVisitAt: stop.company.lastVisitAt,
+        nextActivityAt: null,
         import_payload: stop.company.import_payload ?? null,
         distanceFromRouteKm: stop.deviationKm,
         distanceBand: "2km" as const,
@@ -362,7 +811,8 @@ export function VisitTourPlanner({ agents }: VisitTourPlannerProps) {
     <div className="space-y-4">
       <PageHeader
         title="Giro Visite"
-        subtitle="Pianifica un percorso verso la destinazione o ottimizza un giro multi-tappa."
+        subtitle="Organizza il percorso commerciale e individua le aziende vicine al tragitto."
+        actions={<JoyAiPageLink prompt="Organizza il mio giro visite per domani" />}
       />
 
       <div className="flex flex-wrap gap-2">
@@ -425,90 +875,31 @@ export function VisitTourPlanner({ agents }: VisitTourPlannerProps) {
 
       <div className="grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
         {mode === "corridor" ? (
-        <aside className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div>
-            <h3 className="text-sm font-semibold text-slate-900">Destinazione</h3>
-            <div className="mt-3 flex gap-2">
-              <button
-                type="button"
-                onClick={() => setDestinationType("company")}
-                className={`rounded-lg px-3 py-1.5 text-xs font-medium ${
-                  destinationType === "company"
-                    ? "bg-indigo-600 text-white"
-                    : "bg-slate-100 text-slate-700"
-                }`}
-              >
-                Azienda
-              </button>
-              <button
-                type="button"
-                onClick={() => setDestinationType("address")}
-                className={`rounded-lg px-3 py-1.5 text-xs font-medium ${
-                  destinationType === "address"
-                    ? "bg-indigo-600 text-white"
-                    : "bg-slate-100 text-slate-700"
-                }`}
-              >
-                Indirizzo
-              </button>
-            </div>
-          </div>
-
-          {destinationType === "company" ? (
-            <label className="block text-sm">
-              <span className="mb-1 block font-medium text-slate-700">Azienda di destinazione</span>
-              <VisitTourCompanySelect
-                value={selectedCompanyId}
-                onChange={setSelectedCompanyId}
-                pinnedIds={selectedCompanyId ? [selectedCompanyId] : []}
-              />
-            </label>
-          ) : (
-            <div className="space-y-2">
-              <label className="block text-sm">
-                <span className="mb-1 block font-medium text-slate-700">Indirizzo di destinazione</span>
-                <input
-                  type="text"
-                  value={addressInput}
-                  onChange={(event) => setAddressInput(event.target.value)}
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2"
-                  placeholder="Via, civico, comune, provincia"
-                />
-              </label>
-              <button
-                type="button"
-                onClick={handleGeocodeAddress}
-                disabled={isPending || !addressInput.trim()}
-                className="inline-flex h-9 items-center rounded-lg border border-slate-200 px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-              >
-                Geocodifica indirizzo
-              </button>
-              {destination?.type === "address" && (
-                <p className="text-xs text-emerald-700">{destination.label}</p>
-              )}
-            </div>
-          )}
-
-          <button
-            type="button"
-            onClick={handleCalculateRoute}
-            disabled={isPending}
-            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 text-sm font-medium text-white hover:bg-indigo-700 disabled:bg-slate-300"
-          >
-            {isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Route className="h-4 w-4" />
-            )}
-            Calcola percorso
-          </button>
-
-          {origin && (
-            <p className="flex items-start gap-2 text-xs text-slate-600">
-              <Navigation className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              Partenza dalla posizione corrente ({origin.lat.toFixed(4)}, {origin.lng.toFixed(4)})
-            </p>
-          )}
+        <div className="space-y-4">
+          <VisitTourPlanningForm
+            originType={originType}
+            destinationType={destinationType}
+            originCompanyId={originCompanyId}
+            destinationCompanyId={selectedCompanyId}
+            selectedAgendaId={selectedAgendaId}
+            originAddressInput={originAddressInput}
+            destinationAddressInput={addressInput}
+            form={plannerForm}
+            onOriginTypeChange={setOriginType}
+            onDestinationTypeChange={setDestinationType}
+            onOriginCompanyIdChange={setOriginCompanyId}
+            onDestinationCompanyIdChange={setSelectedCompanyId}
+            onSelectedAgendaIdChange={setSelectedAgendaId}
+            onOriginAddressInputChange={setOriginAddressInput}
+            onDestinationAddressInputChange={setAddressInput}
+            onFormChange={setPlannerForm}
+            onGeocodeOrigin={handleGeocodeOrigin}
+            onGeocodeDestination={handleGeocodeAddress}
+            onCalculateRoute={handleCalculateRoute}
+            isPending={isPending}
+            originLabel={originLabel}
+            destinationLabel={destination?.label ?? null}
+          />
 
           {error && (
             <p className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
@@ -524,27 +915,90 @@ export function VisitTourPlanner({ agents }: VisitTourPlannerProps) {
           )}
 
           {route && (
-            <VisitTourCandidatesList
-              candidates={sortedCandidates}
-              selectedIds={selectedIds}
-              sortKey={sortKey}
-              onSortChange={setSortKey}
-              onToggleCompany={handleToggleCompany}
-            />
-          )}
+            <>
+              <VisitTourSummaryPanel
+                stopCount={selectedWaypoints.length}
+                totalDistanceKm={route.distanceKm}
+                drivingMinutes={Math.round((route.distanceKm / 45) * 60)}
+                visitDurationMin={plannerForm.visitDurationMin}
+                departureTime={plannerForm.departureTime}
+                maxArrivalTime={plannerForm.maxArrivalTime}
+              />
 
-          {googleMapsTourUrl && (
-            <a
-              href={googleMapsTourUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-4 text-sm font-medium text-indigo-700 hover:bg-indigo-100"
-            >
-              <ExternalLink className="h-4 w-4" />
-              Apri il giro visite su Google Maps
-            </a>
+              <VisitTourCandidatesList
+                candidates={sortedCandidates}
+                selectedIds={selectedIds}
+                sortKey={sortKey}
+                onSortChange={setSortKey}
+                onToggleCompany={handleToggleCompany}
+              />
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={handleOptimizeStopOrder}
+                  disabled={selectedWaypoints.length < 2}
+                  className="inline-flex h-9 items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 text-xs font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Ottimizza ordine tappe
+                </button>
+              </div>
+
+              <VisitTourCorridorStopsList
+                stops={selectedWaypoints}
+                selectionOrder={selectionOrder}
+                isSuggestedOrder={isSuggestedOrder}
+                onToggleCompany={handleToggleCompany}
+                onMoveUp={(companyId) => handleMoveStop(companyId, -1)}
+                onMoveDown={(companyId) => handleMoveStop(companyId, 1)}
+                onClearAll={handleClearStops}
+              />
+
+              <label className="block text-xs font-medium text-slate-700">
+                Nome giro
+                <input
+                  type="text"
+                  value={tourName}
+                  onChange={(event) => setTourName(event.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  placeholder="Es. Giro zona est"
+                />
+              </label>
+
+              <div className="grid gap-2">
+                <button
+                  type="button"
+                  onClick={handleSaveCorridorTour}
+                  disabled={isPending || selectedWaypoints.length === 0}
+                  className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 text-sm font-medium text-white hover:bg-emerald-700 disabled:bg-slate-300"
+                >
+                  <Save className="h-4 w-4" />
+                  Salva giro
+                </button>
+
+                {googleMapsTour && (
+                  <a
+                    href={googleMapsTour.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => setMapsWarning(googleMapsTour.warning)}
+                    className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-4 text-sm font-medium text-indigo-700 hover:bg-indigo-100"
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                    Apri su Google Maps
+                  </a>
+                )}
+              </div>
+
+              {mapsWarning && (
+                <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  {mapsWarning}
+                </p>
+              )}
+            </>
           )}
-        </aside>
+        </div>
         ) : (
           <>
           {isCompaniesLoading && companies.length === 0 && (
@@ -560,7 +1014,7 @@ export function VisitTourPlanner({ agents }: VisitTourPlannerProps) {
           </>
         )}
 
-        <div className="min-h-[520px] overflow-hidden rounded-xl border border-slate-200 shadow-sm">
+        <div className="relative min-h-[520px] overflow-hidden rounded-xl border border-slate-200 shadow-sm">
           <MapContainer
             center={DEFAULT_MAP_CENTER}
             zoom={DEFAULT_MAP_ZOOM}
@@ -580,20 +1034,31 @@ export function VisitTourPlanner({ agents }: VisitTourPlannerProps) {
                       }
                     : null
               }
+              candidateCompanies={mode === "corridor" ? sortedCandidates : []}
               selectedCompanies={mode === "corridor" ? selectedCandidates : optimizeMapStops}
               origin={mode === "corridor" ? origin : optimizeOrigin}
               orderedStopIds={
-                mode === "optimize" ? optimizeMapStops.map((stop) => stop.id) : undefined
+                mode === "corridor"
+                  ? selectionOrder.filter((id) => selectedIds.has(id))
+                  : optimizeMapStops.map((stop) => stop.id)
               }
               onViewportChange={handleMapViewportChange}
+              onCompanyClick={setMapPopupCompany}
             />
           </MapContainer>
+          <VisitTourMapLegend />
+          {mapPopupCompany && (
+            <VisitTourMapPopup
+              company={mapPopupCompany}
+              onClose={() => setMapPopupCompany(null)}
+            />
+          )}
         </div>
       </div>
 
       <OpportunityRadarPanel
         companies={radarCompanies}
-        center={radarCenter}
+        center={effectiveRadarCenter}
         isLocating={isRadarLocating}
         locationError={radarLocationError}
         onRequestLocation={handleRefreshRadarLocation}

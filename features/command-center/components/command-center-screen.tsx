@@ -25,6 +25,10 @@ import { JoyCopilotToast } from "@/features/joy/chat/components/joy-copilot-toas
 import { formatDistanceKm } from "@/features/maps/utils/geo-distance";
 import { buildGoogleMapsDirectionsUrl } from "@/features/maps/utils/map-filters";
 import { AGENDA_KIND_LABELS } from "@/lib/constants/agenda";
+import {
+  buildCalendarStatusTooltip,
+  resolveCalendarIntegrationStatus,
+} from "@/lib/integrations/status";
 import { formatOpportunityAmount } from "@/lib/constants/opportunity-pipeline";
 import { companyRegisterVisitHref } from "@/lib/constants/visit-workflow";
 import { executeCommandCenterAction } from "../actions/command-center-actions";
@@ -50,34 +54,6 @@ const DECISION_ICONS: Record<CommandCenterDecision["icon"], LucideIcon> = {
   call: Phone,
   navigate: MapPin,
 };
-
-function calendarStatusLabel(data: CommandCenterData["calendar"]): string {
-  if (!data.configured) {
-    return "Google Calendar non configurato";
-  }
-  if (!data.connected) {
-    return "Google Calendar non collegato";
-  }
-  if (data.needsReconnect) {
-    return "Riconnessione richiesta";
-  }
-  if (data.lastSyncError) {
-    return "Sync con errori";
-  }
-  return data.googleEmail ? `Calendar · ${data.googleEmail}` : "Calendar sincronizzato";
-}
-
-function calendarVariant(
-  data: CommandCenterData["calendar"]
-): "success" | "warning" | "danger" | "muted" {
-  if (!data.configured || !data.connected) {
-    return "muted";
-  }
-  if (data.needsReconnect || data.lastSyncError) {
-    return "danger";
-  }
-  return "success";
-}
 
 function TimelineRow({ item }: { item: CommandCenterTimelineItem }) {
   const phoneHref = item.phone ? `tel:${item.phone.replace(/\s+/g, "")}` : null;
@@ -160,6 +136,7 @@ interface CommandCenterScreenProps {
 
 export function CommandCenterScreen({ data }: CommandCenterScreenProps) {
   const router = useRouter();
+  const calendarStatus = resolveCalendarIntegrationStatus(data.calendar);
   const [pending, setPending] = useState<JoyAutonomousPendingExecution>(null);
   const [toast, setToast] = useState<{ message: string; variant: "success" | "error" } | null>(
     null
@@ -223,13 +200,18 @@ export function CommandCenterScreen({ data }: CommandCenterScreenProps) {
                 {data.weatherLabel}
               </div>
               <div className="flex flex-wrap gap-2">
-                <Badge variant={calendarVariant(data.calendar)} className="bg-white/10 text-white">
-                  <CalendarDays className="mr-1 h-3.5 w-3.5" />
-                  {calendarStatusLabel(data.calendar)}
-                </Badge>
                 <Badge variant={data.crmSync.variant}>{data.crmSync.label}</Badge>
+                <Badge
+                  variant={calendarStatus.variant}
+                  title={buildCalendarStatusTooltip(data.calendar)}
+                >
+                  {calendarStatus.label}
+                </Badge>
               </div>
-              <Link href="/auto" className="w-full sm:w-auto">
+              <Link
+                href={`/joy-ai?q=${encodeURIComponent("Inizia la giornata")}`}
+                className="w-full sm:w-auto"
+              >
                 <Button
                   size="lg"
                   className="h-auto min-h-12 w-full gap-2 bg-white text-indigo-900 hover:bg-indigo-50 sm:w-auto"

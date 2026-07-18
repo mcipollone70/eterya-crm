@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Badge, Card, CardContent, CardHeader, CardTitle } from "@/components/ui";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui";
 import { CONTACT_HISTORY_TYPE_LABELS } from "@/lib/constants/contact-history";
 import { isContactHistoryType } from "@/lib/constants/contact-history";
 import { groupFollowUpsByDay } from "@/lib/follow-up/calendar";

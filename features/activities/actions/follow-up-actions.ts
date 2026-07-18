@@ -26,7 +26,7 @@ export async function saveFollowUpAction(input: {
   description?: string | null;
   priority?: ActivityPriority;
   scheduledAt: string;
-}): Promise<{ success: boolean; message: string }> {
+}): Promise<{ success: boolean; message: string; followUpId?: string }> {
   if (!isSupabaseConfigured()) {
     return { success: false, message: NOT_CONFIGURED_MESSAGE };
   }
@@ -58,7 +58,7 @@ export async function saveFollowUpAction(input: {
 
   await syncFollowUpCalendar(followUpId, "upsert");
 
-  return { success: true, message: "Follow-up creato." };
+  return { success: true, message: "Follow-up creato.", followUpId };
 }
 
 export async function completeFollowUpAction(

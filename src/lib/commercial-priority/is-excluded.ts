@@ -1,4 +1,4 @@
-import type { CommercialStatus, CompanyStatus, Json } from "@/lib/supabase/types";
+import type { CompanyStatus, Json } from "@/lib/supabase/types";
 
 const EXCLUDED_KEYWORDS = [
   "liquidazione",

@@ -11,7 +11,7 @@ export const VISIT_TOUR_INITIAL_RADIUS_KM = 60;
 export const VISIT_TOUR_BOUNDS_PADDING_RATIO = 0.12;
 
 /** Risultati massimi per ricerca nome. */
-export const VISIT_TOUR_SEARCH_LIMIT = 40;
+export const VISIT_TOUR_SEARCH_LIMIT = 30;
 
 /** Debounce ricaricamento al pan/zoom mappa (ms). */
 export const VISIT_TOUR_BOUNDS_DEBOUNCE_MS = 400;

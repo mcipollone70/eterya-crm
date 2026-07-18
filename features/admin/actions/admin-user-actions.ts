@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { FormState } from "@/lib/forms";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
+import { logAuditEvent } from "@/features/audit/services/audit-log.service";
 import type { UserRole } from "@/lib/supabase/types";
 import { isAssignableRole } from "../constants/user-roles";
 import {
@@ -85,6 +86,13 @@ export async function createAdminUserAction(
     };
   }
 
+  await logAuditEvent({
+    action: inviteMode ? "invite" : "create",
+    entityType: "user",
+    entityId: id,
+    summary: `${inviteMode ? "Invito" : "Creazione"} utente ${email} (${role})`,
+  });
+
   revalidateAdminUsers();
   redirect(`${ADMIN_PATH}/${id}/edit?${inviteMode ? "invited=1" : "created=1"}`);
 }
@@ -132,6 +140,13 @@ export async function updateAdminUserAction(
     return { error };
   }
 
+  await logAuditEvent({
+    action: "update",
+    entityType: "user",
+    entityId: userId,
+    summary: `Aggiornamento utente ${fullName} (${role})`,
+  });
+
   revalidateAdminUsers();
   revalidatePath(`${ADMIN_PATH}/${userId}/edit`);
   return { message: message ?? "Utente aggiornato." };
@@ -156,6 +171,13 @@ export async function deactivateAdminUserAction(
   if (error) {
     return { error };
   }
+
+  await logAuditEvent({
+    action: "deactivate",
+    entityType: "user",
+    entityId: userId,
+    summary: "Disattivazione account utente",
+  });
 
   revalidateAdminUsers();
   return { message };

@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { Suspense } from "react";
 import { VisitTourCompaniesProvider } from "./visit-tour-companies-provider";
 
 const VisitTourPlanner = dynamic(
@@ -22,7 +23,15 @@ interface VisitTourClientProps {
 export function VisitTourClient({ agents }: VisitTourClientProps) {
   return (
     <VisitTourCompaniesProvider>
-      <VisitTourPlanner agents={agents} />
+      <Suspense
+        fallback={
+          <div className="flex min-h-[480px] items-center justify-center rounded-xl border border-slate-200 bg-white text-sm text-slate-500">
+            Caricamento giro visite…
+          </div>
+        }
+      >
+        <VisitTourPlanner agents={agents} />
+      </Suspense>
     </VisitTourCompaniesProvider>
   );
 }

@@ -19,7 +19,6 @@ import { getVisitOutcomeLabel } from "@/lib/constants/last-visit";
 import { isOpenOpportunityStage, OPPORTUNITY_STAGE_LABELS } from "@/lib/constants/opportunity-pipeline";
 import { PRODUCT_FAMILY_LABELS, isProductFamily } from "@/lib/constants/product-catalog";
 import { createServerClient } from "@/lib/supabase/server";
-import { describeDbError } from "@/lib/supabase/errors";
 import type { Tables } from "@/lib/supabase/types";
 import { generateBriefingSuggestions } from "../utils/generate-briefing-suggestions";
 

@@ -15,12 +15,15 @@ import {
   normalizeProvince,
 } from "./clean-data";
 import { normalizeHeader } from "./detect-headers";
+import { countInFileDuplicates } from "./import-dedupe";
 
 function generateRecordId(rowIndex: number): string {
   return `import-${rowIndex}-${crypto.randomUUID()}`;
 }
 
-function evaluateRecord(record: Omit<CompanyImportRecord, "isComplete" | "needsFix" | "issues">): {
+function evaluateRecord(
+  record: Omit<CompanyImportRecord, "isComplete" | "needsFix" | "issues">
+): {
   issues: string[];
   isComplete: boolean;
   needsFix: boolean;
@@ -31,7 +34,7 @@ function evaluateRecord(record: Omit<CompanyImportRecord, "isComplete" | "needsF
   if (!record.address) issues.push("Indirizzo mancante");
   if (!record.city) issues.push("Comune mancante");
   if (!record.vatNumber && !record.taxCode) issues.push("P.IVA o Codice Fiscale mancante");
-  if (!record.phone) issues.push("Telefono mancante");
+  if (!record.phone && !record.mobile) issues.push("Telefono mancante");
   if (!record.email) issues.push("Email mancante");
 
   const isComplete = Boolean(record.name && record.address && record.city);
@@ -75,19 +78,30 @@ const PHONE_NUMBER_HEADERS = new Set([
   "telefono",
   "tel",
   "phone",
-  "cellulare",
-  "mobile",
   "fax",
   "numero telefono",
   "n telefono",
+]);
+
+const MOBILE_HEADERS = new Set([
+  "cellulare",
+  "mobile",
+  "cell",
+  "telefono cellulare",
+  "tel cellulare",
+  "gsm",
 ]);
 
 function isPhonePrefixHeader(normalized: string): boolean {
   return PHONE_PREFIX_HEADERS.has(normalized);
 }
 
+function isMobileHeader(normalized: string): boolean {
+  return MOBILE_HEADERS.has(normalized) || normalized.includes("cellular");
+}
+
 function isPhoneNumberHeader(normalized: string): boolean {
-  if (isPhonePrefixHeader(normalized)) return false;
+  if (isPhonePrefixHeader(normalized) || isMobileHeader(normalized)) return false;
   if (PHONE_NUMBER_HEADERS.has(normalized)) return true;
   return normalized.includes("telefono") && !normalized.includes("prefisso");
 }
@@ -97,9 +111,10 @@ function getPhoneParts(
   mappings: ColumnMapping[],
   headerIndex: Map<string, number>,
   headers: string[]
-): { prefix: string; number: string } {
+): { prefix: string; number: string; mobile: string } {
   let prefix = "";
   let number = "";
+  let mobile = "";
 
   headers.forEach((header, index) => {
     const normalized = normalizeHeader(header);
@@ -108,6 +123,11 @@ function getPhoneParts(
 
     if (isPhonePrefixHeader(normalized)) {
       prefix = value;
+      return;
+    }
+
+    if (isMobileHeader(normalized)) {
+      mobile = value;
       return;
     }
 
@@ -127,17 +147,25 @@ function getPhoneParts(
       continue;
     }
 
+    if (mapping.mappedField === "mobile") {
+      if (!mobile) mobile = value;
+      continue;
+    }
+
     if (mapping.mappedField === "phone") {
       if (isPhonePrefixHeader(normalizedHeader)) {
         if (!prefix) prefix = value;
         continue;
       }
-
+      if (isMobileHeader(normalizedHeader)) {
+        if (!mobile) mobile = value;
+        continue;
+      }
       if (!number) number = value;
     }
   }
 
-  return { prefix, number };
+  return { prefix, number, mobile };
 }
 
 function cleanSingleRecord(
@@ -189,7 +217,7 @@ function cleanSingleRecord(
     report.normalizedCities++;
   }
 
-  const { prefix: phonePrefix, number: phoneNumber } = getPhoneParts(
+  const { prefix: phonePrefix, number: phoneNumber, mobile } = getPhoneParts(
     row,
     mappings,
     headerIndex,
@@ -204,13 +232,19 @@ function cleanSingleRecord(
     vatNumber: cleanField("vat_number").replace(/\s/g, "").toUpperCase(),
     taxCode: cleanField("tax_code").replace(/\s/g, "").toUpperCase(),
     address,
+    street,
+    streetNumber,
     city,
     province,
+    region: cleanField("region"),
     postalCode,
     country: cleanField("country") || "IT",
     email: cleanField("email").toLowerCase(),
     phone,
+    mobile: mobile || cleanField("mobile"),
     contactName: cleanField("contact_name"),
+    contactRole: cleanField("contact_role"),
+    customerCode: cleanField("customer_code"),
     website: cleanField("website"),
     notes: cleanField("notes"),
     latitude: null,
@@ -268,4 +302,8 @@ export function getDuplicateCount(values: string[]): number {
   }
 
   return duplicates;
+}
+
+export function countFileLevelDuplicates(records: CompanyImportRecord[]): number {
+  return countInFileDuplicates(records);
 }

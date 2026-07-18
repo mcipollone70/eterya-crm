@@ -77,9 +77,14 @@ async function fetchAllPagesForBounds(bounds: VisitTourGeoBounds): Promise<{
   return { companies, error: null };
 }
 
+function sortVisitTourCompanies(companies: Iterable<VisitTourCompany>): VisitTourCompany[] {
+  return Array.from(companies).sort((left, right) => left.name.localeCompare(right.name, "it"));
+}
+
 export function VisitTourCompaniesProvider({ children }: { children: ReactNode }) {
   const cacheRef = useRef<Map<string, VisitTourCompany>>(new Map());
-  const [version, setVersion] = useState(0);
+  const [companies, setCompanies] = useState<VisitTourCompany[]>([]);
+  const [companyById, setCompanyById] = useState<Map<string, VisitTourCompany>>(() => new Map());
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -101,7 +106,8 @@ export function VisitTourCompaniesProvider({ children }: { children: ReactNode }
     }
 
     if (changed) {
-      setVersion((current) => current + 1);
+      setCompanies(sortVisitTourCompanies(cacheRef.current.values()));
+      setCompanyById(new Map(cacheRef.current));
     }
   }, []);
 
@@ -218,18 +224,6 @@ export function VisitTourCompaniesProvider({ children }: { children: ReactNode }
     },
     [mergeCompanies]
   );
-
-  const companies = useMemo(() => {
-    void version;
-    return Array.from(cacheRef.current.values()).sort((left, right) =>
-      left.name.localeCompare(right.name, "it")
-    );
-  }, [version]);
-
-  const companyById = useMemo(() => {
-    void version;
-    return new Map(cacheRef.current);
-  }, [version]);
 
   const value = useMemo(
     () => ({

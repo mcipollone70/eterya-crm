@@ -54,8 +54,14 @@ export function JoyAiScreen({ data }: JoyAiScreenProps) {
               proporti il piano migliore di oggi.
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
-              <Link href="/joy/autonomous">
+              <Link href="/joy-ai">
                 <Button size="sm" className="min-h-10 gap-2 bg-violet-600 hover:bg-violet-700">
+                  <Sparkles className="h-4 w-4" />
+                  Apri Joy AI Chat
+                </Button>
+              </Link>
+              <Link href="/joy/autonomous">
+                <Button size="sm" variant="outline" className="min-h-10 gap-2">
                   <Sparkles className="h-4 w-4" />
                   Joy Autonomous
                 </Button>

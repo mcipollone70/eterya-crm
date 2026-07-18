@@ -15,15 +15,13 @@ export default async function CompanyPage({
 }: {
   params: Promise<{ id: string }>;
   searchParams: Promise<{
-    type?: string;
+    tab?: string;
     period?: string;
-    operator?: string;
-    q?: string;
     visit?: string;
   }>;
 }) {
   const { id } = await params;
-  const { type, period, operator, q, visit } = await searchParams;
+  const { tab, period, visit } = await searchParams;
 
   if (!isSupabaseConfigured()) {
     return (
@@ -59,10 +57,8 @@ export default async function CompanyPage({
     <CompanyDetail
       company={company}
       contacts={contacts}
-      historyType={type}
+      activeTab={tab}
       historyPeriod={period}
-      historyOperator={operator}
-      historySearch={q}
       registerVisit={visit === "1"}
     />
   );

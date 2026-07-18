@@ -4,6 +4,8 @@ import { useCallback, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Bell, CalendarPlus, Loader2, Plus } from "lucide-react";
 import { Button, StickyActionBar } from "@/components/ui";
+import { CompanySelect } from "@/features/companies/components/company-select";
+import type { CompanySelectOption } from "@/features/companies/components/company-select";
 import { CONTACT_HISTORY_TYPE_OPTIONS } from "@/lib/constants/contact-history";
 import { FOLLOW_UP_PRIORITY_OPTIONS } from "@/lib/constants/follow-up";
 import type { ActivityPriority } from "@/lib/supabase/types";
@@ -15,7 +17,6 @@ import {
 import { AgendaToast, type AgendaToastVariant } from "./agenda-toast";
 
 interface AgendaCreatePanelProps {
-  companies: Array<{ id: string; name: string }>;
   fixedOnMobile?: boolean;
 }
 
@@ -50,10 +51,11 @@ function buildNotesWithOptionalTitle(
   return trimmedNotes || null;
 }
 
-export function AgendaCreatePanel({ companies, fixedOnMobile = false }: AgendaCreatePanelProps) {
+export function AgendaCreatePanel({ fixedOnMobile = false }: AgendaCreatePanelProps) {
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [kind, setKind] = useState<CreateKind>("visit");
+  const [companyId, setCompanyId] = useState("");
   const [appointmentTitle, setAppointmentTitle] = useState("");
   const [lastAutoTitle, setLastAutoTitle] = useState("");
   const [scheduledAt, setScheduledAt] = useState(defaultDateTimeLocal);
@@ -62,8 +64,8 @@ export function AgendaCreatePanel({ companies, fixedOnMobile = false }: AgendaCr
 
   const dismissToast = useCallback(() => setToast(null), []);
 
-  function handleCompanyChange(companyId: string) {
-    const companyName = companies.find((company) => company.id === companyId)?.name ?? "";
+  function handleCompanyChange(company: CompanySelectOption | null) {
+    const companyName = company?.name ?? "";
     setAppointmentTitle((current) => {
       const trimmed = current.trim();
       if (!trimmed || trimmed === lastAutoTitle) {
@@ -88,8 +90,8 @@ export function AgendaCreatePanel({ companies, fixedOnMobile = false }: AgendaCr
     const formData = new FormData(form);
     const title = appointmentTitle.trim() || String(formData.get("appointment_title") ?? "").trim();
     const notes = String(formData.get("notes") ?? "");
-    const companyId = String(formData.get("company_id") ?? "");
-    const companyName = companies.find((company) => company.id === companyId)?.name ?? "";
+    const companyIdValue = String(formData.get("company_id") ?? companyId);
+    const companyName = lastAutoTitle;
     const scheduledRaw = String(formData.get("scheduled_at") ?? scheduledAt);
     const scheduledAtIso = scheduledRaw ? new Date(scheduledRaw).toISOString() : "";
 
@@ -103,13 +105,13 @@ export function AgendaCreatePanel({ companies, fixedOnMobile = false }: AgendaCr
 
       if (kind === "visit") {
         result = await agendaScheduleVisitAction({
-          companyId,
+          companyId: companyIdValue,
           scheduledAt: scheduledAtIso,
           notes: buildNotesWithOptionalTitle(title, notes, companyName),
         });
       } else if (kind === "follow_up") {
         result = await agendaSaveFollowUpAction({
-          companyId,
+          companyId: companyIdValue,
           activityType: String(formData.get("activity_type") ?? "call"),
           description: buildNotesWithOptionalTitle(title, notes, companyName),
           priority: (String(formData.get("priority") ?? "medium") as ActivityPriority) || "medium",
@@ -120,7 +122,7 @@ export function AgendaCreatePanel({ companies, fixedOnMobile = false }: AgendaCr
           title,
           scheduledAt: scheduledAtIso,
           notes: notes.trim() || null,
-          companyId: companyId || null,
+          companyId: companyIdValue || null,
         });
       }
 
@@ -131,6 +133,7 @@ export function AgendaCreatePanel({ companies, fixedOnMobile = false }: AgendaCr
 
       form.reset();
       resetFormFields();
+      setCompanyId("");
       setIsOpen(false);
       setToast({ message: "Appuntamento creato con successo", variant: "success" });
       router.refresh();
@@ -208,19 +211,17 @@ export function AgendaCreatePanel({ companies, fixedOnMobile = false }: AgendaCr
           <span className="mb-1 block font-medium text-slate-700">
             {kind === "reminder" ? "Azienda (opzionale)" : "Azienda"}
           </span>
-          <select
+          <CompanySelect
             name="company_id"
+            value={companyId}
+            onChange={setCompanyId}
+            onCompanyChange={handleCompanyChange}
             required={kind !== "reminder"}
-            onChange={(event) => handleCompanyChange(event.target.value)}
-            className="field-input w-full rounded-lg border border-slate-200 px-3"
-          >
-            <option value="">{kind === "reminder" ? "Nessuna azienda" : "Seleziona azienda"}</option>
-            {companies.map((company) => (
-              <option key={company.id} value={company.id}>
-                {company.name}
-              </option>
-            ))}
-          </select>
+            allowEmpty
+            emptyLabel={kind === "reminder" ? "Nessuna azienda" : "Seleziona azienda"}
+            placeholder={kind === "reminder" ? "Nessuna azienda" : "Seleziona azienda"}
+            selectClassName="field-input"
+          />
         </label>
 
         <label className="block text-sm sm:col-span-2">

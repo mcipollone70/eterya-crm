@@ -42,9 +42,26 @@ function parseStopCount(stops: Json): number {
   return Array.isArray(stops) ? stops.length : 0;
 }
 
+function parseOriginDestinationLabels(
+  origin: Json,
+  destination: Json
+): { originLabel: string; destinationLabel: string } {
+  const originRow = origin as { label?: string } | null;
+  const destinationRow = destination as { label?: string } | null;
+
+  return {
+    originLabel: originRow?.label?.trim() || "Partenza",
+    destinationLabel: destinationRow?.label?.trim() || "Destinazione",
+  };
+}
+
 function mapListItem(row: VisitTourRow): VisitTourListItem {
   const agentLabel =
     row.users?.full_name?.trim() || row.users?.email || "Agente sconosciuto";
+  const { originLabel, destinationLabel } = parseOriginDestinationLabels(
+    row.origin,
+    row.destination
+  );
 
   return {
     id: row.id,
@@ -52,6 +69,8 @@ function mapListItem(row: VisitTourRow): VisitTourListItem {
     tourDate: row.tour_date,
     userId: row.user_id,
     agentLabel,
+    originLabel,
+    destinationLabel,
     stopCount: parseStopCount(row.stops),
     totalDistanceKm: row.total_distance_km,
     estimatedMinutes: row.estimated_minutes,
@@ -61,6 +80,7 @@ function mapListItem(row: VisitTourRow): VisitTourListItem {
 }
 
 function revalidateVisitTourPaths() {
+  revalidatePath("/giro-visite");
   revalidatePath("/routes");
 }
 
@@ -266,7 +286,8 @@ export async function duplicateVisitTour(
     .single();
 
   if (error && isMissingVisitTourNameColumn(error)) {
-    const { name: _name, ...insertPayloadWithoutName } = insertPayload;
+    const { name: omittedTourName, ...insertPayloadWithoutName } = insertPayload;
+    void omittedTourName;
     ({ data, error } = await supabase
       .from("visit_tours")
       .insert(insertPayloadWithoutName)
@@ -307,6 +328,29 @@ export async function deleteVisitTour(
 
   revalidateVisitTourPaths();
   return { success: true, message: "Giro eliminato." };
+}
+
+export async function updateVisitTourStatus(
+  tourId: string,
+  status: VisitTourSaveStatus
+): Promise<{ success: boolean; message: string }> {
+  const user = await getCurrentUser();
+  if (!user) {
+    return { success: false, message: "Sessione non valida." };
+  }
+
+  const supabase = await createServerClient();
+  const { error } = await supabase
+    .from("visit_tours")
+    .update({ status })
+    .eq("id", tourId);
+
+  if (error) {
+    return { success: false, message: describeDbError(error) ?? "Aggiornamento stato non riuscito." };
+  }
+
+  revalidateVisitTourPaths();
+  return { success: true, message: `Giro segnato come ${status}.` };
 }
 
 export type { VisitTourRow };

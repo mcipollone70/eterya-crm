@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { GripVertical, Loader2, MapPin } from "lucide-react";
 import { Badge } from "@/components/ui";
@@ -14,6 +14,7 @@ import {
 } from "@/lib/constants/opportunity-pipeline";
 import { PRODUCT_FAMILY_LABELS } from "@/lib/constants/product-catalog";
 import { groupOpportunitiesByStage } from "@/lib/opportunities/kanban";
+import { formatStageTotalLabel } from "@/lib/opportunities/stage-totals";
 import { updateOpportunityStageAction } from "../actions/opportunity-actions";
 import type { OpportunityListItem } from "../services/opportunities.service";
 import {
@@ -43,6 +44,7 @@ function priorityVariant(probability: number | null) {
 export function OpportunityKanban({ items }: OpportunityKanbanProps) {
   const router = useRouter();
   const [boardItems, setBoardItems] = useState(items);
+  const [syncedItems, setSyncedItems] = useState(items);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTargetStage, setDropTargetStage] = useState<OpportunityStage | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -51,13 +53,20 @@ export function OpportunityKanban({ items }: OpportunityKanbanProps) {
   );
   const [, startTransition] = useTransition();
 
-  useEffect(() => {
-    if (!savingId) {
-      setBoardItems(items);
-    }
-  }, [items, savingId]);
+  if (!savingId && items !== syncedItems) {
+    setSyncedItems(items);
+    setBoardItems(items);
+  }
 
   const grouped = useMemo(() => groupOpportunitiesByStage(boardItems), [boardItems]);
+
+  const stageTotals = useMemo(() => {
+    const totals = {} as Record<OpportunityStage, number>;
+    for (const stage of OPPORTUNITY_STAGES) {
+      totals[stage] = grouped[stage].reduce((sum, item) => sum + item.total_amount, 0);
+    }
+    return totals;
+  }, [grouped]);
 
   const dismissToast = useCallback(() => {
     setToast(null);
@@ -154,7 +163,9 @@ export function OpportunityKanban({ items }: OpportunityKanbanProps) {
                 <h3 className="text-sm font-semibold text-slate-900">
                   {OPPORTUNITY_STAGE_LABELS[stage]}
                 </h3>
-                <p className="text-xs text-slate-500">{grouped[stage].length} opportunità</p>
+                <p className="text-xs text-slate-500">
+                  {formatStageTotalLabel(grouped[stage].length, stageTotals[stage])}
+                </p>
               </div>
 
               <div className="min-h-24 space-y-3 p-3">

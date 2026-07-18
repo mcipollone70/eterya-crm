@@ -9,17 +9,19 @@ import { GOOGLE_OAUTH_STATE_COOKIE } from "@/lib/google-calendar/constants";
 import {
   assertGoogleCalendarEnvConfigured,
   getAppBaseUrl,
-  getGoogleOAuthRedirectUri,
   isGoogleCalendarConfigured,
+  resolveGoogleOAuthRedirectUri,
 } from "@/lib/google-calendar/env";
 import {
   exchangeGoogleAuthCode,
   fetchGoogleUserEmail,
+  logGoogleCalendarSafe,
   tokenExpiresAt,
+  verifySignedOAuthState,
 } from "@/lib/google-calendar/oauth";
 
-function redirectToSettings(params: Record<string, string>) {
-  const base = getAppBaseUrl();
+function redirectToSettings(requestUrl: string, params: Record<string, string>) {
+  const base = getAppBaseUrl(requestUrl);
   const url = new URL("/settings", base);
   for (const [key, value] of Object.entries(params)) {
     url.searchParams.set(key, value);
@@ -28,46 +30,51 @@ function redirectToSettings(params: Record<string, string>) {
 }
 
 export async function GET(request: Request) {
-  const base = getAppBaseUrl();
   const { searchParams } = new URL(request.url);
   const code = searchParams.get("code");
   const state = searchParams.get("state");
   const oauthError = searchParams.get("error");
+  const base = getAppBaseUrl(request.url);
 
   if (oauthError) {
-    return redirectToSettings({
+    const denied =
+      oauthError === "access_denied"
+        ? "Autorizzazione Google annullata."
+        : `Autorizzazione Google rifiutata (${oauthError}).`;
+    logGoogleCalendarSafe("warn", "oauth_callback_denied", { error: oauthError });
+    return redirectToSettings(request.url, {
       google_calendar: "error",
-      message: `Autorizzazione Google rifiutata (${oauthError}).`,
+      message: denied,
     });
   }
 
   if (!code?.trim() || !state?.trim()) {
-    return redirectToSettings({
+    return redirectToSettings(request.url, {
       google_calendar: "error",
-      message: "Parametri OAuth mancanti.",
+      message: "Parametri OAuth mancanti (codice o stato).",
     });
   }
 
   if (!isGoogleCalendarConfigured()) {
-    return redirectToSettings({
+    return redirectToSettings(request.url, {
       google_calendar: "error",
       message: "Integrazione Google non configurata nel server.",
     });
   }
 
   try {
-    assertGoogleCalendarEnvConfigured();
+    assertGoogleCalendarEnvConfigured(request.url);
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Configurazione Google Calendar non valida.";
-    return redirectToSettings({ google_calendar: "error", message });
+    return redirectToSettings(request.url, { google_calendar: "error", message });
   }
 
-  const expectedRedirectUri = getGoogleOAuthRedirectUri();
+  const expectedRedirectUri = resolveGoogleOAuthRedirectUri(request.url);
   if (!expectedRedirectUri) {
-    return redirectToSettings({
+    return redirectToSettings(request.url, {
       google_calendar: "error",
-      message: "GOOGLE_OAUTH_REDIRECT_URI non configurato.",
+      message: "Redirect URI Google non risolvibile. Imposta GOOGLE_OAUTH_REDIRECT_URI.",
     });
   }
 
@@ -76,7 +83,7 @@ export async function GET(request: Request) {
   cookieStore.delete(GOOGLE_OAUTH_STATE_COOKIE);
 
   if (!savedState || savedState !== state) {
-    return redirectToSettings({
+    return redirectToSettings(request.url, {
       google_calendar: "error",
       message: "Stato OAuth non valido. Riprova il collegamento.",
     });
@@ -87,11 +94,19 @@ export async function GET(request: Request) {
     return NextResponse.redirect(new URL("/login", base));
   }
 
+  const stateCheck = verifySignedOAuthState(state, user.id);
+  if (!stateCheck.ok) {
+    return redirectToSettings(request.url, {
+      google_calendar: "error",
+      message: stateCheck.reason,
+    });
+  }
+
   try {
-    const token = await exchangeGoogleAuthCode(code);
+    const token = await exchangeGoogleAuthCode(code, request.url);
 
     if (!token.access_token) {
-      return redirectToSettings({
+      return redirectToSettings(request.url, {
         google_calendar: "error",
         message: "Risposta Google incompleta: access_token mancante.",
       });
@@ -101,7 +116,7 @@ export async function GET(request: Request) {
     const refreshToken = token.refresh_token ?? existing?.refresh_token ?? null;
 
     if (!refreshToken) {
-      return redirectToSettings({
+      return redirectToSettings(request.url, {
         google_calendar: "error",
         message:
           "Google non ha restituito refresh_token. Revoca l'accesso a Eterya CRM dal tuo account Google e ricollega.",
@@ -115,23 +130,33 @@ export async function GET(request: Request) {
       accessToken: token.access_token,
       refreshToken,
       tokenExpiresAt: tokenExpiresAt(token.expires_in),
+      grantedScopes: token.scope ?? null,
     });
 
     if (error) {
-      return redirectToSettings({
+      return redirectToSettings(request.url, {
         google_calendar: "error",
         message: error,
       });
     }
 
-    return redirectToSettings({
+    logGoogleCalendarSafe("info", "oauth_callback_success", {
+      userId: user.id,
+      email: googleEmail,
+    });
+
+    return redirectToSettings(request.url, {
       google_calendar: "connected",
       message: `Google Calendar collegato (${googleEmail}).`,
     });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Collegamento Google Calendar non riuscito.";
-    return redirectToSettings({
+    logGoogleCalendarSafe("error", "oauth_callback_failed", {
+      userId: user.id,
+      reason: message.slice(0, 120),
+    });
+    return redirectToSettings(request.url, {
       google_calendar: "error",
       message,
     });

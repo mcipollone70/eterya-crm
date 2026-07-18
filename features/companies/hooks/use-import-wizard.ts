@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import type {
   CleaningReport,
   ColumnMapping,
+  CompanyImportBrandOptions,
   CompanyImportRecord,
   ImportFileAnalysis,
   ImportPreviewStats,
@@ -13,11 +14,14 @@ import { parseExcelFile, createInitialMappings } from "../utils/parse-excel";
 import { buildAndCleanRecords, hasRequiredMapping } from "../utils/build-records";
 import { computePreviewStats } from "../utils/compute-stats";
 import { geocodeImportRecordsAction } from "../actions/geocode-import";
+import { estimateExistingMatchesAction } from "../actions/import-companies";
+import { getDefaultImportBrandOptions } from "../components/import/import-options-panel";
 
 const GEOCODE_CHUNK_SIZE = 50;
 
 interface WizardState {
   currentStep: ImportWizardStep;
+  brandOptions: CompanyImportBrandOptions;
   analysis: ImportFileAnalysis | null;
   columnMappings: ColumnMapping[];
   cleanedRecords: CompanyImportRecord[];
@@ -27,42 +31,54 @@ interface WizardState {
   error: string | null;
 }
 
-const INITIAL_STATE: WizardState = {
-  currentStep: 1,
-  analysis: null,
-  columnMappings: [],
-  cleanedRecords: [],
-  cleaningReport: null,
-  previewStats: null,
-  isLoading: false,
-  error: null,
-};
+function createInitialState(
+  brandOptions?: CompanyImportBrandOptions
+): WizardState {
+  return {
+    currentStep: 1,
+    brandOptions: brandOptions ?? getDefaultImportBrandOptions(),
+    analysis: null,
+    columnMappings: [],
+    cleanedRecords: [],
+    cleaningReport: null,
+    previewStats: null,
+    isLoading: false,
+    error: null,
+  };
+}
 
 export function useImportWizard() {
-  const [state, setState] = useState<WizardState>(INITIAL_STATE);
+  const [state, setState] = useState<WizardState>(createInitialState);
+
+  const setBrandOptions = useCallback((brandOptions: CompanyImportBrandOptions) => {
+    setState((prev) => ({ ...prev, brandOptions, error: null }));
+  }, []);
 
   const analyzeFile = useCallback(async (file: File) => {
-    setState({ ...INITIAL_STATE, isLoading: true });
+    setState((prev) => ({
+      ...createInitialState(prev.brandOptions),
+      isLoading: true,
+    }));
 
     try {
       const analysis = await parseExcelFile(file);
       const columnMappings = createInitialMappings(analysis);
 
-      setState({
-        ...INITIAL_STATE,
+      setState((prev) => ({
+        ...createInitialState(prev.brandOptions),
         analysis,
         columnMappings,
-      });
+      }));
     } catch (err) {
-      setState({
-        ...INITIAL_STATE,
+      setState((prev) => ({
+        ...createInitialState(prev.brandOptions),
         error: err instanceof Error ? err.message : "Errore durante l'analisi del file.",
-      });
+      }));
     }
   }, []);
 
   const clearFile = useCallback(() => {
-    setState(INITIAL_STATE);
+    setState((prev) => createInitialState(prev.brandOptions));
   }, []);
 
   const updateMapping = useCallback(
@@ -98,8 +114,18 @@ export function useImportWizard() {
     const snapshot = state;
 
     if (snapshot.currentStep === 1) {
+      if (!snapshot.brandOptions.brandId.trim()) {
+        setState((prev) => ({
+          ...prev,
+          error: "Seleziona un Brand obbligatorio prima di continuare.",
+        }));
+        return;
+      }
       if (!snapshot.analysis) {
-        setState((prev) => ({ ...prev, error: "Seleziona un file Excel per continuare." }));
+        setState((prev) => ({
+          ...prev,
+          error: "Seleziona un file Excel per continuare.",
+        }));
         return;
       }
       setState((prev) => ({ ...prev, currentStep: 2, error: null }));
@@ -154,17 +180,35 @@ export function useImportWizard() {
     }
 
     if (snapshot.currentStep === 4) {
+      setState((prev) => ({ ...prev, isLoading: true, error: null }));
       const previewStats = computePreviewStats(snapshot.cleanedRecords);
+      const estimate = await estimateExistingMatchesAction(
+        snapshot.cleanedRecords.map((r) => ({
+          vatNumber: r.vatNumber,
+          email: r.email,
+        }))
+      );
       setState((prev) => ({
         ...prev,
-        previewStats,
+        previewStats: {
+          ...previewStats,
+          possibleExistingMatches: estimate.count,
+        },
         currentStep: 5,
-        error: null,
+        isLoading: false,
+        error: estimate.error,
       }));
       return;
     }
 
     if (snapshot.currentStep === 5) {
+      if (!snapshot.brandOptions.brandId.trim()) {
+        setState((prev) => ({
+          ...prev,
+          error: "Brand obbligatorio per procedere all'import.",
+        }));
+        return;
+      }
       setState((prev) => ({ ...prev, currentStep: 6, error: null }));
     }
   }, [state]);
@@ -174,7 +218,9 @@ export function useImportWizard() {
 
     switch (state.currentStep) {
       case 1:
-        return state.analysis !== null;
+        return (
+          state.brandOptions.brandId.trim().length > 0 && state.analysis !== null
+        );
       case 2:
         return hasRequiredMapping(state.columnMappings);
       case 3:
@@ -182,7 +228,10 @@ export function useImportWizard() {
       case 4:
         return state.cleanedRecords.length > 0;
       case 5:
-        return state.previewStats !== null;
+        return (
+          state.previewStats !== null &&
+          state.brandOptions.brandId.trim().length > 0
+        );
       case 6:
         return false;
       default:
@@ -192,6 +241,7 @@ export function useImportWizard() {
 
   return {
     ...state,
+    setBrandOptions,
     analyzeFile,
     clearFile,
     updateMapping,

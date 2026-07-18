@@ -19,6 +19,7 @@ import {
   type AgendaKindFilter,
   type AgendaStatusFilter,
   type AgendaView,
+  matchesAgendaStatusFilter,
 } from "@/lib/constants/agenda";
 import { resolveAgendaRange } from "@/lib/agenda/calendar";
 import { createServerClient } from "@/lib/supabase/server";
@@ -185,6 +186,45 @@ function mapReminderToAgendaItem(row: {
   };
 }
 
+function mapGoogleEventToAgendaItem(row: {
+  id: string;
+  user_id: string;
+  summary: string;
+  description: string | null;
+  start_at: string;
+  status: string | null;
+  html_link: string | null;
+}): AgendaItem {
+  const cancelled = row.status === "cancelled";
+  const notesParts = [
+    row.description?.trim() || null,
+    row.html_link ? `Apri in Google Calendar: ${row.html_link}` : null,
+    "Evento importato da Google — non convertito automaticamente in appuntamento CRM.",
+  ].filter(Boolean);
+
+  return {
+    id: `google_event:${row.id}`,
+    kind: "google_event",
+    title: row.summary || "Evento Google",
+    scheduledAt: row.start_at,
+    status: cancelled ? "cancelled" : "todo",
+    statusLabel: cancelled ? "Annullato" : "Evento Google",
+    companyId: null,
+    companyName: null,
+    contactId: null,
+    contactName: null,
+    userId: row.user_id,
+    operatorName: null,
+    activityType: null,
+    priority: null,
+    notes: notesParts.join("\n\n"),
+    opportunityId: null,
+    opportunityTitle: null,
+    canComplete: false,
+    canEdit: false,
+  };
+}
+
 function applyAgendaFilters(items: AgendaItem[], filters: AgendaFilters): AgendaItem[] {
   return items.filter((item) => {
     if (filters.agentId && item.userId !== filters.agentId) {
@@ -284,7 +324,7 @@ async function listAgendaItemsUncached(
 
   const kinds: AgendaItemKind[] = filters.kind
     ? [filters.kind as AgendaItemKind]
-    : ["visit", "follow_up", "reminder"];
+    : ["visit", "follow_up", "reminder", "google_event"];
 
   const queries: Promise<{ data: AgendaItem[]; error: string | null }>[] = [];
 
@@ -390,10 +430,48 @@ async function listAgendaItemsUncached(
 
         return {
           data: (data ?? []).map((row) =>
-            mapReminderToAgendaItem(row as Parameters<typeof mapReminderToAgendaItem>[0])
+            mapReminderToAgendaItem(
+              row as unknown as Parameters<typeof mapReminderToAgendaItem>[0]
+            )
           ),
           error: null,
         };
+      })()
+    );
+  }
+
+  if (kinds.includes("google_event")) {
+    queries.push(
+      (async () => {
+        const { listGoogleAgendaEvents } = await import(
+          "@/features/calendar-sync/services/inbound-sync.service"
+        );
+        const { data, error } = await listGoogleAgendaEvents({
+          userId: filters.agentId,
+          startIso: range.startIso,
+          endIso: range.endIso,
+        });
+        if (error) {
+          return { data: [], error };
+        }
+
+        const items = data
+          .map((row) =>
+            mapGoogleEventToAgendaItem({
+              id: row.id,
+              user_id: row.user_id,
+              summary: row.summary,
+              description: row.description,
+              start_at: row.start_at,
+              status: row.status,
+              html_link: row.html_link,
+            })
+          )
+          .filter((item) =>
+            matchesAgendaStatusFilter(item.kind, item.status, filters.status)
+          );
+
+        return { data: items, error: null };
       })()
     );
   }
@@ -434,10 +512,10 @@ export async function listAgendaItems(
   );
 }
 
-export async function listAgendaAgents(): Promise<{
+export const listAgendaAgents = cache(async (): Promise<{
   data: Array<{ id: string; label: string }>;
   error: string | null;
-}> {
+}> => {
   const supabase = await createServerClient();
   const { data, error } = await supabase
     .from("users")
@@ -456,7 +534,7 @@ export async function listAgendaAgents(): Promise<{
     })),
     error: null,
   };
-}
+});
 
 export async function listAgendaCompanyOptions(): Promise<{
   data: Array<{ id: string; name: string }>;
@@ -482,7 +560,10 @@ export function parseAgendaItemId(
 ): { kind: AgendaItemKind; sourceId: string } | null {
   const [kind, sourceId] = compositeId.split(":");
   if (
-    (kind === "visit" || kind === "follow_up" || kind === "reminder") &&
+    (kind === "visit" ||
+      kind === "follow_up" ||
+      kind === "reminder" ||
+      kind === "google_event") &&
     sourceId
   ) {
     return { kind, sourceId };

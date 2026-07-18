@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { Phone } from "lucide-react";
 import { COMMERCIAL_STATUS_LABELS } from "@/lib/constants/commercial-status";
+import { COMPANY_STATUS_LABELS } from "@/features/companies/utils/company-fields";
 import { companyRegisterVisitHref } from "@/lib/constants/visit-workflow";
 import { PRIORITY_TIER_LABELS } from "@/lib/constants/priority-tier";
 import { formatDistanceKm } from "@/features/maps/utils/geo-distance";
@@ -28,6 +30,18 @@ function formatLastVisit(value: string | null): string {
   }
 
   return new Date(value).toLocaleDateString("it-IT");
+}
+
+function formatNextActivity(value: string | null): string {
+  if (!value) {
+    return "—";
+  }
+  return new Date(value).toLocaleString("it-IT", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 export function VisitTourCandidatesList({
@@ -89,12 +103,21 @@ export function VisitTourCandidatesList({
                 </div>
 
                 <div className="grid gap-1 text-xs text-slate-600">
-                  <p>Stato: {COMMERCIAL_STATUS_LABELS[company.commercial_status]}</p>
+                  <p>
+                    {COMMERCIAL_STATUS_LABELS[company.commercial_status]} ·{" "}
+                    {COMPANY_STATUS_LABELS[company.status]}
+                  </p>
+                  <p>
+                    {company.address || "—"} · {company.city || "—"}
+                    {company.province ? ` (${company.province})` : ""}
+                  </p>
                   <p>
                     Priorità: {company.priorityScore} · {PRIORITY_TIER_LABELS[company.priorityTier]}
                   </p>
                   <p>Ultima visita: {formatLastVisit(company.lastVisitAt)}</p>
+                  <p>Prossima attività: {formatNextActivity(company.nextActivityAt)}</p>
                   <p>Telefono: {company.phone || "—"}</p>
+                  <p>Email: {company.email || "—"}</p>
                 </div>
 
                 <div className="flex flex-wrap gap-2">
@@ -109,6 +132,15 @@ export function VisitTourCandidatesList({
                   >
                     {isSelected ? "Nel giro" : "Aggiungi al giro"}
                   </button>
+                  {company.phone && (
+                    <a
+                      href={`tel:${company.phone}`}
+                      className="inline-flex h-8 items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-medium text-emerald-700"
+                    >
+                      <Phone className="h-3.5 w-3.5" />
+                      Chiama
+                    </a>
+                  )}
                   <Link
                     href={`/companies/${company.id}`}
                     className="inline-flex h-8 items-center rounded-lg border border-slate-200 px-3 text-xs font-medium text-slate-700 hover:bg-slate-50"

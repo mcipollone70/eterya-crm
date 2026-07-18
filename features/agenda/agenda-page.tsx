@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { CalendarDays } from "lucide-react";
 import { EmptyState, PageHeader, PageLoadingSkeleton } from "@/components/ui";
+import { JoyAiPageLink } from "@/features/joy/components/joy-ai-page-link";
 import { listAgendaCalendarSyncStatuses } from "@/features/calendar-sync/services/sync.service";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { parseAgendaFilters, parseAgendaItemId } from "@/lib/constants/agenda";
@@ -10,7 +11,6 @@ import { AgendaFiltersBar } from "./components/agenda-filters-bar";
 import { AgendaViewTabs } from "./components/agenda-view-tabs";
 import {
   listAgendaAgents,
-  listAgendaCompanyOptions,
   listAgendaItems,
 } from "./services/agenda.service";
 
@@ -44,14 +44,12 @@ export async function AgendaPage({
     );
   }
 
-  const [itemsResult, agentsResult, companiesResult] = await Promise.all([
+  const [itemsResult, agentsResult] = await Promise.all([
     listAgendaItems(filters),
     listAgendaAgents(),
-    listAgendaCompanyOptions(),
   ]);
 
   const agents = agentsResult.data ?? [];
-  const companies = companiesResult.data ?? [];
 
   const calendarSyncStatuses =
     itemsResult.data.length > 0
@@ -59,7 +57,7 @@ export async function AgendaPage({
           itemsResult.data
             .map((item) => {
               const parsed = parseAgendaItemId(item.id);
-              if (!parsed) {
+              if (!parsed || parsed.kind === "google_event") {
                 return null;
               }
               return {
@@ -78,6 +76,7 @@ export async function AgendaPage({
       <PageHeader
         title="Agenda"
         subtitle={`${itemsResult.data.length.toLocaleString("it-IT")} appuntamenti · visite, follow-up e promemoria`}
+        actions={<JoyAiPageLink prompt="Quali appuntamenti ho oggi?" />}
       />
 
       <Suspense fallback={<PageLoadingSkeleton rows={2} />}>
@@ -122,7 +121,7 @@ export async function AgendaPage({
         />
       )}
 
-      <AgendaCreatePanel companies={companies} fixedOnMobile />
+      <AgendaCreatePanel fixedOnMobile />
     </div>
   );
 }

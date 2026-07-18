@@ -8,7 +8,10 @@ export async function RoutesPage() {
   if (!isSupabaseConfigured()) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Giro Visite" subtitle="Pianifica il percorso di visita sul campo." />
+        <PageHeader
+          title="Giro Visite"
+          subtitle="Organizza il percorso commerciale e individua le aziende vicine al tragitto."
+        />
         <EmptyState
           icon={Route}
           title="Database non configurato"

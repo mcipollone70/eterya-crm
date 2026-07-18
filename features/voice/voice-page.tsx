@@ -3,7 +3,6 @@ import { Mic } from "lucide-react";
 import { EmptyState, PageHeader } from "@/components/ui";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { isVoiceIntent } from "@/lib/voice/constants";
-import { listVisitCompanyOptions } from "@/features/visits/services/visits.service";
 import { VoiceOperationalHub } from "./components/voice-operational-hub";
 
 interface VoicePageProps {
@@ -28,8 +27,6 @@ export async function VoicePage({ company, intent }: VoicePageProps) {
     );
   }
 
-  const { data: companies, error } = await listVisitCompanyOptions(company ?? undefined);
-
   return (
     <div className="space-y-6">
       <PageHeader
@@ -37,17 +34,13 @@ export async function VoicePage({ company, intent }: VoicePageProps) {
         subtitle="Detta note di visita, follow-up e promemoria. Il testo trascritto è sempre modificabile prima del salvataggio."
       />
 
-      {error ? (
-        <EmptyState icon={Mic} title="Impossibile caricare le aziende" message={error} />
-      ) : (
-        <Suspense fallback={null}>
-          <VoiceOperationalHub
-            companies={companies}
-            defaultCompanyId={company ?? ""}
-            defaultIntent={isVoiceIntent(intent) ? intent : "visit_note"}
-          />
-        </Suspense>
-      )}
+      <Suspense fallback={null}>
+        <VoiceOperationalHub
+          key={company ?? "voice-default"}
+          defaultCompanyId={company ?? ""}
+          defaultIntent={isVoiceIntent(intent) ? intent : "visit_note"}
+        />
+      </Suspense>
 
       <p className="text-xs text-slate-500">
         Usa il riconoscimento vocale integrato nel browser (Web Speech API). Su mobile e desktop

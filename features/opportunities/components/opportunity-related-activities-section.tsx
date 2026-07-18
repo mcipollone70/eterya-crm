@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui";
 import { FollowUpList } from "@/features/activities/components/follow-up-list";
 import { listFollowUps } from "@/features/activities/services/follow-ups.service";
 import { VisitTimeline } from "@/features/visits/components/visit-timeline";
@@ -29,7 +28,10 @@ export async function OpportunityRelatedActivitiesSection({
           emptyMessage="Nessun follow-up per l'azienda collegata."
         />
         <p className="text-xs text-slate-500">
-          <Link href={`/activities?company=${companyId}`} className="text-indigo-600 hover:underline">
+          <Link
+            href={`/activities?fcompany=${companyId}`}
+            className="text-indigo-600 hover:underline"
+          >
             Vedi tutte le attività
           </Link>
         </p>

@@ -57,12 +57,16 @@ export function boundsKey(bounds: MapGeoBounds): string {
 
 export function filtersKey(filters: {
   commercialStatus: string;
+  brandSlugs?: string[];
+  brandMatchMode?: string;
   province: string;
   city: string;
   geolocatedOnly: boolean;
 }): string {
   return [
     filters.commercialStatus,
+    (filters.brandSlugs ?? []).join(","),
+    filters.brandMatchMode ?? "or",
     filters.province,
     filters.city,
     filters.geolocatedOnly ? "1" : "0",
@@ -73,6 +77,8 @@ export function boundsRequestKey(
   bounds: MapGeoBounds,
   filters: {
     commercialStatus: string;
+    brandSlugs?: string[];
+    brandMatchMode?: string;
     province: string;
     city: string;
     geolocatedOnly: boolean;

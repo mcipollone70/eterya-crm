@@ -9,6 +9,7 @@ import {
   listCompanyProductInterestHistory,
 } from "../services/company-product-interests.service";
 import { AddCompanyProductForm } from "./add-company-product-form";
+import { RemoveCompanyProductButton } from "./remove-company-product-button";
 
 interface CompanyProductsSectionProps {
   companyId: string;
@@ -74,11 +75,18 @@ export async function CompanyProductsSection({ companyId }: CompanyProductsSecti
                             <p className="mt-2 text-xs text-slate-600">{item.commercial_notes}</p>
                           )}
                         </div>
-                        {item.interest_level && (
-                          <Badge variant="info">
-                            {INTEREST_LEVEL_LABELS[item.interest_level]}
-                          </Badge>
-                        )}
+                        <div className="flex items-start gap-2">
+                          {item.interest_level && (
+                            <Badge variant="info">
+                              {INTEREST_LEVEL_LABELS[item.interest_level]}
+                            </Badge>
+                          )}
+                          <RemoveCompanyProductButton
+                            interestId={item.id}
+                            companyId={companyId}
+                            productName={item.product_name}
+                          />
+                        </div>
                       </div>
                     </li>
                   ))}
@@ -92,13 +100,22 @@ export async function CompanyProductsSection({ companyId }: CompanyProductsSecti
                 <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
                   {purchasedItems.map((item) => (
                     <li key={item.id} className="px-4 py-3">
-                      <p className="text-sm font-semibold text-slate-900">{item.product_name}</p>
-                      <p className="mt-1 text-xs text-slate-500">
-                        {PRODUCT_FAMILY_LABELS[item.product_family]}
-                      </p>
-                      {item.commercial_notes && (
-                        <p className="mt-2 text-xs text-slate-600">{item.commercial_notes}</p>
-                      )}
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900">{item.product_name}</p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {PRODUCT_FAMILY_LABELS[item.product_family]}
+                          </p>
+                          {item.commercial_notes && (
+                            <p className="mt-2 text-xs text-slate-600">{item.commercial_notes}</p>
+                          )}
+                        </div>
+                        <RemoveCompanyProductButton
+                          interestId={item.id}
+                          companyId={companyId}
+                          productName={item.product_name}
+                        />
+                      </div>
                     </li>
                   ))}
                 </ul>

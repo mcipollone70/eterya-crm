@@ -192,6 +192,9 @@ function companyReferentToListItem(
 export interface ListContactsOptions {
   page?: number;
   pageSize?: ContactsPageSize;
+  /** Filtra per Brand delle aziende collegate (company_brands). */
+  brandSlugs?: string[] | null;
+  brandMatchMode?: "or" | "and" | null;
 }
 
 export type ListContactsInput = number | ListContactsOptions | undefined;
@@ -337,7 +340,31 @@ export async function listContacts(
   }
 
   const merged = buildMergedContactList(contactsResult.data, referentsResult.data);
-  const total = merged.length;
+
+  let filtered = merged;
+  const brandSlugs = (options?.brandSlugs ?? []).filter(Boolean);
+  if (brandSlugs.length > 0) {
+    const { resolveCompanyIdsForBrandSlugs } = await import(
+      "@/features/brands/services/company-brands-batch.service"
+    );
+    const brandResult = await resolveCompanyIdsForBrandSlugs({
+      brandSlugs,
+      matchMode: options?.brandMatchMode ?? "or",
+    });
+    if (brandResult.error) {
+      return {
+        data: [],
+        count: 0,
+        page: CONTACTS_DEFAULT_PAGE,
+        pageSize,
+        error: brandResult.error,
+      };
+    }
+    const allowed = new Set(brandResult.companyIds ?? []);
+    filtered = merged.filter((contact) => allowed.has(contact.company_id));
+  }
+
+  const total = filtered.length;
   const page = legacyLimit
     ? CONTACTS_DEFAULT_PAGE
     : clampContactsPage(requestedPage, total, pageSize);
@@ -345,7 +372,7 @@ export async function listContacts(
   const limit = legacyLimit ?? pageSize;
 
   return {
-    data: merged.slice(offset, offset + limit),
+    data: filtered.slice(offset, offset + limit),
     count: total,
     page,
     pageSize,

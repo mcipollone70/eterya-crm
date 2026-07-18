@@ -2,6 +2,7 @@ import type { LucideIcon } from "lucide-react";
 import type { AgendaItem } from "@/lib/constants/agenda";
 import type { DailyVisitSuggestion } from "@/lib/commercial-assistant/types";
 import type { GoogleCalendarConnectionView } from "@/lib/google-calendar/types";
+import type { StatusBadgeModel } from "@/lib/integrations/status";
 import type { OpportunityRadarItem } from "@/features/radar/types";
 
 export type MissionActionIcon =
@@ -50,6 +51,7 @@ export interface MissionControlData {
   dateLabel: string;
   weatherLabel: string;
   calendar: GoogleCalendarConnectionView;
+  crmSync: StatusBadgeModel;
   kpis: MissionControlKpis;
   actions: MissionControlAction[];
   nextVisit: MissionControlNextVisit | null;

@@ -27,6 +27,16 @@ type CompanyMatch = {
   name: string;
 };
 
+export interface JoyCopilotContext {
+  companyId?: string | null;
+  memory?: {
+    lastCompanyId?: string | null;
+    lastCompanyName?: string | null;
+    selectedClientId?: string | null;
+    selectedClientName?: string | null;
+  } | null;
+}
+
 function newMessageId(): string {
   return `joy-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
@@ -82,25 +92,95 @@ async function searchCompanies(query: string, limit = 5): Promise<CompanyMatch[]
   return (data ?? []) as CompanyMatch[];
 }
 
+async function resolveCompanyById(companyId: string): Promise<CompanyMatch | null> {
+  const supabase = await createServerClient();
+  const { data } = await supabase
+    .from("companies")
+    .select("id,name")
+    .eq("id", companyId)
+    .maybeSingle();
+  if (!data) {
+    return null;
+  }
+  return { id: data.id, name: data.name };
+}
+
 async function resolveSingleCompany(
-  query: string
-): Promise<{ company: CompanyMatch | null; ambiguous: CompanyMatch[] }> {
-  const matches = await searchCompanies(query, 5);
+  query: string | null | undefined,
+  contextCompanyId?: string | null,
+  memory?: JoyCopilotContext["memory"]
+): Promise<{ company: CompanyMatch | null; ambiguous: CompanyMatch[]; missingContext: boolean }> {
+  const trimmed = query?.trim() ?? "";
+  if (!trimmed) {
+    const fallbackId =
+      contextCompanyId?.trim() ||
+      memory?.selectedClientId?.trim() ||
+      memory?.lastCompanyId?.trim() ||
+      "";
+    if (fallbackId) {
+      const company = await resolveCompanyById(fallbackId);
+      return { company, ambiguous: [], missingContext: !company };
+    }
+    const fallbackName = memory?.selectedClientName ?? memory?.lastCompanyName;
+    if (fallbackName?.trim()) {
+      const matches = await searchCompanies(fallbackName.trim(), 5);
+      if (matches.length === 1) {
+        return { company: matches[0], ambiguous: [], missingContext: false };
+      }
+      if (matches.length > 1) {
+        const exact = matches.find(
+          (item) => item.name.toLowerCase() === fallbackName.trim().toLowerCase()
+        );
+        if (exact) {
+          return { company: exact, ambiguous: [], missingContext: false };
+        }
+        return { company: null, ambiguous: matches, missingContext: false };
+      }
+    }
+    return { company: null, ambiguous: [], missingContext: true };
+  }
+
+  const matches = await searchCompanies(trimmed, 5);
   if (matches.length === 0) {
-    return { company: null, ambiguous: [] };
+    return { company: null, ambiguous: [], missingContext: false };
   }
   if (matches.length === 1) {
-    return { company: matches[0], ambiguous: [] };
+    return { company: matches[0], ambiguous: [], missingContext: false };
   }
 
   const exact = matches.find(
-    (item) => item.name.toLowerCase() === query.trim().toLowerCase()
+    (item) => item.name.toLowerCase() === trimmed.toLowerCase()
   );
   if (exact) {
-    return { company: exact, ambiguous: [] };
+    return { company: exact, ambiguous: [], missingContext: false };
   }
 
-  return { company: null, ambiguous: matches };
+  return { company: null, ambiguous: matches, missingContext: false };
+}
+
+function companyResolveError(
+  companyQuery: string | null | undefined,
+  ambiguous: CompanyMatch[],
+  missingContext: boolean
+): JoyChatResponse {
+  if (missingContext) {
+    return {
+      message: assistantMessage(
+        "Specifica l'azienda (es. «crea preventivo per Rossi») oppure apri Joy AI dalla scheda azienda."
+      ),
+    };
+  }
+  if (ambiguous.length > 0) {
+    const list = ambiguous.map((item) => `• **${item.name}**`).join("\n");
+    return {
+      message: assistantMessage(
+        `Ho trovato più aziende simili a "${companyQuery}". Specifica il nome esatto:\n\n${list}`
+      ),
+    };
+  }
+  return {
+    message: assistantMessage(`Non ho trovato l'azienda "${companyQuery}".`),
+  };
 }
 
 async function findNextScheduledVisit(companyId: string) {
@@ -134,20 +214,17 @@ function resolveScheduleOrFallback(scheduleText: string, fallbackDays = 1): stri
   return resolveScheduleIso(scheduleText, fallbackDays);
 }
 
-async function handleCreateVisit(intent: JoyCopilotIntent & { type: "create_visit" }) {
-  const { company, ambiguous } = await resolveSingleCompany(intent.companyQuery);
+async function handleCreateVisit(
+  intent: JoyCopilotIntent & { type: "create_visit" },
+  context: JoyCopilotContext
+) {
+  const { company, ambiguous, missingContext } = await resolveSingleCompany(
+    intent.companyQuery,
+    context.companyId,
+    context.memory
+  );
   if (!company) {
-    if (ambiguous.length > 0) {
-      const list = ambiguous.map((item) => `• **${item.name}**`).join("\n");
-      return {
-        message: assistantMessage(
-          `Ho trovato più aziende simili a "${intent.companyQuery}". Specifica il nome esatto:\n\n${list}`
-        ),
-      };
-    }
-    return {
-      message: assistantMessage(`Non ho trovato l'azienda "${intent.companyQuery}".`),
-    };
+    return companyResolveError(intent.companyQuery, ambiguous, missingContext);
   }
 
   const scheduledAt = resolveScheduleOrFallback(intent.scheduleText, 1);
@@ -166,17 +243,17 @@ async function handleCreateVisit(intent: JoyCopilotIntent & { type: "create_visi
   );
 }
 
-async function handleUpdateVisit(intent: JoyCopilotIntent & { type: "update_visit" }) {
-  const { company, ambiguous } = await resolveSingleCompany(intent.companyQuery);
+async function handleUpdateVisit(
+  intent: JoyCopilotIntent & { type: "update_visit" },
+  context: JoyCopilotContext
+) {
+  const { company, ambiguous, missingContext } = await resolveSingleCompany(
+    intent.companyQuery,
+    context.companyId,
+    context.memory
+  );
   if (!company) {
-    if (ambiguous.length > 0) {
-      return {
-        message: assistantMessage(
-          `Ho trovato più aziende per "${intent.companyQuery}". Specifica quale visita spostare.`
-        ),
-      };
-    }
-    return { message: assistantMessage(`Non ho trovato l'azienda "${intent.companyQuery}".`) };
+    return companyResolveError(intent.companyQuery, ambiguous, missingContext);
   }
 
   const visit = await findNextScheduledVisit(company.id);
@@ -206,17 +283,17 @@ async function handleUpdateVisit(intent: JoyCopilotIntent & { type: "update_visi
   );
 }
 
-async function handleCancelVisit(intent: JoyCopilotIntent & { type: "cancel_visit" }) {
-  const { company, ambiguous } = await resolveSingleCompany(intent.companyQuery);
+async function handleCancelVisit(
+  intent: JoyCopilotIntent & { type: "cancel_visit" },
+  context: JoyCopilotContext
+) {
+  const { company, ambiguous, missingContext } = await resolveSingleCompany(
+    intent.companyQuery,
+    context.companyId,
+    context.memory
+  );
   if (!company) {
-    if (ambiguous.length > 0) {
-      return {
-        message: assistantMessage(
-          `Ho trovato più aziende per "${intent.companyQuery}". Specifica quale visita annullare.`
-        ),
-      };
-    }
-    return { message: assistantMessage(`Non ho trovato l'azienda "${intent.companyQuery}".`) };
+    return companyResolveError(intent.companyQuery, ambiguous, missingContext);
   }
 
   const visit = await findNextScheduledVisit(company.id);
@@ -242,26 +319,16 @@ async function handleCancelVisit(intent: JoyCopilotIntent & { type: "cancel_visi
 }
 
 async function handleCreateFollowUp(
-  intent: JoyCopilotIntent & { type: "create_follow_up" }
+  intent: JoyCopilotIntent & { type: "create_follow_up" },
+  context: JoyCopilotContext
 ) {
-  if (!intent.companyQuery) {
-    return {
-      message: assistantMessage(
-        "Per creare un follow-up indicami l'azienda, ad esempio: \"Crea un follow-up da Rossi tra 20 giorni\"."
-      ),
-    };
-  }
-
-  const { company, ambiguous } = await resolveSingleCompany(intent.companyQuery);
+  const { company, ambiguous, missingContext } = await resolveSingleCompany(
+    intent.companyQuery,
+    context.companyId,
+    context.memory
+  );
   if (!company) {
-    if (ambiguous.length > 0) {
-      return {
-        message: assistantMessage(
-          `Ho trovato più aziende per "${intent.companyQuery}". Specifica il cliente.`
-        ),
-      };
-    }
-    return { message: assistantMessage(`Non ho trovato l'azienda "${intent.companyQuery}".`) };
+    return companyResolveError(intent.companyQuery, ambiguous, missingContext);
   }
 
   const scheduledAt = resolveScheduleOrFallback(intent.scheduleText, 7);
@@ -282,18 +349,16 @@ async function handleCreateFollowUp(
 }
 
 async function handleUpdateFollowUp(
-  intent: JoyCopilotIntent & { type: "update_follow_up" }
+  intent: JoyCopilotIntent & { type: "update_follow_up" },
+  context: JoyCopilotContext
 ) {
-  const { company, ambiguous } = await resolveSingleCompany(intent.companyQuery);
+  const { company, ambiguous, missingContext } = await resolveSingleCompany(
+    intent.companyQuery,
+    context.companyId,
+    context.memory
+  );
   if (!company) {
-    if (ambiguous.length > 0) {
-      return {
-        message: assistantMessage(
-          `Ho trovato più aziende per "${intent.companyQuery}". Specifica quale follow-up modificare.`
-        ),
-      };
-    }
-    return { message: assistantMessage(`Non ho trovato l'azienda "${intent.companyQuery}".`) };
+    return companyResolveError(intent.companyQuery, ambiguous, missingContext);
   }
 
   const followUp = await findOpenFollowUp(company.id);
@@ -322,7 +387,8 @@ async function handleUpdateFollowUp(
 }
 
 async function handleCreateReminder(
-  intent: JoyCopilotIntent & { type: "create_reminder" }
+  intent: JoyCopilotIntent & { type: "create_reminder" },
+  context: JoyCopilotContext
 ) {
   const scheduledAt = resolveScheduleOrFallback(intent.scheduleText, 1);
   const scheduleLabel = formatItalianScheduleLabel(scheduledAt);
@@ -331,8 +397,12 @@ async function handleCreateReminder(
   let companyId: string | null = null;
   let companyName: string | null = null;
 
-  if (intent.companyQuery) {
-    const { company } = await resolveSingleCompany(intent.companyQuery);
+  if (intent.companyQuery || context.companyId) {
+    const { company } = await resolveSingleCompany(
+      intent.companyQuery,
+      context.companyId,
+      context.memory
+    );
     if (company) {
       companyId = company.id;
       companyName = company.name;
@@ -355,8 +425,15 @@ async function handleCreateReminder(
   );
 }
 
-async function handleOpenCompany(intent: JoyCopilotIntent & { type: "open_company" }) {
-  const { company, ambiguous } = await resolveSingleCompany(intent.query);
+async function handleOpenCompany(
+  intent: JoyCopilotIntent & { type: "open_company" },
+  context: JoyCopilotContext = {}
+) {
+  const { company, ambiguous } = await resolveSingleCompany(
+    intent.query,
+    context.companyId,
+    context.memory
+  );
   if (!company) {
     if (ambiguous.length > 1) {
       const list = ambiguous.map((item) => `• **${item.name}**`).join("\n");
@@ -387,6 +464,9 @@ function handleOpenOpportunities(
   const filterNote = intent.minAmount
     ? ` oltre **${formatOpportunityAmount(intent.minAmount)}**`
     : "";
+  const href = intent.minAmount
+    ? `/opportunities?min=${Math.round(intent.minAmount)}`
+    : "/opportunities";
 
   return buildPendingResponse(
     `Aprire l'elenco opportunità${filterNote}?`,
@@ -396,8 +476,96 @@ function handleOpenOpportunities(
       : "Pipeline opportunità",
     {
       type: "navigate",
-      href: "/opportunities",
+      href,
       label: "Opportunità",
+    }
+  );
+}
+
+async function handleCreateCommercialDraft(
+  kind: "create_opportunity" | "create_quote" | "create_order" | "create_sample" | "create_service_ticket",
+  companyQuery: string | null,
+  title: string | null,
+  context: JoyCopilotContext
+) {
+  const { company, ambiguous, missingContext } = await resolveSingleCompany(
+    companyQuery,
+    context.companyId,
+    context.memory
+  );
+  if (!company) {
+    return companyResolveError(companyQuery, ambiguous, missingContext);
+  }
+
+  const labels = {
+    create_opportunity: {
+      noun: "opportunità",
+      confirmTitle: "Conferma opportunità",
+      defaultTitle: `Opportunità ${company.name}`,
+    },
+    create_quote: {
+      noun: "preventivo",
+      confirmTitle: "Conferma preventivo",
+      defaultTitle: `Preventivo ${company.name}`,
+    },
+    create_order: {
+      noun: "ordine",
+      confirmTitle: "Conferma ordine",
+      defaultTitle: `Ordine ${company.name}`,
+    },
+    create_sample: {
+      noun: "campione",
+      confirmTitle: "Conferma campione",
+      defaultTitle: `Campione ${company.name}`,
+    },
+    create_service_ticket: {
+      noun: "ticket assistenza",
+      confirmTitle: "Conferma ticket",
+      defaultTitle: `Assistenza ${company.name}`,
+    },
+  } as const;
+
+  const meta = labels[kind];
+  const resolvedTitle = title?.trim() || meta.defaultTitle;
+
+  return buildPendingResponse(
+    `Creare una bozza **${meta.noun}** per **${company.name}** («${resolvedTitle}»)?`,
+    meta.confirmTitle,
+    `${company.name} · ${resolvedTitle}`,
+    {
+      type: kind,
+      companyId: company.id,
+      companyName: company.name,
+      title: resolvedTitle,
+    }
+  );
+}
+
+async function handleCreateNote(
+  intent: JoyCopilotIntent & { type: "create_note" },
+  context: JoyCopilotContext
+) {
+  const { company, ambiguous, missingContext } = await resolveSingleCompany(
+    intent.companyQuery,
+    context.companyId,
+    context.memory
+  );
+  if (!company) {
+    return companyResolveError(intent.companyQuery, ambiguous, missingContext);
+  }
+
+  const notes = intent.notes.trim() || "Nota da Joy AI";
+
+  return buildPendingResponse(
+    `Salvare la nota su **${company.name}**?\n\n«${notes}»`,
+    "Conferma nota",
+    `${company.name} · nota`,
+    {
+      type: "create_note",
+      companyId: company.id,
+      companyName: company.name,
+      title: `Nota · ${company.name}`,
+      notes,
     }
   );
 }
@@ -429,7 +597,7 @@ function handleOpenRoutes(intent: JoyCopilotIntent & { type: "open_routes" }) {
     label,
     {
       type: "navigate",
-      href: "/routes",
+      href: "/giro-visite",
       label: "Giro Visite",
     }
   );
@@ -448,7 +616,10 @@ function handleOpenRadar() {
   );
 }
 
-export async function processJoyCopilotCommand(message: string): Promise<JoyChatResponse | null> {
+export async function processJoyCopilotCommand(
+  message: string,
+  context: JoyCopilotContext = {}
+): Promise<JoyChatResponse | null> {
   const intent = parseJoyCopilotIntent(message);
   if (!intent) {
     return null;
@@ -456,19 +627,56 @@ export async function processJoyCopilotCommand(message: string): Promise<JoyChat
 
   switch (intent.type) {
     case "create_visit":
-      return handleCreateVisit(intent);
+      return handleCreateVisit(intent, context);
     case "update_visit":
-      return handleUpdateVisit(intent);
+      return handleUpdateVisit(intent, context);
     case "cancel_visit":
-      return handleCancelVisit(intent);
+      return handleCancelVisit(intent, context);
     case "create_follow_up":
-      return handleCreateFollowUp(intent);
+      return handleCreateFollowUp(intent, context);
     case "update_follow_up":
-      return handleUpdateFollowUp(intent);
+      return handleUpdateFollowUp(intent, context);
     case "create_reminder":
-      return handleCreateReminder(intent);
+      return handleCreateReminder(intent, context);
+    case "create_opportunity":
+      return handleCreateCommercialDraft(
+        "create_opportunity",
+        intent.companyQuery,
+        intent.title,
+        context
+      );
+    case "create_quote":
+      return handleCreateCommercialDraft(
+        "create_quote",
+        intent.companyQuery,
+        intent.title,
+        context
+      );
+    case "create_order":
+      return handleCreateCommercialDraft(
+        "create_order",
+        intent.companyQuery,
+        intent.title,
+        context
+      );
+    case "create_sample":
+      return handleCreateCommercialDraft(
+        "create_sample",
+        intent.companyQuery,
+        intent.title,
+        context
+      );
+    case "create_service_ticket":
+      return handleCreateCommercialDraft(
+        "create_service_ticket",
+        intent.companyQuery,
+        intent.title,
+        context
+      );
+    case "create_note":
+      return handleCreateNote(intent, context);
     case "open_company":
-      return handleOpenCompany(intent);
+      return handleOpenCompany(intent, context);
     case "open_opportunities":
       return handleOpenOpportunities(intent);
     case "open_agenda":

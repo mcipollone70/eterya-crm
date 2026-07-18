@@ -19,6 +19,7 @@ export {
   updateOpportunity,
   updateOpportunityStage,
   deleteOpportunity,
+  listPipelineFilterOptions,
   type OpportunityListItem,
   type OpportunityStageHistoryItem,
   type OpportunityDashboardMetrics,

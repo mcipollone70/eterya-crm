@@ -563,7 +563,7 @@ export async function listVisits(
     return { data: [], error: describeDbError(error) };
   }
 
-  let items = (data ?? [])
+  const items = (data ?? [])
     .map((row) => mapVisitListRow(row as VisitListRow))
     .filter((item) => matchesVisitPeriod(item, period));
 

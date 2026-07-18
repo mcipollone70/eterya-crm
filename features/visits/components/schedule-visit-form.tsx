@@ -4,23 +4,22 @@ import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { CalendarPlus, Loader2 } from "lucide-react";
 import { Button, StickyActionBar } from "@/components/ui";
+import { CompanySelect } from "@/features/companies/components/company-select";
 import { scheduleVisitAction } from "../actions/visit-mutations";
-import type { VisitCompanyOption } from "../services/visits.service";
 
 interface ScheduleVisitFormProps {
-  companies: VisitCompanyOption[];
   defaultCompanyId?: string;
   fixedOnMobile?: boolean;
 }
 
 export function ScheduleVisitForm({
-  companies,
   defaultCompanyId,
   fixedOnMobile = false,
 }: ScheduleVisitFormProps) {
   const formRef = useRef<HTMLFormElement>(null);
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
+  const [companyId, setCompanyId] = useState(defaultCompanyId ?? "");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -48,7 +47,7 @@ export function ScheduleVisitForm({
 
     startTransition(async () => {
       const result = await scheduleVisitAction({
-        companyId: String(formData.get("company_id") ?? ""),
+        companyId: String(formData.get("company_id") ?? companyId),
         scheduledAt: scheduledAtRaw ? new Date(scheduledAtRaw).toISOString() : "",
         notes: String(formData.get("notes") ?? "") || null,
       });
@@ -61,6 +60,7 @@ export function ScheduleVisitForm({
       setMessage(result.message);
       setIsOpen(false);
       form.reset();
+      setCompanyId("");
       router.refresh();
     });
   }
@@ -70,7 +70,10 @@ export function ScheduleVisitForm({
       type="button"
       size={fixedOnMobile ? "lg" : "sm"}
       className={fixedOnMobile ? "w-full shadow-md lg:w-auto lg:shadow-none" : undefined}
-      onClick={() => setIsOpen(true)}
+      onClick={() => {
+        setCompanyId(defaultCompanyId ?? "");
+        setIsOpen(true);
+      }}
     >
       <CalendarPlus className="h-4 w-4" />
       Pianifica visita
@@ -98,20 +101,16 @@ export function ScheduleVisitForm({
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="block text-sm sm:col-span-2">
           <span className="mb-1 block font-medium text-slate-700">Azienda</span>
-          <select
+          <CompanySelect
             name="company_id"
+            value={companyId}
+            onChange={setCompanyId}
             required
-            defaultValue={defaultCompanyId ?? ""}
-            className="field-input w-full rounded-lg border border-slate-200 px-3"
-          >
-            <option value="">Seleziona azienda</option>
-            {companies.map((company) => (
-              <option key={company.id} value={company.id}>
-                {company.name}
-                {company.city ? ` · ${company.city}` : ""}
-              </option>
-            ))}
-          </select>
+            allowEmpty={false}
+            placeholder="Seleziona azienda"
+            selectClassName="field-input"
+            pinnedIds={defaultCompanyId ? [defaultCompanyId] : []}
+          />
         </label>
 
         <label className="block text-sm">
@@ -160,15 +159,10 @@ export function ScheduleVisitForm({
 
   if (fixedOnMobile) {
     return (
-      <div className="fixed inset-0 z-50 flex flex-col bg-white lg:static lg:z-auto lg:bg-transparent">
-        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 lg:hidden">
-          <p className="font-semibold text-slate-900">Pianifica visita</p>
-          <Button type="button" size="sm" variant="ghost" onClick={() => setIsOpen(false)}>
-            Chiudi
-          </Button>
-        </div>
-        <div className="flex-1 overflow-y-auto p-4 pb-24">{form}</div>
-      </div>
+      <>
+        <div className="hidden lg:block">{form}</div>
+        <StickyActionBar className="lg:hidden">{openButton}</StickyActionBar>
+      </>
     );
   }
 

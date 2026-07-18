@@ -1,9 +1,31 @@
 import type { MapCompaniesStats, MapCompany } from "../types/map";
 import { GEOCODED_MAP_STATUSES } from "../constants/map-config";
 import type { MapFiltersState } from "../types/map";
+import { companyMatchesMapCommercialStatusFilter } from "./map-brand-markers";
+import {
+  companyMatchesBrandFilters,
+  companyMatchesBrandSlugs,
+} from "@/features/brands/utils/brand-shared";
+import type { CommercialStatus } from "@/lib/supabase/types";
 
 function formatCount(value: number): string {
   return value.toLocaleString("it-IT");
+}
+
+/** Brand attivo solo con almeno uno slug. Array vuoto = tutti i Brand. */
+export function hasMapBrandFilter(filters: Pick<MapFiltersState, "brandSlugs">): boolean {
+  return Array.isArray(filters.brandSlugs) && filters.brandSlugs.length > 0;
+}
+
+/**
+ * Relazione Cliente/Prospect attiva solo con valore concreto.
+ * "" / "all" / nullish = tutti gli stati.
+ */
+export function hasMapRelationshipFilter(
+  filters: Pick<MapFiltersState, "commercialStatus">
+): boolean {
+  const status = filters.commercialStatus as string | undefined;
+  return Boolean(status) && status !== "all";
 }
 
 export function formatMapPageSubtitle(
@@ -16,7 +38,10 @@ export function formatMapPageSubtitle(
   }
 
   const hasExtraFilters =
-    filters.commercialStatus !== "" || filters.province !== "" || filters.city !== "";
+    hasMapRelationshipFilter(filters) ||
+    filters.province !== "" ||
+    filters.city !== "" ||
+    hasMapBrandFilter(filters);
 
   if (hasExtraFilters) {
     const reference = filters.geolocatedOnly
@@ -38,13 +63,45 @@ export function filterMapCompanies(
   companies: MapCompany[],
   filters: MapFiltersState
 ): MapCompany[] {
+  const brandFilterActive = hasMapBrandFilter(filters);
+  const relationshipFilterActive = hasMapRelationshipFilter(filters);
+
   return companies.filter((company) => {
     if (filters.geolocatedOnly && !GEOCODED_STATUS_SET.has(company.geocode_status)) {
       return false;
     }
 
-    if (filters.commercialStatus && company.commercial_status !== filters.commercialStatus) {
-      return false;
+    const brands = company.brands ?? [];
+
+    if (brandFilterActive) {
+      if (
+        !companyMatchesBrandSlugs(
+          brands,
+          filters.brandSlugs,
+          filters.brandMatchMode ?? "or"
+        )
+      ) {
+        return false;
+      }
+    }
+
+    if (relationshipFilterActive) {
+      const status = filters.commercialStatus as CommercialStatus;
+      if (brandFilterActive) {
+        if (
+          !companyMatchesBrandFilters({
+            brands,
+            selectedSlugs: filters.brandSlugs,
+            matchMode: filters.brandMatchMode ?? "or",
+            commercialStatus: status,
+            legacyCommercialStatus: company.commercial_status,
+          })
+        ) {
+          return false;
+        }
+      } else if (!companyMatchesMapCommercialStatusFilter(company, status)) {
+        return false;
+      }
     }
 
     if (filters.province && company.province !== filters.province) {
@@ -84,33 +141,5 @@ export function buildGoogleMapsDirectionsUrl(
   return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${latitude},${longitude}`)}`;
 }
 
-export function buildCompanyPopupHtml(company: MapCompany): string {
-  const address = company.address ?? "—";
-  const phone = company.phone ?? "—";
-  const mapsUrl = buildGoogleMapsDirectionsUrl(company.latitude, company.longitude);
-
-  return `
-    <div class="space-y-2 text-sm text-slate-800">
-      <p class="font-semibold">${escapeHtml(company.name)}</p>
-      <p>${escapeHtml(address)}</p>
-      <p>${escapeHtml(phone)}</p>
-      <div class="flex flex-col gap-1 pt-1">
-        <a href="/companies/${company.id}" class="font-medium text-indigo-600 hover:underline">
-          Apri scheda azienda
-        </a>
-        <a href="${mapsUrl}" target="_blank" rel="noopener noreferrer" class="font-medium text-indigo-600 hover:underline">
-          Naviga con Google Maps
-        </a>
-      </div>
-    </div>
-  `;
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
+/** @deprecated Prefer buildMapCompanyPopupHtml — mantenuto per import esistenti. */
+export { buildMapCompanyPopupHtml as buildCompanyPopupHtml } from "./map-brand-markers";

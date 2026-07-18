@@ -23,6 +23,7 @@ export interface SaveVisitTourInput {
   tourId?: string | null;
   name?: string | null;
   tourDate: string;
+  mode?: "corridor" | "optimize";
   origin: GeoPoint & { label: string; companyId?: string };
   destination: GeoPoint & { label: string; companyId?: string };
   constraints: VisitTourConstraints;
@@ -113,7 +114,7 @@ export async function saveVisitTour(
     user_id: user.id,
     name: tourName,
     tour_date: input.tourDate,
-    mode: "optimize",
+    mode: input.mode ?? "optimize",
     origin: input.origin as unknown as Json,
     destination: input.destination as unknown as Json,
     constraints: input.constraints as unknown as Json,
@@ -125,7 +126,8 @@ export async function saveVisitTour(
     notes: input.notes ?? null,
   };
 
-  const rowPayloadWithoutName = (({ name: _name, ...rest }) => rest)(rowPayload);
+  const { name: omittedTourName, ...rowPayloadWithoutName } = rowPayload;
+  void omittedTourName;
 
   async function persistTour(
     payload: typeof rowPayload | typeof rowPayloadWithoutName,
@@ -158,6 +160,7 @@ export async function saveVisitTour(
     };
   }
 
+  revalidatePath("/giro-visite");
   revalidatePath("/routes");
 
   return {

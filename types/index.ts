@@ -122,4 +122,6 @@ export interface NavItem {
   href: string;
   icon: string;
   badge?: number;
+  /** Etichetta di sezione per il raggruppamento nella sidebar. */
+  section?: string;
 }

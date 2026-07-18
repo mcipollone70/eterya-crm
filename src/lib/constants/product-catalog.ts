@@ -4,6 +4,7 @@ export const PRODUCT_FAMILIES = [
   "vepa",
   "tende_cristal",
   "tende_tecniche_rullo",
+  "altro",
 ] as const;
 
 export type ProductFamily = (typeof PRODUCT_FAMILIES)[number];
@@ -12,8 +13,9 @@ export const PRODUCT_FAMILY_LABELS: Record<ProductFamily, string> = {
   zanzariere: "Zanzariere",
   tapparelle: "Tapparelle",
   vepa: "VEPA",
-  tende_cristal: "Tende Cristal",
-  tende_tecniche_rullo: "Tende tecniche a rullo",
+  tende_cristal: "Tende Cristal / Cristal",
+  tende_tecniche_rullo: "Tende tecniche",
+  altro: "Altro",
 };
 
 export const PRODUCT_FAMILY_OPTIONS = PRODUCT_FAMILIES.map((value) => ({

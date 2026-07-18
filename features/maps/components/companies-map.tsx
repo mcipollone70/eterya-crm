@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import { MapContainer, TileLayer, useMap } from "react-leaflet";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { PageHeader } from "@/components/ui";
 import {
   DEFAULT_MAP_CENTER,
@@ -12,14 +13,23 @@ import {
 import type { MapFiltersState, MapViewportState, UserLocation } from "../types/map";
 import { DEFAULT_MAP_FILTERS } from "../types/map";
 import { filterMapCompanies, formatMapPageSubtitle } from "../utils/map-filters";
+import { boundsRequestKey, filtersKey } from "../utils/map-bounds";
+import { MapBrandLegend } from "./map-brand-legend";
 import { MapSidebarFilters } from "./map-sidebar-filters";
 import { MarkerClusterLayer } from "./marker-cluster-layer";
 import { OpportunityRadarPanel } from "@/features/radar/components/opportunity-radar-panel";
 import type { RadarCompanySource } from "@/features/radar/types";
 import { useMapCompanies } from "./map-companies-provider";
+import {
+  parseBrandMatchMode,
+  parseBrandsUrlParam,
+  serializeBrandsUrlParam,
+} from "@/features/brands/utils/brand-shared";
+import { isCommercialStatus } from "@/lib/constants/commercial-status";
 
 interface CompaniesMapProps {
   provinces: string[];
+  brands: Array<{ id: string; name: string; slug: string; color: string | null }>;
 }
 
 function readStoredViewport(): MapViewportState | null {
@@ -77,19 +87,25 @@ function MapViewportPersistence() {
 function MapViewportLoader({ filters }: { filters: MapFiltersState }) {
   const map = useMap();
   const { loadForBounds } = useMapCompanies();
+  const filterKey = filtersKey(filters);
+  const lastRequestKeyRef = useRef<string>("");
 
   useEffect(() => {
+    lastRequestKeyRef.current = "";
     const report = () => {
-      const bounds = map.getBounds();
-      void loadForBounds(
-        {
-          north: bounds.getNorth(),
-          south: bounds.getSouth(),
-          east: bounds.getEast(),
-          west: bounds.getWest(),
-        },
-        filters
-      );
+      const leafletBounds = map.getBounds();
+      const bounds = {
+        north: leafletBounds.getNorth(),
+        south: leafletBounds.getSouth(),
+        east: leafletBounds.getEast(),
+        west: leafletBounds.getWest(),
+      };
+      const requestKey = boundsRequestKey(bounds, filters);
+      if (requestKey === lastRequestKeyRef.current) {
+        return;
+      }
+      lastRequestKeyRef.current = requestKey;
+      void loadForBounds(bounds, filters);
     };
 
     map.whenReady(report);
@@ -100,7 +116,8 @@ function MapViewportLoader({ filters }: { filters: MapFiltersState }) {
       map.off("moveend", report);
       map.off("zoomend", report);
     };
-  }, [filters, loadForBounds, map]);
+    // filterKey stabilizza: evita refetch se solo l'identità oggetto filters cambia.
+  }, [filterKey, filters, loadForBounds, map]);
 
   return null;
 }
@@ -167,9 +184,25 @@ function requestBrowserLocation(
   );
 }
 
-export function CompaniesMap({ provinces }: CompaniesMapProps) {
-  const { companies, stats, loadForCenter } = useMapCompanies();
-  const [filters, setFilters] = useState<MapFiltersState>(DEFAULT_MAP_FILTERS);
+export function CompaniesMap({ provinces, brands }: CompaniesMapProps) {
+  const { companies, stats, loadForCenter, clearCache } = useMapCompanies();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  const [filters, setFilters] = useState<MapFiltersState>(() => {
+    const brandSlugs = parseBrandsUrlParam(searchParams.get("brands"));
+    const brandMatchMode = parseBrandMatchMode(searchParams.get("brand_mode"));
+    const commercialRaw = searchParams.get("commercial_status") ?? "";
+    const commercialStatus =
+      commercialRaw && isCommercialStatus(commercialRaw) ? commercialRaw : "";
+    return {
+      ...DEFAULT_MAP_FILTERS,
+      brandSlugs,
+      brandMatchMode,
+      commercialStatus,
+    };
+  });
   const [locateSignal, setLocateSignal] = useState(0);
   const [userLocation, setUserLocation] = useState<UserLocation | null>(null);
   const [isLocating, setIsLocating] = useState(false);
@@ -182,19 +215,62 @@ export function CompaniesMap({ provinces }: CompaniesMapProps) {
     };
   });
 
+  const filterSignature = filtersKey(filters);
+  const prevFilterSignatureRef = useRef(filterSignature);
+
+  // Cambio filtri Brand/relazione/geo → reset cache e nuovo fetch (evita payload parziale).
+  useEffect(() => {
+    if (prevFilterSignatureRef.current === filterSignature) {
+      return;
+    }
+    prevFilterSignatureRef.current = filterSignature;
+    clearCache();
+  }, [clearCache, filterSignature]);
+
+  // Persistenza URL filtri Brand + relazione (solo se cambiano davvero)
+  useEffect(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    const serialized = serializeBrandsUrlParam(filters.brandSlugs);
+    if (serialized) {
+      params.set("brands", serialized);
+    } else {
+      params.delete("brands");
+    }
+    if (filters.brandMatchMode === "and" && filters.brandSlugs.length > 1) {
+      params.set("brand_mode", "and");
+    } else {
+      params.delete("brand_mode");
+    }
+    if (filters.commercialStatus) {
+      params.set("commercial_status", filters.commercialStatus);
+    } else {
+      params.delete("commercial_status");
+    }
+    const next = params.toString();
+    const current = searchParams.toString();
+    if (next !== current) {
+      router.replace(next ? `${pathname}?${next}` : pathname, { scroll: false });
+    }
+  }, [filters.brandSlugs, filters.brandMatchMode, filters.commercialStatus, pathname, router, searchParams]);
+
   const filteredCompanies = useMemo(
     () => filterMapCompanies(companies, filters),
     [companies, filters]
   );
+
+  const filtersRef = useRef(filters);
+  useEffect(() => {
+    filtersRef.current = filters;
+  }, [filters]);
 
   const handleLocationFound = useCallback(
     (location: UserLocation) => {
       setUserLocation(location);
       setLocationError(null);
       setIsLocating(false);
-      void loadForCenter(location, filters, undefined, true);
+      void loadForCenter(location, filtersRef.current, undefined, true);
     },
-    [filters, loadForCenter]
+    [loadForCenter]
   );
 
   const handleLocationError = useCallback((message: string) => {
@@ -214,9 +290,11 @@ export function CompaniesMap({ provinces }: CompaniesMapProps) {
     requestBrowserLocation(handleLocationFound, handleLocationError);
   }, [handleLocationError, handleLocationFound]);
 
+  // Geolocalizzazione una sola volta al mount (non a ogni cambio filtri).
   useEffect(() => {
     requestBrowserLocation(handleLocationFound, () => undefined);
-  }, [handleLocationFound]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only
+  }, []);
 
   const subtitle = useMemo(
     () => formatMapPageSubtitle(filteredCompanies.length, stats, filters),
@@ -231,6 +309,7 @@ export function CompaniesMap({ provinces }: CompaniesMapProps) {
         <div className="flex w-full flex-col gap-4 lg:w-72 lg:shrink-0 lg:overflow-y-auto">
           <MapSidebarFilters
             provinces={provinces}
+            brands={brands}
             filters={filters}
             visibleCount={filteredCompanies.length}
             onChange={setFilters}
@@ -245,7 +324,7 @@ export function CompaniesMap({ provinces }: CompaniesMapProps) {
           />
         </div>
 
-        <div className="min-h-[480px] flex-1 overflow-hidden rounded-xl border border-slate-200 shadow-sm lg:min-h-0">
+        <div className="relative min-h-[480px] flex-1 overflow-hidden rounded-xl border border-slate-200 shadow-sm lg:min-h-0">
           <MapContainer
             center={[initialViewport.lat, initialViewport.lng]}
             zoom={initialViewport.zoom}
@@ -265,6 +344,7 @@ export function CompaniesMap({ provinces }: CompaniesMapProps) {
             />
             <MarkerClusterLayer companies={filteredCompanies} />
           </MapContainer>
+          <MapBrandLegend />
         </div>
       </div>
     </div>

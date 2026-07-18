@@ -1,22 +1,28 @@
 import { parseItalianSchedule } from "./parse-italian-schedule";
 
 export type JoyCopilotIntent =
-  | { type: "create_visit"; companyQuery: string; scheduleText: string }
-  | { type: "update_visit"; companyQuery: string; scheduleText: string }
-  | { type: "cancel_visit"; companyQuery: string }
+  | { type: "create_visit"; companyQuery: string | null; scheduleText: string }
+  | { type: "update_visit"; companyQuery: string | null; scheduleText: string }
+  | { type: "cancel_visit"; companyQuery: string | null }
   | {
       type: "create_follow_up";
       companyQuery: string | null;
       scheduleText: string;
       description: string | null;
     }
-  | { type: "update_follow_up"; companyQuery: string; scheduleText: string }
+  | { type: "update_follow_up"; companyQuery: string | null; scheduleText: string }
   | {
       type: "create_reminder";
       title: string | null;
       scheduleText: string;
       companyQuery: string | null;
     }
+  | { type: "create_opportunity"; companyQuery: string | null; title: string | null }
+  | { type: "create_quote"; companyQuery: string | null; title: string | null }
+  | { type: "create_order"; companyQuery: string | null; title: string | null }
+  | { type: "create_sample"; companyQuery: string | null; title: string | null }
+  | { type: "create_service_ticket"; companyQuery: string | null; title: string | null }
+  | { type: "create_note"; companyQuery: string | null; notes: string }
   | { type: "open_company"; query: string }
   | { type: "open_opportunities"; minAmount: number | null }
   | { type: "open_agenda"; scheduleText: string | null }
@@ -135,31 +141,34 @@ export function parseJoyCopilotIntent(message: string): JoyCopilotIntent | null 
   const scheduleText = extractScheduleText(message);
 
   if (/(?:annulla|cancella|elimina).*(?:visita)/.test(text)) {
-    const companyQuery = extractCompanyAfterPreposition(message);
-    if (companyQuery) {
-      return { type: "cancel_visit", companyQuery };
-    }
+    return {
+      type: "cancel_visit",
+      companyQuery: extractCompanyAfterPreposition(message),
+    };
   }
 
   if (/(?:sposta|rimanda|posticipa|modifica).*(?:visita)/.test(text)) {
-    const companyQuery = extractCompanyAfterPreposition(message);
-    if (companyQuery) {
-      return { type: "update_visit", companyQuery, scheduleText };
-    }
+    return {
+      type: "update_visit",
+      companyQuery: extractCompanyAfterPreposition(message),
+      scheduleText,
+    };
   }
 
   if (/(?:pianifica|programma|crea|fissa).*(?:visita)/.test(text)) {
-    const companyQuery = extractCompanyAfterPreposition(message);
-    if (companyQuery) {
-      return { type: "create_visit", companyQuery, scheduleText };
-    }
+    return {
+      type: "create_visit",
+      companyQuery: extractCompanyAfterPreposition(message),
+      scheduleText,
+    };
   }
 
   if (/(?:sposta|rimanda|posticipa|modifica).*(?:follow.?up|richiamo)/.test(text)) {
-    const companyQuery = extractCompanyAfterPreposition(message);
-    if (companyQuery) {
-      return { type: "update_follow_up", companyQuery, scheduleText };
-    }
+    return {
+      type: "update_follow_up",
+      companyQuery: extractCompanyAfterPreposition(message),
+      scheduleText,
+    };
   }
 
   if (/(?:crea|fissa|pianifica).*(?:follow.?up|richiamo)/.test(text)) {
@@ -182,6 +191,55 @@ export function parseJoyCopilotIntent(message: string): JoyCopilotIntent | null 
     };
   }
 
+  if (/(?:crea|apri|registra).*(?:preventivo)/.test(text)) {
+    return {
+      type: "create_quote",
+      companyQuery: extractCompanyAfterPreposition(message),
+      title: null,
+    };
+  }
+
+  if (/(?:crea|apri|registra).*(?:ordine)/.test(text)) {
+    return {
+      type: "create_order",
+      companyQuery: extractCompanyAfterPreposition(message),
+      title: null,
+    };
+  }
+
+  if (/(?:crea|apri|registra).*(?:opportunit)/.test(text)) {
+    return {
+      type: "create_opportunity",
+      companyQuery: extractCompanyAfterPreposition(message),
+      title: null,
+    };
+  }
+
+  if (/(?:crea|registra|consegna).*(?:campione)/.test(text)) {
+    return {
+      type: "create_sample",
+      companyQuery: extractCompanyAfterPreposition(message),
+      title: null,
+    };
+  }
+
+  if (/(?:crea|apri).*(?:ticket|assistenza)|(?:segnala).*(?:guasto|problema)/.test(text)) {
+    return {
+      type: "create_service_ticket",
+      companyQuery: extractCompanyAfterPreposition(message),
+      title: null,
+    };
+  }
+
+  if (/(?:crea|aggiungi|scrivi).*(?:nota)/.test(text)) {
+    const notesMatch = message.match(/nota\s+(.+)/i);
+    return {
+      type: "create_note",
+      companyQuery: extractCompanyAfterPreposition(message),
+      notes: notesMatch?.[1]?.trim() || "Nota da Joy AI",
+    };
+  }
+
   if (/opportunit/.test(text) && /(?:fammi vedere|mostrami|apri|vedi)/.test(text)) {
     return {
       type: "open_opportunities",
@@ -189,7 +247,7 @@ export function parseJoyCopilotIntent(message: string): JoyCopilotIntent | null 
     };
   }
 
-  if (/(?:organizza|pianifica).*(?:giro)/.test(text)) {
+  if (/(?:apri|mostra|vai).*(?:giro\s+visite|routes)/.test(text)) {
     return { type: "open_routes", scheduleText: scheduleText || "domani" };
   }
 

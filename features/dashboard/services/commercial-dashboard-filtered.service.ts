@@ -1,7 +1,6 @@
 import "server-only";
 
 import type { CommercialDashboardFilters } from "@/lib/constants/dashboard-filters";
-import { getFollowUpEffectiveDate } from "@/lib/constants/follow-up";
 import {
   OPEN_OPPORTUNITY_STAGES,
   OPPORTUNITY_STAGE_LABELS,

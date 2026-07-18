@@ -26,6 +26,7 @@ import {
   formatScheduledTimeLabel,
 } from "../utils/scheduled-day-label";
 import { fetchWeatherLabel } from "../utils/weather";
+import { resolveCrmStatus } from "@/lib/integrations/status";
 import type {
   MissionControlAction,
   MissionControlData,
@@ -144,7 +145,11 @@ function buildMissionActions(
   return candidates
     .sort((left, right) => right.priority - left.priority)
     .slice(0, 5)
-    .map(({ priority: _priority, ...action }) => action);
+    .map((candidate) => {
+      const { priority, ...action } = candidate;
+      void priority;
+      return action;
+    });
 }
 
 export const getUserScopedTodayVisitPlan = cache(async (
@@ -483,6 +488,7 @@ export async function getMissionControlData(): Promise<MissionControlData> {
       dateLabel: formatItalianDate(now),
       weatherLabel,
       calendar,
+      crmSync: resolveCrmStatus(true),
       kpis,
       actions,
       nextVisit,
@@ -496,6 +502,7 @@ export async function getMissionControlData(): Promise<MissionControlData> {
       dateLabel: formatItalianDate(now),
       weatherLabel: "Meteo non disponibile",
       calendar: await getGoogleCalendarConnectionView(),
+      crmSync: resolveCrmStatus(false),
       kpis: {
         visitsToday: 0,
         overdueFollowUps: 0,

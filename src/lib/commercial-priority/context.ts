@@ -28,6 +28,7 @@ export function buildPriorityContextMaps(
   }>,
   openOpportunityCompanyIds: readonly string[]
 ): Pick<PriorityContext, "lastVisitByCompany" | "lastContactByCompany"> {
+  void openOpportunityCompanyIds;
   const lastVisitByCompany: Record<string, string> = {};
   const lastContactByCompany: Record<string, string> = {};
 

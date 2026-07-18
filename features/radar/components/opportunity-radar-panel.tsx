@@ -8,7 +8,6 @@ import {
   CalendarPlus,
   ChevronDown,
   ChevronUp,
-  ExternalLink,
   FileText,
   Loader2,
   Navigation,
@@ -159,10 +158,12 @@ function RadarPanelContent({
     return collectRadarCompanyIds(companies, center, radiusKm);
   }, [center, companies, radiusKm]);
 
+  const canAnalyze = Boolean(center && companyIds.length > 0);
+  const visibleItems = canAnalyze ? items : [];
+  const visibleError = canAnalyze ? error : null;
+
   useEffect(() => {
     if (!center || companyIds.length === 0) {
-      setItems([]);
-      setError(null);
       return;
     }
 
@@ -202,7 +203,7 @@ function RadarPanelContent({
           </div>
           <p className="mt-1 text-xs text-slate-500">
             {center
-              ? `${items.length.toLocaleString("it-IT")} suggerimenti su ${companyIds.length.toLocaleString("it-IT")} prospect/clienti nel raggio`
+              ? `${visibleItems.length.toLocaleString("it-IT")} suggerimenti su ${companyIds.length.toLocaleString("it-IT")} prospect/clienti nel raggio`
               : "In attesa della posizione per analizzare il territorio"}
           </p>
         </div>
@@ -253,24 +254,24 @@ function RadarPanelContent({
             <Sparkles className="h-5 w-5 text-indigo-400" />
             <p>Consenti la geolocalizzazione per avviare il radar opportunità.</p>
           </div>
-        ) : isPending && items.length === 0 ? (
+        ) : isPending && visibleItems.length === 0 ? (
           <div className="flex min-h-32 flex-col items-center justify-center gap-2 p-4 text-sm text-slate-500">
             <Loader2 className="h-5 w-5 animate-spin text-indigo-500" />
             Analisi in corso...
           </div>
-        ) : error ? (
-          <div className="p-4 text-center text-sm text-rose-700">{error}</div>
+        ) : visibleError ? (
+          <div className="p-4 text-center text-sm text-rose-700">{visibleError}</div>
         ) : companyIds.length === 0 ? (
           <div className="p-4 text-center text-sm text-slate-500">
             Nessun prospect o cliente geolocalizzato nel raggio selezionato.
           </div>
-        ) : items.length === 0 ? (
+        ) : visibleItems.length === 0 ? (
           <div className="p-4 text-center text-sm text-slate-500">
             Nessuna visita suggerita con i criteri attuali.
           </div>
         ) : (
           <ul className="space-y-3 p-3">
-            {items.map((item, index) => (
+            {visibleItems.map((item, index) => (
               <RadarResultCard key={item.companyId} item={item} rank={index + 1} />
             ))}
           </ul>

@@ -1,6 +1,5 @@
 import "server-only";
 
-import { getCurrentUser } from "@/features/auth/session";
 import {
   isProductFamily,
   PRODUCT_FAMILY_LABELS,
@@ -79,6 +78,8 @@ function mapProductRow(row: {
 export async function listProducts(options?: {
   activeOnly?: boolean;
   family?: ProductFamily;
+  active?: boolean;
+  query?: string;
 }): Promise<{ data: ProductListItem[]; error: string | null }> {
   const supabase = await createServerClient();
   let query = supabase
@@ -87,12 +88,18 @@ export async function listProducts(options?: {
     .order("family", { ascending: true })
     .order("name", { ascending: true });
 
-  if (options?.activeOnly) {
+  if (options?.activeOnly || options?.active === true) {
     query = query.eq("is_active", true);
+  } else if (options?.active === false) {
+    query = query.eq("is_active", false);
   }
 
   if (options?.family) {
     query = query.eq("family", options.family);
+  }
+
+  if (options?.query) {
+    query = query.ilike("name", `%${options.query}%`);
   }
 
   const { data, error } = await query;
@@ -105,6 +112,21 @@ export async function listProducts(options?: {
     .filter((item): item is ProductListItem => item !== null);
 
   return { data: items, error: null };
+}
+
+export async function getProductById(id: string): Promise<ProductListItem | null> {
+  const supabase = await createServerClient();
+  const { data, error } = await supabase
+    .from("products")
+    .select(PRODUCT_SELECT)
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error || !data) {
+    return null;
+  }
+
+  return mapProductRow(data);
 }
 
 export async function saveProduct(
@@ -130,6 +152,52 @@ export async function saveProduct(
   }
 
   return { productId: data.id, error: null };
+}
+
+export async function updateProduct(
+  productId: string,
+  input: SaveProductInput
+): Promise<{ error: string | null }> {
+  const supabase = await createServerClient();
+  const { error } = await supabase
+    .from("products")
+    .update({
+      name: input.name.trim(),
+      family: input.family,
+      description: input.description?.trim() || null,
+      is_active: input.isActive ?? true,
+      price_range_min: input.priceRangeMin ?? null,
+      price_range_max: input.priceRangeMax ?? null,
+      notes: input.notes?.trim() || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", productId);
+
+  return { error: describeDbError(error) };
+}
+
+export async function getProductCatalogSummary(): Promise<{
+  data: { total: number; active: number; byFamily: Record<string, number> };
+  error: string | null;
+}> {
+  const { data, error } = await listProducts();
+  if (error) {
+    return { data: { total: 0, active: 0, byFamily: {} }, error };
+  }
+
+  const byFamily: Record<string, number> = {};
+  let active = 0;
+  for (const product of data) {
+    byFamily[product.family] = (byFamily[product.family] ?? 0) + 1;
+    if (product.is_active) {
+      active += 1;
+    }
+  }
+
+  return {
+    data: { total: data.length, active, byFamily },
+    error: null,
+  };
 }
 
 export async function getProductDashboardMetrics(): Promise<{

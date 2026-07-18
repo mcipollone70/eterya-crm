@@ -25,6 +25,8 @@ import {
   expandBounds,
   subdivideBounds,
 } from "../utils/map-bounds";
+import { unionMapCompanyBrandCaches } from "../utils/map-company-brands-aggregate";
+import { sortMapCompanyBrands } from "../utils/map-brand-markers";
 
 interface MapCompaniesContextValue {
   companies: MapCompany[];
@@ -51,20 +53,48 @@ const MapCompaniesContext = createContext<MapCompaniesContextValue | null>(null)
 async function fetchAllPagesForBounds(
   bounds: MapGeoBounds,
   filters: MapFiltersState,
+  onPage: (companies: MapCompany[]) => void,
   depth = 0
 ): Promise<{ companies: MapCompany[]; error: string | null }> {
   const byId = new Map<string, MapCompany>();
   let offset = 0;
   let hasMore = true;
 
+  const upsert = (company: MapCompany) => {
+    const existing = byId.get(company.id);
+    if (!existing) {
+      byId.set(company.id, company);
+      return;
+    }
+    byId.set(company.id, {
+      ...company,
+      brands: sortMapCompanyBrands(
+        unionMapCompanyBrandCaches(existing.brands, company.brands)
+      ),
+    });
+  };
+
   while (offset < MAP_MAX_FETCH_PER_BOUNDS && hasMore) {
-    const page = await fetchMapCompaniesInBoundsAction(bounds, filters, offset);
+    let page: Awaited<ReturnType<typeof fetchMapCompaniesInBoundsAction>>;
+    try {
+      page = await fetchMapCompaniesInBoundsAction(bounds, filters, offset);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Errore caricamento mappa";
+      return { companies: Array.from(byId.values()), error: message };
+    }
+
     if (page.error) {
       return { companies: Array.from(byId.values()), error: page.error };
     }
 
     for (const company of page.data) {
-      byId.set(company.id, company);
+      upsert(company);
+    }
+
+    // Merge progressivo: i marker appaiono già dalla prima pagina.
+    if (page.data.length > 0) {
+      onPage(page.data);
     }
 
     offset += page.loadedCount;
@@ -73,13 +103,18 @@ async function fetchAllPagesForBounds(
 
   if (hasMore && canSubdivideBounds(bounds, depth)) {
     for (const quadrant of subdivideBounds(bounds)) {
-      const subResult = await fetchAllPagesForBounds(quadrant, filters, depth + 1);
+      const subResult = await fetchAllPagesForBounds(
+        quadrant,
+        filters,
+        onPage,
+        depth + 1
+      );
       if (subResult.error) {
         return { companies: Array.from(byId.values()), error: subResult.error };
       }
 
       for (const company of subResult.companies) {
-        byId.set(company.id, company);
+        upsert(company);
       }
     }
   }
@@ -92,13 +127,18 @@ interface MapCompaniesProviderProps {
   children: ReactNode;
 }
 
+function sortMapCompanies(companies: Iterable<MapCompany>): MapCompany[] {
+  return Array.from(companies).sort((left, right) => left.name.localeCompare(right.name, "it"));
+}
+
 export function MapCompaniesProvider({ stats, children }: MapCompaniesProviderProps) {
   const cacheRef = useRef<Map<string, MapCompany>>(new Map());
-  const [version, setVersion] = useState(0);
+  const [companies, setCompanies] = useState<MapCompany[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inFlightPromisesRef = useRef<Map<string, Promise<MapCompany[]>>>(new Map());
+  const lastCompletedKeyRef = useRef<string | null>(null);
 
   const mergeCompanies = useCallback((incoming: MapCompany[]) => {
     if (incoming.length === 0) {
@@ -108,14 +148,31 @@ export function MapCompaniesProvider({ stats, children }: MapCompaniesProviderPr
     let changed = false;
     for (const company of incoming) {
       const existing = cacheRef.current.get(company.id);
-      if (!existing || existing.name !== company.name) {
-        cacheRef.current.set(company.id, company);
+      // Unione Brand: mai sostituire un payload più ricco con uno più povero
+      // (es. twin merge completo → fetch successivo senza twin in pagina).
+      const mergedBrands = sortMapCompanyBrands(
+        unionMapCompanyBrandCaches(existing?.brands, company.brands)
+      );
+      const brandsChanged =
+        JSON.stringify(existing?.brands ?? []) !== JSON.stringify(mergedBrands);
+      if (
+        !existing ||
+        existing.name !== company.name ||
+        existing.commercial_status !== company.commercial_status ||
+        brandsChanged ||
+        existing.latitude !== company.latitude ||
+        existing.longitude !== company.longitude
+      ) {
+        cacheRef.current.set(company.id, {
+          ...company,
+          brands: mergedBrands,
+        });
         changed = true;
       }
     }
 
     if (changed) {
-      setVersion((current) => current + 1);
+      setCompanies(sortMapCompanies(cacheRef.current.values()));
     }
   }, []);
 
@@ -125,12 +182,17 @@ export function MapCompaniesProvider({ stats, children }: MapCompaniesProviderPr
     }
 
     cacheRef.current.clear();
-    setVersion((current) => current + 1);
+    setCompanies([]);
+    lastCompletedKeyRef.current = null;
   }, []);
 
   const runBoundsFetch = useCallback(
     async (bounds: MapGeoBounds, filters: MapFiltersState): Promise<MapCompany[]> => {
       const key = boundsRequestKey(bounds, filters);
+      if (key === lastCompletedKeyRef.current && cacheRef.current.size > 0) {
+        return Array.from(cacheRef.current.values());
+      }
+
       const inFlight = inFlightPromisesRef.current.get(key);
       if (inFlight) {
         return inFlight;
@@ -141,12 +203,20 @@ export function MapCompaniesProvider({ stats, children }: MapCompaniesProviderPr
         setError(null);
 
         try {
-          const result = await fetchAllPagesForBounds(bounds, filters);
+          const result = await fetchAllPagesForBounds(bounds, filters, mergeCompanies);
           if (result.error) {
             setError(result.error);
           }
           mergeCompanies(result.companies);
+          if (!result.error || result.companies.length > 0) {
+            lastCompletedKeyRef.current = key;
+          }
           return result.companies;
+        } catch (err) {
+          const message =
+            err instanceof Error ? err.message : "Errore caricamento mappa";
+          setError(message);
+          return Array.from(cacheRef.current.values());
         } finally {
           inFlightPromisesRef.current.delete(key);
           setIsLoading(false);
@@ -200,13 +270,6 @@ export function MapCompaniesProvider({ stats, children }: MapCompaniesProviderPr
     },
     [loadForBounds]
   );
-
-  const companies = useMemo(() => {
-    void version;
-    return Array.from(cacheRef.current.values()).sort((left, right) =>
-      left.name.localeCompare(right.name, "it")
-    );
-  }, [version]);
 
   const runtimeStats = useMemo(
     (): MapCompaniesStats => ({

@@ -1,5 +1,4 @@
 import type { GoogleCalendarConnectionView } from "@/lib/google-calendar/types";
-import type { VisitCompanyOption } from "@/features/visits/services/visits.service";
 
 export interface AutoModeAppointment {
   visitId: string;
@@ -18,6 +17,5 @@ export interface AutoModeAppointment {
 export interface AutoModeData {
   appointment: AutoModeAppointment | null;
   calendar: GoogleCalendarConnectionView;
-  companies: VisitCompanyOption[];
   error: string | null;
 }

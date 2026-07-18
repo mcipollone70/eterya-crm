@@ -13,6 +13,7 @@ import { normalizeCommercialStatus } from "@/lib/constants/commercial-status";
 import { isOpenOpportunityStage } from "@/lib/constants/opportunity-pipeline";
 import { createServerClient } from "@/lib/supabase/server";
 import type { MapCompany } from "@/features/maps/types/map";
+import { resolveCrmStatus } from "@/lib/integrations/status";
 import type { CommandCenterData, CommandCenterSyncStatus } from "../types/command-center";
 import { buildCommandCenterDecisions } from "../utils/build-command-center-decisions";
 import { buildCommandCenterMission } from "../utils/build-command-center-mission";
@@ -29,29 +30,11 @@ function resolveGreeting(date: Date): string {
   return "Buonasera";
 }
 
-function buildCrmSyncStatus(
-  calendar: Awaited<ReturnType<typeof getMissionControlData>>["calendar"]
-): CommandCenterSyncStatus {
-  if (!calendar.configured) {
-    return { label: "CRM operativo · Calendar non configurato", variant: "muted" };
-  }
-  if (!calendar.connected) {
-    return { label: "CRM operativo · Calendar da collegare", variant: "warning" };
-  }
-  if (calendar.needsReconnect) {
-    return { label: "CRM operativo · Riconnessione Calendar", variant: "danger" };
-  }
-  if (calendar.lastSyncError) {
-    return { label: "CRM operativo · Sync con errori", variant: "danger" };
-  }
-  if (calendar.lastSyncAt) {
-    const syncTime = new Date(calendar.lastSyncAt).toLocaleTimeString("it-IT", {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-    return { label: `CRM sincronizzato · ${syncTime}`, variant: "success" };
-  }
-  return { label: "CRM sincronizzato", variant: "success" };
+function buildCrmSyncStatus(operational: boolean): CommandCenterSyncStatus {
+  // CRM operativo = auth + Supabase + query principali + Dashboard caricata.
+  // Google Calendar è opzionale e non influenza questo badge.
+  const status = resolveCrmStatus(operational);
+  return { label: status.label, variant: status.variant };
 }
 
 async function fetchMapCompaniesForIds(companyIds: string[]): Promise<MapCompany[]> {
@@ -156,7 +139,7 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
       greeting: resolveGreeting(now),
       weatherLabel: missionData.weatherLabel,
       calendar: missionData.calendar,
-      crmSync: buildCrmSyncStatus(missionData.calendar),
+      crmSync: buildCrmSyncStatus(true),
       mission,
       timeline,
       decisions,
@@ -191,8 +174,10 @@ export async function getCommandCenterData(): Promise<CommandCenterData> {
         lastSyncError: null,
         connectedAt: null,
         needsReconnect: false,
+        syncInProgress: false,
+        temporaryError: false,
       },
-      crmSync: { label: "CRM non disponibile", variant: "muted" },
+      crmSync: buildCrmSyncStatus(false),
       mission: {
         objective: "Configura il CRM per generare la missione del giorno.",
         potentialRevenue: 0,

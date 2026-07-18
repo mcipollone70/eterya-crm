@@ -16,10 +16,15 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react";
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle } from "@/components/ui";
+import { Badge, Button, Card, CardContent } from "@/components/ui";
+import { JoyAiPageLink } from "@/features/joy/components/joy-ai-page-link";
 import { PriorityBadge } from "@/features/companies/components/priority-badge";
 import { formatDistanceKm } from "@/features/maps/utils/geo-distance";
 import { AGENDA_KIND_LABELS } from "@/lib/constants/agenda";
+import {
+  buildCalendarStatusTooltip,
+  resolveCalendarIntegrationStatus,
+} from "@/lib/integrations/status";
 import { formatOpportunityAmount } from "@/lib/constants/opportunity-pipeline";
 import type {
   MissionControlAction,
@@ -36,34 +41,6 @@ const ACTION_ICONS: Record<MissionActionIcon, LucideIcon> = {
   route: Route,
   target: Target,
 };
-
-function calendarStatusLabel(data: MissionControlData["calendar"]): string {
-  if (!data.configured) {
-    return "Google Calendar non configurato";
-  }
-  if (!data.connected) {
-    return "Google Calendar non collegato";
-  }
-  if (data.needsReconnect) {
-    return "Riconnessione Google Calendar richiesta";
-  }
-  if (data.lastSyncError) {
-    return "Sincronizzazione con errori";
-  }
-  return data.googleEmail ? `Sincronizzato · ${data.googleEmail}` : "Google Calendar sincronizzato";
-}
-
-function calendarStatusVariant(
-  data: MissionControlData["calendar"]
-): "success" | "warning" | "danger" | "muted" {
-  if (!data.configured || !data.connected) {
-    return "muted";
-  }
-  if (data.needsReconnect || data.lastSyncError) {
-    return "danger";
-  }
-  return "success";
-}
 
 function MissionActionRow({ action }: { action: MissionControlAction }) {
   const Icon = ACTION_ICONS[action.icon];
@@ -91,6 +68,7 @@ interface MissionControlDashboardProps {
 }
 
 export function MissionControlDashboard({ data }: MissionControlDashboardProps) {
+  const calendarStatus = resolveCalendarIntegrationStatus(data.calendar);
   const todayKpis = [
     {
       label: "Visite oggi",
@@ -142,7 +120,7 @@ export function MissionControlDashboard({ data }: MissionControlDashboardProps) 
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
             <p className="text-sm font-semibold uppercase tracking-wide text-indigo-700">
-              Mission Control
+              Centro Operativo
             </p>
             <h1 className="mt-1 text-2xl font-bold text-slate-900 sm:text-3xl">
               Buongiorno {data.userName}
@@ -156,22 +134,29 @@ export function MissionControlDashboard({ data }: MissionControlDashboardProps) 
               {data.weatherLabel}
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant={calendarStatusVariant(data.calendar)}>
-                <CalendarDays className="mr-1 h-3.5 w-3.5" />
-                {calendarStatusLabel(data.calendar)}
+              <Badge variant={data.crmSync.variant}>{data.crmSync.label}</Badge>
+              <Badge
+                variant={calendarStatus.variant}
+                title={buildCalendarStatusTooltip(data.calendar)}
+              >
+                {calendarStatus.label}
               </Badge>
-              {!data.calendar.connected && data.calendar.configured ? (
+              {data.calendar.configured &&
+              (!data.calendar.connected || data.calendar.needsReconnect) ? (
                 <Link href="/settings" className="text-xs font-medium text-indigo-600 hover:underline">
-                  Collega calendario
+                  {data.calendar.needsReconnect ? "Ricollega calendario" : "Collega calendario"}
                 </Link>
               ) : null}
             </div>
-            <Link href="/auto" className="w-full sm:w-auto">
-              <Button size="lg" className="h-auto min-h-11 w-full gap-2 sm:w-auto">
-                <Play className="h-4 w-4" />
-                Inizia giornata
-              </Button>
-            </Link>
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:items-end">
+              <JoyAiPageLink prompt="Inizia la giornata" className="w-full justify-center sm:w-auto" />
+              <Link href="/joy-ai?q=Inizia%20la%20giornata" className="w-full sm:w-auto">
+                <Button size="lg" className="h-auto min-h-11 w-full gap-2 sm:w-auto">
+                  <Play className="h-4 w-4" />
+                  Inizia la giornata
+                </Button>
+              </Link>
+            </div>
           </div>
         </div>
       </section>

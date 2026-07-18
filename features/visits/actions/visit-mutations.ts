@@ -29,7 +29,7 @@ function revalidateVisitPaths(companyId?: string) {
 
 export async function saveVisitAction(
   input: SaveVisitInput
-): Promise<{ success: boolean; message: string }> {
+): Promise<{ success: boolean; message: string; visitId?: string }> {
   if (!isSupabaseConfigured()) {
     return { success: false, message: NOT_CONFIGURED_MESSAGE };
   }
@@ -61,12 +61,13 @@ export async function saveVisitAction(
   return {
     success: true,
     message: completedExisting ? "Visita completata." : "Visita registrata.",
+    visitId,
   };
 }
 
 export async function scheduleVisitAction(
   input: ScheduleVisitInput
-): Promise<{ success: boolean; message: string }> {
+): Promise<{ success: boolean; message: string; visitId?: string }> {
   if (!isSupabaseConfigured()) {
     return { success: false, message: NOT_CONFIGURED_MESSAGE };
   }
@@ -93,7 +94,7 @@ export async function scheduleVisitAction(
 
   await syncVisitCalendar(visitId, "upsert");
 
-  return { success: true, message: "Visita pianificata." };
+  return { success: true, message: "Visita pianificata.", visitId };
 }
 
 export async function completeScheduledVisitAction(

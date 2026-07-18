@@ -10,6 +10,36 @@ export function isAnonGrantError(error: PostgrestError): boolean {
   return error.code === "42501" && /\banon\b/i.test(error.hint ?? "");
 }
 
+/** `true` se la tabella/relazione non esiste nello schema esposto a PostgREST. */
+export function isMissingTableError(error: PostgrestError | null): boolean {
+  if (!error) {
+    return false;
+  }
+  return (
+    error.code === "42P01" ||
+    error.code === "PGRST205" ||
+    /relation .* does not exist/i.test(error.message) ||
+    /schema cache/i.test(error.message) ||
+    /could not find the table/i.test(error.message)
+  );
+}
+
+/**
+ * Errori di infrastruttura su integrazioni opzionali (tabelle/GRANT mancanti):
+ * non sono errori di sync runtime del CRM.
+ */
+export function isOptionalIntegrationUnavailableError(
+  error: PostgrestError | null
+): boolean {
+  if (!error) {
+    return false;
+  }
+  if (isMissingTableError(error)) {
+    return true;
+  }
+  return error.code === "42501";
+}
+
 /**
  * Traduce un errore Postgrest in un messaggio utente.
  *

@@ -40,6 +40,13 @@ import {
   clampCompaniesPage,
   isCompaniesPageSize,
 } from "../constants/companies-pagination";
+import {
+  fetchCompanyBrandsByCompanyIds,
+  resolveCompanyIdsForBrandAndRelationship,
+  resolveCompanyIdsForBrandSlugs,
+  type BrandAssociationView,
+} from "@/features/brands/services/company-brands-batch.service";
+import type { BrandMatchMode } from "@/features/brands/utils/brand-shared";
 
 export type Company = Tables<"companies">;
 export type CompanyUpdate = UpdateTables<"companies">;
@@ -61,6 +68,8 @@ export interface CompanyListItem {
   priority_tier: PriorityTier;
   priority_excluded: boolean;
   last_visit_at: string | null;
+  /** Brand da company_brands (batch, no N+1). */
+  brands: BrandAssociationView[];
 }
 
 export interface ListCompaniesOptions {
@@ -71,8 +80,43 @@ export interface ListCompaniesOptions {
   productFamily?: ProductFamily | null;
   interestLevel?: InterestLevel | null;
   purchasedProductId?: string | null;
+  /** Slug ufficiali brands.slug (eterya, zanzar, …). */
+  brandSlugs?: string[] | null;
+  brandMatchMode?: BrandMatchMode | null;
   page?: number;
   pageSize?: number;
+}
+
+function intersectIdLists(
+  left: string[] | null | undefined,
+  right: string[] | null | undefined
+): string[] | null {
+  if (left == null && right == null) return null;
+  if (left == null) return right ?? null;
+  if (right == null) return left;
+  const rightSet = new Set(right);
+  return left.filter((id) => rightSet.has(id));
+}
+
+async function attachBrandsToCompanyListItems(
+  items: CompanyListItem[]
+): Promise<CompanyListItem[]> {
+  if (items.length === 0) return items;
+  const commercialByCompanyId = new Map(
+    items.map((item) => [item.id, item.commercial_status] as const)
+  );
+  const { byCompanyId, error } = await fetchCompanyBrandsByCompanyIds(
+    items.map((item) => item.id),
+    { commercialByCompanyId }
+  );
+  if (error) {
+    // Non bloccare l'elenco: badge brand vuoti.
+    return items.map((item) => ({ ...item, brands: item.brands ?? [] }));
+  }
+  return items.map((item) => ({
+    ...item,
+    brands: byCompanyId.get(item.id) ?? [],
+  }));
 }
 
 export type CommercialStatusCounts = Record<DashboardCommercialStatus, number>;
@@ -388,6 +432,7 @@ function mapListItem(row: CompanyListRow): Omit<
     geocode_status: row.geocode_status,
     created_at: row.created_at,
     last_visit_at: row.last_visit_at ?? null,
+    brands: [],
   };
 }
 
@@ -530,6 +575,14 @@ export async function listCompanies(
   const offset = (page - 1) * pageSize;
   const usePriorityProcessing = Boolean(options?.priorityTier || options?.sortByPriority);
   const supabase = await createServerClient();
+  const brandSlugs = (options?.brandSlugs ?? []).filter(Boolean);
+  const brandMatchMode = options?.brandMatchMode ?? "or";
+  /** Con Brand+stato: filtro su company_brands.relationship_status (fallback commercial). */
+  const brandHandlesCommercial =
+    brandSlugs.length > 0 && Boolean(commercialStatus);
+  /** Stato legacy su companies solo se non già filtrato via Brand. */
+  const statusForCompanyColumn =
+    commercialStatus && !brandHandlesCommercial ? commercialStatus : null;
 
   const productFilterResult = await resolveCompanyIdsForProductFilters({
     productFamily: options?.productFamily,
@@ -545,6 +598,43 @@ export async function listCompanies(
     return { data: [], count: 0, error: null };
   }
 
+  let brandCompanyIds: string[] | null = null;
+  if (brandSlugs.length > 0) {
+    if (commercialStatus) {
+      const brandRel = await resolveCompanyIdsForBrandAndRelationship({
+        brandSlugs,
+        commercialStatus,
+        matchMode: brandMatchMode,
+      });
+      if (brandRel.error) {
+        return { data: [], count: 0, error: brandRel.error };
+      }
+      brandCompanyIds = brandRel.companyIds;
+    } else {
+      const brandOnly = await resolveCompanyIdsForBrandSlugs({
+        brandSlugs,
+        matchMode: brandMatchMode,
+      });
+      if (brandOnly.error) {
+        return { data: [], count: 0, error: brandOnly.error };
+      }
+      brandCompanyIds = brandOnly.companyIds;
+    }
+
+    if (brandCompanyIds && brandCompanyIds.length === 0) {
+      return { data: [], count: 0, error: null };
+    }
+  }
+
+  const scopedCompanyIds = intersectIdLists(
+    productFilterResult.companyIds,
+    brandCompanyIds
+  );
+
+  if (scopedCompanyIds && scopedCompanyIds.length === 0) {
+    return { data: [], count: 0, error: null };
+  }
+
   let query = supabase.from("companies").select(COMPANY_LIST_COLUMNS, { count: "exact" });
 
   if (options?.sortByLastVisit && !options?.sortByPriority) {
@@ -557,12 +647,12 @@ export async function listCompanies(
     query = query.range(offset, offset + pageSize - 1);
   }
 
-  if (commercialStatus) {
-    query = applyCommercialStatusFilter(query, commercialStatus);
+  if (statusForCompanyColumn) {
+    query = applyCommercialStatusFilter(query, statusForCompanyColumn);
   }
 
-  if (productFilterResult.companyIds) {
-    query = query.in("id", productFilterResult.companyIds);
+  if (scopedCompanyIds) {
+    query = query.in("id", scopedCompanyIds);
   }
 
   if (options?.lastVisitFilter) {
@@ -595,11 +685,11 @@ export async function listCompanies(
         retryQuery = retryQuery.order("created_at", { ascending: false });
       }
 
-      if (commercialStatus) {
-        retryQuery = applyCommercialStatusFilter(retryQuery, commercialStatus);
+      if (statusForCompanyColumn) {
+        retryQuery = applyCommercialStatusFilter(retryQuery, statusForCompanyColumn);
       }
-      if (productFilterResult.companyIds) {
-        retryQuery = retryQuery.in("id", productFilterResult.companyIds);
+      if (scopedCompanyIds) {
+        retryQuery = retryQuery.in("id", scopedCompanyIds);
       }
       if (options?.lastVisitFilter) {
         retryQuery = applyLastVisitFilter(retryQuery, options.lastVisitFilter);
@@ -627,7 +717,7 @@ export async function listCompanies(
       ? fallbackQuery
       : fallbackQuery.range(offset, offset + pageSize - 1);
 
-    if (commercialStatus && commercialStatus !== "prospect") {
+    if (statusForCompanyColumn && statusForCompanyColumn !== "prospect") {
       return { data: [], count: 0, error: describeDbError(error) };
     }
 
@@ -635,8 +725,8 @@ export async function listCompanies(
       fallbackQuery = applyLastVisitFilter(fallbackQuery, options.lastVisitFilter);
     }
 
-    if (productFilterResult.companyIds) {
-      fallbackQuery = fallbackQuery.in("id", productFilterResult.companyIds);
+    if (scopedCompanyIds) {
+      fallbackQuery = fallbackQuery.in("id", scopedCompanyIds);
     }
 
     const fallback = await fallbackQuery;
@@ -656,12 +746,12 @@ export async function listCompanies(
         ? legacyQuery
         : legacyQuery.range(offset, offset + pageSize - 1);
 
-      if (commercialStatus) {
-        legacyQuery = applyCommercialStatusFilter(legacyQuery, commercialStatus);
+      if (statusForCompanyColumn) {
+        legacyQuery = applyCommercialStatusFilter(legacyQuery, statusForCompanyColumn);
       }
 
-      if (productFilterResult.companyIds) {
-        legacyQuery = legacyQuery.in("id", productFilterResult.companyIds);
+      if (scopedCompanyIds) {
+        legacyQuery = legacyQuery.in("id", scopedCompanyIds);
       }
 
       const legacy = await legacyQuery;
@@ -681,12 +771,12 @@ export async function listCompanies(
             .select(COMPANY_LIST_COLUMNS_FALLBACK.replace(",last_visit_at", ""), { count: "exact" })
             .order("created_at", { ascending: false });
 
-          if (commercialStatus) {
-            batchQuery = applyCommercialStatusFilter(batchQuery, commercialStatus);
+          if (statusForCompanyColumn) {
+            batchQuery = applyCommercialStatusFilter(batchQuery, statusForCompanyColumn);
           }
 
-          if (productFilterResult.companyIds) {
-            batchQuery = batchQuery.in("id", productFilterResult.companyIds);
+          if (scopedCompanyIds) {
+            batchQuery = batchQuery.in("id", scopedCompanyIds);
           }
 
           const result = await batchQuery.range(from, to);
@@ -708,14 +798,18 @@ export async function listCompanies(
         const safePage = clampCompaniesPage(page, enriched.length, pageSize);
         const pageOffset = (safePage - 1) * pageSize;
         return {
-          data: enriched.slice(pageOffset, pageOffset + pageSize),
+          data: await attachBrandsToCompanyListItems(
+            enriched.slice(pageOffset, pageOffset + pageSize)
+          ),
           count: enriched.length,
           error: null,
         };
       }
 
       return {
-        data: await enrichListItemsWithPriority(legacyRows, options, { filterExcluded: false }),
+        data: await attachBrandsToCompanyListItems(
+          await enrichListItemsWithPriority(legacyRows, options, { filterExcluded: false })
+        ),
         count: legacy.count ?? 0,
         error: null,
       };
@@ -734,12 +828,12 @@ export async function listCompanies(
         batchQuery = batchQuery.order("created_at", { ascending: false });
       }
 
-      if (commercialStatus) {
-        batchQuery = applyCommercialStatusFilter(batchQuery, commercialStatus);
+      if (statusForCompanyColumn) {
+        batchQuery = applyCommercialStatusFilter(batchQuery, statusForCompanyColumn);
       }
 
-      if (productFilterResult.companyIds) {
-        batchQuery = batchQuery.in("id", productFilterResult.companyIds);
+      if (scopedCompanyIds) {
+        batchQuery = batchQuery.in("id", scopedCompanyIds);
       }
 
       if (options?.lastVisitFilter) {
@@ -777,14 +871,18 @@ export async function listCompanies(
     const pageOffset = (safePage - 1) * pageSize;
 
     return {
-      data: sorted.slice(pageOffset, pageOffset + pageSize),
+      data: await attachBrandsToCompanyListItems(
+        sorted.slice(pageOffset, pageOffset + pageSize)
+      ),
       count: sorted.length,
       error: null,
     };
   }
 
   return {
-    data: await enrichListItemsWithPriority(data ?? [], options, { filterExcluded: false }),
+    data: await attachBrandsToCompanyListItems(
+      await enrichListItemsWithPriority(data ?? [], options, { filterExcluded: false })
+    ),
     count: count ?? 0,
     error: null,
   };

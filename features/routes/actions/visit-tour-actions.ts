@@ -8,12 +8,17 @@ import {
 import {
   deleteVisitTour,
   duplicateVisitTour,
-  getVisitTourById,
   listVisitTourAgents,
   listVisitTours,
   renameVisitTour,
+  updateVisitTourStatus,
 } from "../services/visit-tour-saved.service";
-import type { VisitTourLoadedState, VisitTourListFilters, VisitTourGeoBounds } from "../types/visit-tour";
+import type {
+  VisitTourLoadedState,
+  VisitTourListFilters,
+  VisitTourGeoBounds,
+  VisitTourSaveStatus,
+} from "../types/visit-tour";
 import { buildDefaultTourName, buildVisitTourLoadedState } from "../utils/visit-tour-restore";
 import type { VisitTourOptimizeContext } from "@/lib/visit-tour/scoring";
 
@@ -66,6 +71,13 @@ export async function duplicateVisitTourAction(tourId: string) {
 
 export async function deleteVisitTourAction(tourId: string) {
   return deleteVisitTour(tourId);
+}
+
+export async function updateVisitTourStatusAction(
+  tourId: string,
+  status: VisitTourSaveStatus
+) {
+  return updateVisitTourStatus(tourId, status);
 }
 
 export async function loadVisitTourAction(tourId: string): Promise<{

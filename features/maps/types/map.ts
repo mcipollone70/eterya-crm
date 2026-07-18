@@ -1,4 +1,8 @@
-import type { CommercialStatus, GeocodeStatus } from "@/lib/supabase/types";
+import type {
+  BrandRelationshipStatus,
+  CommercialStatus,
+  GeocodeStatus,
+} from "@/lib/supabase/types";
 import type { NearbyRadiusKm } from "../constants/map-config";
 import { NEARBY_COMMERCIAL_STATUS_FILTERS } from "../constants/map-config";
 
@@ -13,6 +17,18 @@ export interface MapCompaniesStats {
   isTruncated: boolean;
 }
 
+/** Marchio associato a un'azienda per marker/popup mappa. */
+export interface MapCompanyBrand {
+  brand_id: string;
+  name: string;
+  slug: string;
+  color: string | null;
+  is_primary: boolean;
+  relationship_status: BrandRelationshipStatus;
+  /** Presente solo se la colonna esiste sul DB live. */
+  customer_code?: string | null;
+}
+
 export interface MapCompany {
   id: string;
   name: string;
@@ -24,6 +40,8 @@ export interface MapCompany {
   geocode_status: GeocodeStatus;
   latitude: number;
   longitude: number;
+  /** Brand da company_brands (primary → alfabetico). Opzionale per compatibilità moduli non-mappa. */
+  brands?: MapCompanyBrand[];
 }
 
 export interface MapViewportState {
@@ -54,6 +72,9 @@ export interface MapPageBootstrap {
 
 export interface MapFiltersState {
   commercialStatus: CommercialStatus | "";
+  /** Slug brands.slug selezionati (vuoto = tutti). */
+  brandSlugs: string[];
+  brandMatchMode: "or" | "and";
   province: string;
   city: string;
   geolocatedOnly: boolean;
@@ -61,6 +82,8 @@ export interface MapFiltersState {
 
 export const DEFAULT_MAP_FILTERS: MapFiltersState = {
   commercialStatus: "",
+  brandSlugs: [],
+  brandMatchMode: "or",
   province: "",
   city: "",
   geolocatedOnly: true,

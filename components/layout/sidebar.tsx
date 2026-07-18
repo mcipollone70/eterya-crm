@@ -15,14 +15,28 @@ import {
   Target,
   Package,
   BarChart3,
+  FileBarChart,
+  LineChart,
+  CalendarRange,
+  Bell,
+  ShieldCheck,
+  DatabaseBackup,
+  History,
   Settings,
   ChevronLeft,
   ChevronRight,
   Sparkles,
   FileUp,
+  FileText,
+  ShoppingCart,
+  Boxes,
+  LifeBuoy,
+  FolderOpen,
   Car,
   Bot,
   Shield,
+  BookOpen,
+  Radar,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/utils/cn";
@@ -41,12 +55,26 @@ const iconMap: Record<string, LucideIcon> = {
   Target,
   Package,
   BarChart3,
+  FileBarChart,
+  LineChart,
+  CalendarRange,
+  Bell,
+  ShieldCheck,
+  DatabaseBackup,
+  History,
   Settings,
   FileUp,
+  FileText,
+  ShoppingCart,
+  Boxes,
+  LifeBuoy,
+  FolderOpen,
   Sparkles,
   Car,
   Bot,
   Shield,
+  BookOpen,
+  Radar,
 };
 
 function isNavActive(pathname: string, href: string): boolean {
@@ -96,54 +124,76 @@ export function Sidebar({
         )}
       </div>
 
-      <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
-        {NAV_ITEMS.map((item) => {
+      <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-4">
+        {NAV_ITEMS.map((item, index) => {
           const Icon = iconMap[item.icon];
           const isActive = isNavActive(pathname, item.href);
+          const showSectionLabel =
+            !collapsed &&
+            item.section != null &&
+            item.section !== NAV_ITEMS[index - 1]?.section;
 
           return (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={onNavigate}
-              className={cn(
-                "group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
-                isActive
-                  ? "bg-indigo-600/20 text-indigo-300"
-                  : "text-slate-400 hover:bg-slate-800 hover:text-white"
+            <div key={item.href}>
+              {showSectionLabel && (
+                <p className="px-3 pb-1 pt-4 text-[10px] font-semibold uppercase tracking-wider text-slate-600 first:pt-0">
+                  {item.section}
+                </p>
               )}
-              title={collapsed ? item.label : undefined}
-            >
-              {Icon && <Icon className="h-[18px] w-[18px] shrink-0" />}
-              {!collapsed && <span className="flex-1 truncate">{item.label}</span>}
-            </Link>
+              {collapsed && item.section != null && item.section !== NAV_ITEMS[index - 1]?.section && index > 0 && (
+                <div className="my-2 border-t border-slate-800" />
+              )}
+              <Link
+                href={item.href}
+                onClick={onNavigate}
+                className={cn(
+                  "group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                  isActive
+                    ? "bg-indigo-600/20 text-indigo-300"
+                    : "text-slate-400 hover:bg-slate-800 hover:text-white"
+                )}
+                title={collapsed ? item.label : undefined}
+              >
+                {Icon && <Icon className="h-[18px] w-[18px] shrink-0" />}
+                {!collapsed && <span className="flex-1 truncate">{item.label}</span>}
+              </Link>
+            </div>
           );
         })}
       </nav>
 
-      <div className="border-t border-slate-800 px-3 py-3">
-        {adminItems.map((item) => {
-          const Icon = iconMap[item.icon];
-          const isActive = isNavActive(pathname, item.href);
+      <div className="shrink-0 border-t border-slate-800 px-3 py-3">
+        {adminItems.length > 0 && (
+          <div className="mb-1 max-h-48 overflow-y-auto">
+            {!collapsed && (
+              <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-600">
+                Amministrazione
+              </p>
+            )}
+            {adminItems.map((item) => {
+              const Icon = iconMap[item.icon];
+              const isActive = isNavActive(pathname, item.href);
 
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={onNavigate}
-              className={cn(
-                "mb-1 flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
-                isActive
-                  ? "bg-indigo-600/20 text-indigo-300"
-                  : "text-slate-400 hover:bg-slate-800 hover:text-white"
-              )}
-              title={collapsed ? item.label : undefined}
-            >
-              {Icon && <Icon className="h-[18px] w-[18px] shrink-0" />}
-              {!collapsed && <span>{item.label}</span>}
-            </Link>
-          );
-        })}
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={onNavigate}
+                  className={cn(
+                    "mb-1 flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                    isActive
+                      ? "bg-indigo-600/20 text-indigo-300"
+                      : "text-slate-400 hover:bg-slate-800 hover:text-white"
+                  )}
+                  title={collapsed ? item.label : undefined}
+                >
+                  {Icon && <Icon className="h-[18px] w-[18px] shrink-0" />}
+                  {!collapsed && <span>{item.label}</span>}
+                </Link>
+              );
+            })}
+          </div>
+        )}
 
         {NAV_BOTTOM.map((item) => {
           const Icon = iconMap[item.icon];

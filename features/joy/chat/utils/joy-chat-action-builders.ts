@@ -9,21 +9,37 @@ export interface JoyCompanyActionSource {
   longitude?: number | null;
 }
 
+/** Continues the Joy conversation with an operational prompt (no CRM page lecture). */
+export function buildJoyPromptAction(
+  id: string,
+  label: string,
+  prompt: string
+): JoyChatActionButton {
+  return {
+    id,
+    kind: "open_page",
+    label,
+    href: `/joy-ai?q=${encodeURIComponent(prompt)}`,
+  };
+}
+
 export function buildCompanyChatActions(
   company: JoyCompanyActionSource,
   prefix: string
 ): JoyChatActionButton[] {
+  const shortName =
+    company.name.length > 22 ? `${company.name.slice(0, 20)}…` : company.name;
   const actions: JoyChatActionButton[] = [
     {
       id: `${prefix}-open`,
       kind: "open_company",
-      label: "Apri azienda",
+      label: `Scheda ${shortName}`,
       href: `/companies/${company.id}`,
     },
     {
       id: `${prefix}-plan`,
       kind: "plan_visit",
-      label: "Pianifica visita",
+      label: "Prepara visita",
       href: `/visits?company=${company.id}`,
     },
     {
@@ -35,7 +51,7 @@ export function buildCompanyChatActions(
     {
       id: `${prefix}-followup`,
       kind: "follow_up",
-      label: "Follow-up",
+      label: "Prepara richiamo",
       href: `/activities?section=followups&fcompany=${company.id}`,
     },
   ];

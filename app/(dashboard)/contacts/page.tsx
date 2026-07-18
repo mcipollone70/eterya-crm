@@ -10,9 +10,18 @@ export default async function Page({
   searchParams: Promise<{
     page?: string;
     page_size?: string;
+    brands?: string;
+    brand_mode?: string;
   }>;
 }) {
-  const { page, page_size } = await searchParams;
+  const { page, page_size, brands, brand_mode } = await searchParams;
 
-  return <ContactsPage page={page} pageSize={page_size} />;
+  return (
+    <ContactsPage
+      page={page}
+      pageSize={page_size}
+      brands={brands}
+      brandMode={brand_mode}
+    />
+  );
 }

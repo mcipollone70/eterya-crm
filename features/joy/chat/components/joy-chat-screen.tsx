@@ -5,10 +5,11 @@ import { useRouter } from "next/navigation";
 import { Bot, Loader2, Send, Sparkles, Trash2, Zap } from "lucide-react";
 import { Button } from "@/components/ui";
 import { sendJoyChatMessageAction } from "../actions/joy-chat-actions";
-import { executeJoyCopilotAction } from "../actions/joy-copilot-actions";
-import type { JoyChatMessage } from "../types/joy-chat";
+import { executeJoyCopilotActionBatch } from "../actions/joy-copilot-actions";
+import type { JoyChatMessage, JoyDebriefFieldKey } from "../types/joy-chat";
 import { JoyChatMessageBubble } from "./joy-chat-message";
 import { JoyCopilotToast } from "./joy-copilot-toast";
+import { filterDebriefOperationsForConfirm } from "../utils/parse-joy-debrief";
 
 export const JOY_CHAT_STORAGE_KEY = "joy-chat-history";
 const MAX_STORED_MESSAGES = 80;
@@ -72,7 +73,9 @@ export function JoyChatScreen() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
+  // Hydrate from localStorage after mount (avoids SSR/localStorage mismatch).
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional post-mount hydration
     setMessages(loadStoredMessages());
     setHydrated(true);
   }, []);
@@ -122,7 +125,20 @@ export function JoyChatScreen() {
       setExecutingCopilotId(pending.id);
 
       try {
-        const result = await executeJoyCopilotAction(pending.operation);
+        const filtered = filterDebriefOperationsForConfirm(pending);
+        if (!filtered.operation) {
+          setToast({
+            message: "Seleziona almeno un campo da salvare.",
+            variant: "error",
+          });
+          setExecutingCopilotId(null);
+          return;
+        }
+
+        const result = await executeJoyCopilotActionBatch(
+          filtered.operation,
+          filtered.followUpOperations
+        );
 
         setMessages((current) =>
           current.map((message) => {
@@ -133,11 +149,11 @@ export function JoyChatScreen() {
               ...message,
               pendingAction: {
                 ...message.pendingAction,
-                status: result.success ? "executed" : "pending",
+                status: result.success ? "executed" : "failed",
               },
               content: result.success
                 ? `${message.content}\n\n✓ ${result.message}`
-                : message.content,
+                : `${message.content}\n\n✗ ${result.message}`,
             };
           })
         );
@@ -169,6 +185,47 @@ export function JoyChatScreen() {
           pendingAction: {
             ...message.pendingAction,
             status: "cancelled",
+          },
+        };
+      })
+    );
+  }, []);
+
+  const handleModifyCopilot = useCallback(
+    (messageId: string) => {
+      handleCancelCopilot(messageId);
+      setInput("Modifica il giro: ");
+    },
+    [handleCancelCopilot]
+  );
+
+  const handleRegenerateCopilot = useCallback(
+    (messageId: string) => {
+      handleCancelCopilot(messageId);
+      sendMessage("Rigenera il giro");
+    },
+    [handleCancelCopilot, sendMessage]
+  );
+
+  const handleToggleDebriefField = useCallback((messageId: string, key: JoyDebriefFieldKey) => {
+    setMessages((current) =>
+      current.map((message) => {
+        if (message.id !== messageId || !message.pendingAction?.debriefFields) {
+          return message;
+        }
+        const fields = message.pendingAction.debriefFields.map((field) =>
+          field.key === key ? { ...field, enabled: !field.enabled } : field
+        );
+        const enabledLabels = fields.filter((f) => f.enabled).map((f) => f.label);
+        return {
+          ...message,
+          pendingAction: {
+            ...message.pendingAction,
+            debriefFields: fields,
+            description:
+              enabledLabels.length > 0
+                ? `Salverò: ${enabledLabels.join(", ")}`
+                : "Nessun campo selezionato",
           },
         };
       })
@@ -260,6 +317,9 @@ export function JoyChatScreen() {
               executingCopilotId={executingCopilotId}
               onConfirmCopilot={handleConfirmCopilot}
               onCancelCopilot={handleCancelCopilot}
+              onModifyCopilot={handleModifyCopilot}
+              onRegenerateCopilot={handleRegenerateCopilot}
+              onToggleDebriefField={handleToggleDebriefField}
             />
           ))}
 

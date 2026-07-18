@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { Loader2, Plus } from "lucide-react";
 import { Button } from "@/components/ui";
 import {
-  INTEREST_LEVEL_OPTIONS,
   PRODUCT_FAMILY_OPTIONS,
   type ProductFamily,
 } from "@/lib/constants/product-catalog";

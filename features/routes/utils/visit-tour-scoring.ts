@@ -18,17 +18,21 @@ const COMMERCIAL_POTENTIAL: Record<CommercialStatus, number> = {
   non_interessato: 5,
 };
 
-export function getRouteDistanceBand(distanceKm: number): RouteDistanceBand | null {
+export function getRouteDistanceBand(
+  distanceKm: number,
+  maxKm: number = ROUTE_BAND_LIMITS_KM["2km"]
+): RouteDistanceBand | null {
+  if (distanceKm > maxKm) {
+    return null;
+  }
+
   if (distanceKm <= ROUTE_BAND_LIMITS_KM["500m"]) {
     return "500m";
   }
   if (distanceKm <= ROUTE_BAND_LIMITS_KM["1km"]) {
     return "1km";
   }
-  if (distanceKm <= ROUTE_BAND_LIMITS_KM["2km"]) {
-    return "2km";
-  }
-  return null;
+  return "2km";
 }
 
 export function computePriorityScore(

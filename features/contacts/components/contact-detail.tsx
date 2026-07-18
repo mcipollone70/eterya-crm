@@ -14,12 +14,27 @@ import {
 } from "@/components/ui";
 import { deleteContactAction } from "../actions/contact-mutations";
 import type { Contact } from "../services/contacts.service";
+import { BrandBadges } from "@/features/brands/components/brand-badges";
+import { listCompanyBrands } from "@/features/brands/services/company-brands.service";
+import type { BrandAssociationView } from "@/features/brands/utils/brand-shared";
+import { BRAND_RELATIONSHIP_STATUS_LABELS } from "@/lib/constants/brand-relationship";
 
 interface ContactDetailProps {
   contact: Contact & { company: { name: string } | null };
 }
 
-export function ContactDetail({ contact }: ContactDetailProps) {
+export async function ContactDetail({ contact }: ContactDetailProps) {
+  const brandsResult = await listCompanyBrands(contact.company_id);
+  const brands: BrandAssociationView[] = brandsResult.data.map((item) => ({
+    brand_id: item.brand_id,
+    name: item.brand_name,
+    slug: item.brand_slug,
+    color: item.brand_color,
+    is_primary: item.is_primary,
+    relationship_status: item.relationship_status,
+    customer_code: item.customer_code,
+  }));
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -57,6 +72,29 @@ export function ContactDetail({ contact }: ContactDetailProps) {
                 >
                   {contact.company?.name ?? "—"}
                 </Link>
+              }
+              span
+            />
+            <DescriptionItem
+              label="Brand azienda"
+              value={
+                brands.length === 0 ? (
+                  <span className="text-slate-400">Nessun brand</span>
+                ) : (
+                  <div className="space-y-2">
+                    <BrandBadges brands={brands} showStatus />
+                    <ul className="space-y-1 text-xs text-slate-600">
+                      {brands.map((brand) => (
+                        <li key={brand.brand_id}>
+                          <span className="font-medium">{brand.name}</span>
+                          {" · "}
+                          {BRAND_RELATIONSHIP_STATUS_LABELS[brand.relationship_status]}
+                          {brand.is_primary ? " · Principale" : ""}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )
               }
               span
             />

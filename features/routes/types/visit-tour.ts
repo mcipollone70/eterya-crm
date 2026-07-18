@@ -6,7 +6,8 @@ import type {
   VisitTourOptimizeStop,
 } from "@/lib/visit-tour/optimize";
 
-export type VisitTourDestinationType = "company" | "address";
+export type VisitTourDestinationType = "company" | "address" | "agenda";
+export type VisitTourOriginType = "current" | "company" | "address";
 
 export type VisitTourSortKey = "distance" | "priority" | "lastVisit" | "potential";
 
@@ -22,13 +23,16 @@ export interface VisitTourCompany {
   name: string;
   city: string | null;
   province: string | null;
+  address: string | null;
   phone: string | null;
+  email: string | null;
   commercial_status: CommercialStatus;
   status: CompanyStatus;
   latitude: number;
   longitude: number;
   revenue: number | null;
   lastVisitAt: string | null;
+  nextActivityAt: string | null;
   import_payload: Json | null;
 }
 
@@ -43,6 +47,13 @@ export interface VisitTourCandidate extends VisitTourCompany {
 export interface VisitTourRoute {
   coordinates: GeoPoint[];
   distanceKm: number;
+  /** Durata guida OSRM in minuti (opzionale; fallback stimato se assente). */
+  durationMinutes?: number;
+}
+
+export interface VisitTourRouteLeg {
+  distanceKm: number;
+  durationMinutes: number;
 }
 
 export interface VisitTourDestination {
@@ -53,6 +64,32 @@ export interface VisitTourDestination {
 }
 
 export const ROUTE_CORRIDOR_KM = 2;
+
+export interface VisitTourPlannerFilters {
+  commercialStatus: CommercialStatus | "";
+  companyStatus: CompanyStatus | "";
+  province: string;
+  municipality: string;
+}
+
+export interface VisitTourPlannerFormState {
+  tourDate: string;
+  departureTime: string;
+  maxArrivalTime: string;
+  corridorRadiusKm: number;
+  visitDurationMin: number;
+  filters: VisitTourPlannerFilters;
+}
+
+export interface VisitTourAgendaOption {
+  id: string;
+  label: string;
+  scheduledAt: string;
+  companyId: string | null;
+  companyName: string | null;
+  lat: number | null;
+  lng: number | null;
+}
 export const ROUTE_BAND_LIMITS_KM = {
   "500m": 0.5,
   "1km": 1,
@@ -61,7 +98,12 @@ export const ROUTE_BAND_LIMITS_KM = {
 
 export type VisitTourPlannerMode = "corridor" | "optimize";
 
-export type VisitTourSaveStatus = "draft" | "planned" | "completed" | "cancelled";
+export type VisitTourSaveStatus =
+  | "draft"
+  | "planned"
+  | "in_progress"
+  | "completed"
+  | "cancelled";
 
 export type VisitTourListSortKey = "date" | "name";
 
@@ -105,6 +147,8 @@ export interface VisitTourListItem {
   tourDate: string;
   userId: string;
   agentLabel: string;
+  originLabel: string;
+  destinationLabel: string;
   stopCount: number;
   totalDistanceKm: number | null;
   estimatedMinutes: number | null;

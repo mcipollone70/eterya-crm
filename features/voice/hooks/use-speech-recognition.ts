@@ -15,14 +15,10 @@ interface UseSpeechRecognitionOptions {
 export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) {
   const { lang = "it-IT", onFinalChunk } = options;
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
-  const [isSupported, setIsSupported] = useState(false);
+  const [isSupported] = useState(() => isSpeechRecognitionSupported());
   const [isListening, setIsListening] = useState(false);
   const [interimTranscript, setInterimTranscript] = useState("");
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setIsSupported(isSpeechRecognitionSupported());
-  }, []);
 
   const stopListening = useCallback(() => {
     recognitionRef.current?.stop();

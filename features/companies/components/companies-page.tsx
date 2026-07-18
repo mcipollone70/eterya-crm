@@ -38,6 +38,13 @@ import {
 } from "../constants/companies-pagination";
 import { DEFAULT_GEOAPIFY_CONFIG } from "../types/geocoding";
 import type { CommercialStatus } from "@/lib/supabase/types";
+import { BrandBadges } from "@/features/brands/components/brand-badges";
+import { BrandFilter } from "@/features/brands/components/brand-filter";
+import { listBrands } from "@/features/brands/services/brands.service";
+import {
+  parseBrandMatchMode,
+  parseBrandsUrlParam,
+} from "@/features/brands/utils/brand-shared";
 
 interface CompaniesPageProps {
   commercialStatus?: string;
@@ -47,6 +54,8 @@ interface CompaniesPageProps {
   productFamily?: string;
   interestLevel?: string;
   purchasedProduct?: string;
+  brands?: string;
+  brandMode?: string;
   page?: string;
   pageSize?: string;
 }
@@ -90,6 +99,8 @@ export async function CompaniesPage({
   productFamily,
   interestLevel,
   purchasedProduct,
+  brands,
+  brandMode,
   page,
   pageSize,
 }: CompaniesPageProps) {
@@ -103,6 +114,8 @@ export async function CompaniesPage({
   const productFamilyFilter = isProductFamily(productFamily) ? productFamily : null;
   const interestLevelFilter = isInterestLevel(interestLevel) ? interestLevel : null;
   const purchasedProductFilter = purchasedProduct?.trim() || null;
+  const brandSlugs = parseBrandsUrlParam(brands);
+  const brandMatchMode = parseBrandMatchMode(brandMode);
   const requestedPage = parseCompaniesPage(page);
   const requestedPageSize = parseCompaniesPageSize(pageSize);
 
@@ -119,7 +132,12 @@ export async function CompaniesPage({
     );
   }
 
-  const [{ data: companies, count, error }, geocodingSummaryResult, productsResult] = await Promise.all([
+  const [
+    { data: companies, count, error },
+    geocodingSummaryResult,
+    productsResult,
+    brandsResult,
+  ] = await Promise.all([
     listCompanies(statusFilter, {
       priorityTier: priorityFilter,
       sortByPriority,
@@ -128,11 +146,14 @@ export async function CompaniesPage({
       productFamily: productFamilyFilter,
       interestLevel: interestLevelFilter,
       purchasedProductId: purchasedProductFilter,
+      brandSlugs,
+      brandMatchMode,
       page: requestedPage,
       pageSize: requestedPageSize,
     }),
     getGeocodingSummary(),
     listProducts({ activeOnly: true }),
+    listBrands({ activeOnly: true }),
   ]);
 
   const geocodingSummary = geocodingSummaryResult.data ?? {
@@ -143,8 +164,15 @@ export async function CompaniesPage({
   };
   const geoapifyConfig = getGeoapifyConfigView() ?? DEFAULT_GEOAPIFY_CONFIG;
   const catalogProducts = productsResult.data;
+  const brandOptions = (brandsResult.data ?? []).map((b) => ({
+    id: b.id,
+    name: b.name,
+    slug: b.slug,
+    color: b.color,
+  }));
   const currentPage = clampCompaniesPage(requestedPage, count, requestedPageSize);
   const visibleRangeLabel = formatCompaniesVisibleRange(currentPage, requestedPageSize, count);
+  const hasBrandFilter = brandSlugs.length > 0;
 
   if (error) {
     return (
@@ -178,7 +206,7 @@ export async function CompaniesPage({
       <PageHeader
         title="Aziende"
         subtitle={`${visibleRangeLabel}${
-          statusFilter ? " · filtro attivo" : ""
+          statusFilter || hasBrandFilter ? " · filtro attivo" : ""
         }.`}
         actions={HeaderActions}
       />
@@ -186,6 +214,12 @@ export async function CompaniesPage({
       <GeocodingPanel summary={geocodingSummary} geoapifyConfig={geoapifyConfig} />
 
       <div className="flex flex-wrap items-center gap-3">
+        <Suspense fallback={null}>
+          <BrandFilter
+            brands={brandOptions}
+            basePath="/companies"
+          />
+        </Suspense>
         <Suspense fallback={null}>
           <CommercialStatusFilter />
         </Suspense>
@@ -226,6 +260,7 @@ export async function CompaniesPage({
                 <thead className="border-b border-slate-200 bg-slate-50">
                   <tr>
                     <th className="px-4 py-3 text-xs font-semibold text-slate-500">Ragione sociale</th>
+                    <th className="px-4 py-3 text-xs font-semibold text-slate-500">Brand</th>
                     <th className="px-4 py-3 text-xs font-semibold text-slate-500">Comune</th>
                     <th className="px-4 py-3 text-xs font-semibold text-slate-500">Provincia</th>
                     <th className="px-4 py-3 text-xs font-semibold text-slate-500">P.IVA</th>
@@ -247,6 +282,9 @@ export async function CompaniesPage({
                         <Link href={`/companies/${company.id}`} className="hover:underline">
                           {company.name}
                         </Link>
+                      </td>
+                      <td className="px-4 py-3">
+                        <BrandBadges brands={company.brands ?? []} compact />
                       </td>
                       <td className="px-4 py-3 text-slate-700">{company.city || "—"}</td>
                       <td className="px-4 py-3 text-slate-700">{company.province || "—"}</td>

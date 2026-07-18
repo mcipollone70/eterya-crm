@@ -106,22 +106,26 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     return () => window.cancelAnimationFrame(frame);
   }, [open]);
 
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
+  const trimmedQuery = query.trim();
+  const canSearch = trimmedQuery.length >= 2;
+  const visibleResults = useMemo(
+    () => (canSearch ? results : []),
+    [canSearch, results]
+  );
+  const visibleError = canSearch ? error : null;
+  const visibleGroupedResults = useMemo(
+    () => (canSearch ? groupedResults : []),
+    [canSearch, groupedResults]
+  );
 
-    const trimmed = query.trim();
-    if (trimmed.length < 2) {
-      setResults([]);
-      setError(null);
-      setSelectedIndex(0);
+  useEffect(() => {
+    if (!open || !canSearch) {
       return;
     }
 
     const timer = window.setTimeout(() => {
       startTransition(async () => {
-        const response = await globalSearchAction(trimmed);
+        const response = await globalSearchAction(trimmedQuery);
         if (response.error) {
           setError(response.error);
           setResults([]);
@@ -137,7 +141,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     }, DEBOUNCE_MS);
 
     return () => window.clearTimeout(timer);
-  }, [open, query]);
+  }, [canSearch, open, trimmedQuery]);
 
   useEffect(() => {
     if (!open) {
@@ -151,25 +155,25 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         return;
       }
 
-      if (results.length === 0) {
+      if (visibleResults.length === 0) {
         return;
       }
 
       if (event.key === "ArrowDown") {
         event.preventDefault();
-        setSelectedIndex((current) => (current + 1) % results.length);
+        setSelectedIndex((current) => (current + 1) % visibleResults.length);
         return;
       }
 
       if (event.key === "ArrowUp") {
         event.preventDefault();
-        setSelectedIndex((current) => (current - 1 + results.length) % results.length);
+        setSelectedIndex((current) => (current - 1 + visibleResults.length) % visibleResults.length);
         return;
       }
 
       if (event.key === "Enter") {
         event.preventDefault();
-        const selected = results[selectedIndex];
+        const selected = visibleResults[selectedIndex];
         if (selected) {
           openResult(selected);
         }
@@ -178,15 +182,15 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [close, open, openResult, results, selectedIndex]);
+  }, [close, open, openResult, selectedIndex, visibleResults]);
 
   useEffect(() => {
-    if (!listRef.current || results.length === 0) {
+    if (!listRef.current || visibleResults.length === 0) {
       return;
     }
     const active = listRef.current.querySelector<HTMLElement>(`[data-result-index="${selectedIndex}"]`);
     active?.scrollIntoView({ block: "nearest" });
-  }, [results.length, selectedIndex]);
+  }, [selectedIndex, visibleResults.length]);
 
   if (!open) {
     return null;
@@ -234,18 +238,18 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         </div>
 
         <div ref={listRef} className="flex-1 overflow-y-auto px-2 py-2 sm:px-3">
-          {query.trim().length < 2 ? (
+          {!canSearch ? (
             <p className="px-3 py-8 text-center text-sm text-slate-500">
               Digita almeno 2 caratteri per cercare in tutto il CRM.
             </p>
-          ) : error ? (
-            <p className="px-3 py-8 text-center text-sm text-rose-700">{error}</p>
-          ) : !isPending && results.length === 0 ? (
+          ) : visibleError ? (
+            <p className="px-3 py-8 text-center text-sm text-rose-700">{visibleError}</p>
+          ) : !isPending && visibleResults.length === 0 ? (
             <p className="px-3 py-8 text-center text-sm text-slate-500">
-              Nessun risultato per &quot;{query.trim()}&quot;.
+              Nessun risultato per &quot;{trimmedQuery}&quot;.
             </p>
           ) : (
-            groupedResults.map((group) => (
+            visibleGroupedResults.map((group) => (
               <div key={group.category} className="mb-2">
                 <p className="px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
                   {group.label}

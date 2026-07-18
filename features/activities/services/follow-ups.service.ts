@@ -152,38 +152,12 @@ function endOfNext7DaysIso(): string {
   return date.toISOString();
 }
 
-function applyFollowUpPeriod(
-  items: FollowUpListItem[],
-  period: FollowUpPeriod | null | undefined
-): FollowUpListItem[] {
-  if (!period) {
-    return items;
-  }
+type FollowUpPeriodQuery = {
+  in: (column: string, values: readonly string[]) => FollowUpPeriodQuery;
+  or: (filters: string) => FollowUpPeriodQuery;
+};
 
-  const todayStart = startOfTodayIso();
-  const todayEnd = endOfTodayIso();
-  const next7End = endOfNext7DaysIso();
-  const weekStart = startOfWeekIso();
-
-  return items.filter((item) => {
-    const effective = item.effective_at;
-
-    switch (period) {
-      case "today":
-        return effective >= todayStart && effective <= todayEnd;
-      case "next7":
-        return effective >= todayStart && effective <= next7End;
-      case "week":
-        return effective >= weekStart && effective <= todayEnd;
-      case "overdue":
-        return isOpenFollowUp(item) && effective < todayStart;
-      default:
-        return true;
-    }
-  });
-}
-
-function applyFollowUpPeriodToQuery<T extends { in: Function; or: Function }>(
+function applyFollowUpPeriodToQuery<T extends FollowUpPeriodQuery>(
   query: T,
   period: FollowUpPeriod
 ): T {
@@ -256,7 +230,7 @@ export async function listFollowUps(
     return { data: [], error: describeDbError(error) };
   }
 
-  let items = (data ?? [])
+  const items = (data ?? [])
     .map((row) => mapFollowUpRow(row as FollowUpRow))
     .filter((item): item is FollowUpListItem => item !== null);
 

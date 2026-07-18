@@ -1,6 +1,7 @@
 "use client";
 
 import { FileSelector } from "../file-selector";
+import { ImportOptionsPanel } from "../import-options-panel";
 import { WizardStepper } from "./wizard-stepper";
 import { WizardNavigation } from "./wizard-navigation";
 import { StepAnalysis } from "./step-analysis";
@@ -19,8 +20,8 @@ export function ImportWizard() {
       <div>
         <h2 className="text-2xl font-bold text-slate-900">Importa Aziende</h2>
         <p className="mt-1 text-sm text-slate-500">
-          Wizard di importazione Excel — analisi, mapping, pulizia e preview
-          prima dell&apos;importazione nel database.
+          Wizard di importazione Excel con Brand e relazione commerciale —
+          analisi, mapping, pulizia e preview prima dell&apos;importazione.
         </p>
       </div>
 
@@ -37,6 +38,11 @@ export function ImportWizard() {
 
       {wizard.currentStep === 1 && (
         <div className="space-y-6">
+          <ImportOptionsPanel
+            value={wizard.brandOptions}
+            onChange={wizard.setBrandOptions}
+            disabled={wizard.isLoading}
+          />
           <FileSelector
             onFileSelected={wizard.analyzeFile}
             onClear={wizard.clearFile}
@@ -69,6 +75,7 @@ export function ImportWizard() {
         <StepPreview
           stats={wizard.previewStats}
           records={wizard.cleanedRecords}
+          brandOptions={wizard.brandOptions}
         />
       )}
 
@@ -77,6 +84,7 @@ export function ImportWizard() {
           analysis={wizard.analysis}
           records={wizard.cleanedRecords}
           stats={wizard.previewStats}
+          brandOptions={wizard.brandOptions}
         />
       )}
 

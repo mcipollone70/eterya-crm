@@ -5,6 +5,7 @@ import { Sidebar } from "./sidebar";
 import { Header } from "./header";
 import { MobileBottomNav } from "./mobile-bottom-nav";
 import { CommandPalette } from "./command-palette";
+import { ManualeTourHost } from "@/features/manuale/components/manuale-guided-tour";
 import { cn } from "@/utils/cn";
 
 interface DashboardShellProps {
@@ -64,6 +65,7 @@ export function DashboardShell({
         />
       </div>
       <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
+      <ManualeTourHost />
     </div>
   );
 }

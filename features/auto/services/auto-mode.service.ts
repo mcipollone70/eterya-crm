@@ -2,10 +2,8 @@ import "server-only";
 
 import { getCurrentUser } from "@/features/auth/session";
 import { getGoogleCalendarConnectionView } from "@/features/calendar-sync/services/connection.service";
-import { listVisitCompanyOptions } from "@/features/visits/services/visits.service";
 import { startOfTodayIso } from "@/lib/last-visit/format";
 import { createServerClient } from "@/lib/supabase/server";
-import { describeDbError } from "@/lib/supabase/errors";
 import type { AutoModeAppointment, AutoModeData } from "../types/auto-mode";
 
 function formatTimeLabel(value: string): string {
@@ -91,23 +89,20 @@ export async function getAutoModeData(): Promise<AutoModeData> {
   const userId = user?.id ?? null;
 
   try {
-    const [calendar, appointment, companiesResult] = await Promise.all([
+    const [calendar, appointment] = await Promise.all([
       getGoogleCalendarConnectionView(),
       getNextAutoAppointment(userId),
-      listVisitCompanyOptions(),
     ]);
 
     return {
       appointment,
       calendar,
-      companies: companiesResult.data ?? [],
-      error: companiesResult.error,
+      error: null,
     };
   } catch (error) {
     return {
       appointment: null,
       calendar: await getGoogleCalendarConnectionView(),
-      companies: [],
       error: error instanceof Error ? error.message : "Impossibile caricare la modalità auto.",
     };
   }

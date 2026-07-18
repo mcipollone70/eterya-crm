@@ -6,7 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:import": "npx --yes tsx --test features/companies/utils/__tests__/company-import-brand.test.ts",
+    "test:brands": "npx --yes tsx --test features/brands/utils/__tests__/brand-shared.test.ts features/brands/utils/__tests__/brand-pagination.test.ts features/maps/utils/__tests__/map-brand-markers.test.ts features/maps/utils/__tests__/map-company-brands-aggregate.test.ts",
+    "audit:multibrand": "npx --yes tsx scripts/audit-multibrand.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.0",

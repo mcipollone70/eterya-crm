@@ -1,6 +1,7 @@
 import { Building2 } from "lucide-react";
 import { EmptyState, PageHeader } from "@/components/ui";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
+import { listBrands } from "@/features/brands/services/brands.service";
 import { CompaniesMapClient } from "./components/companies-map-client";
 import { getMapPageBootstrap } from "./services/map-companies.service";
 
@@ -18,7 +19,10 @@ export async function MapsPage() {
     );
   }
 
-  const { stats, provinces, error } = await getMapPageBootstrap();
+  const [{ stats, provinces, error }, brandsResult] = await Promise.all([
+    getMapPageBootstrap(),
+    listBrands({ activeOnly: true }),
+  ]);
 
   if (error) {
     return (
@@ -29,5 +33,12 @@ export async function MapsPage() {
     );
   }
 
-  return <CompaniesMapClient provinces={provinces} stats={stats} />;
+  const brands = (brandsResult.data ?? []).map((b) => ({
+    id: b.id,
+    name: b.name,
+    slug: b.slug,
+    color: b.color,
+  }));
+
+  return <CompaniesMapClient provinces={provinces} stats={stats} brands={brands} />;
 }

@@ -13,7 +13,8 @@ export type FieldType =
   | "number"
   | "date"
   | "textarea"
-  | "select";
+  | "select"
+  | "company_select";
 
 export interface SelectOption {
   value: string;

@@ -1,7 +1,8 @@
 import "server-only";
 
-import { randomBytes } from "crypto";
+import { createHmac, randomBytes, timingSafeEqual } from "crypto";
 import {
+  GOOGLE_CALENDAR_SCOPE,
   GOOGLE_OAUTH_AUTHORIZE_URL,
   GOOGLE_OAUTH_SCOPE,
   GOOGLE_OAUTH_SCOPES,
@@ -12,8 +13,7 @@ import {
   assertGoogleCalendarEnvConfigured,
   getGoogleClientId,
   getGoogleClientSecret,
-  getGoogleOAuthRedirectUri,
-  isGoogleCalendarConfigured,
+  resolveGoogleOAuthRedirectUri,
 } from "./env";
 import type {
   GoogleOpenIdUserInfo,
@@ -21,8 +21,75 @@ import type {
   ValidatedGoogleTokenResponse,
 } from "./types";
 
+const STATE_MAX_AGE_MS = 10 * 60 * 1000;
+
 export function generateOAuthState(): string {
   return randomBytes(24).toString("hex");
+}
+
+/** Stato OAuth firmato e legato all'utente autenticato (HMAC, verificabile). */
+export function createSignedOAuthState(userId: string): string {
+  const secret = getGoogleClientSecret();
+  if (!secret) {
+    throw new Error("GOOGLE_CLIENT_SECRET non configurato.");
+  }
+
+  const nonce = randomBytes(16).toString("hex");
+  const exp = String(Date.now() + STATE_MAX_AGE_MS);
+  const payload = `${userId}.${nonce}.${exp}`;
+  const signature = createHmac("sha256", secret).update(payload).digest("hex");
+  return Buffer.from(`${payload}.${signature}`).toString("base64url");
+}
+
+export function verifySignedOAuthState(
+  state: string,
+  expectedUserId: string
+): { ok: true } | { ok: false; reason: string } {
+  const secret = getGoogleClientSecret();
+  if (!secret) {
+    return { ok: false, reason: "Secret OAuth non configurato." };
+  }
+
+  let decoded: string;
+  try {
+    decoded = Buffer.from(state, "base64url").toString("utf8");
+  } catch {
+    return { ok: false, reason: "Stato OAuth non decodificabile." };
+  }
+
+  const parts = decoded.split(".");
+  if (parts.length !== 4) {
+    return { ok: false, reason: "Stato OAuth malformato." };
+  }
+
+  const [userId, nonce, expRaw, signature] = parts;
+  if (!userId || !nonce || !expRaw || !signature) {
+    return { ok: false, reason: "Stato OAuth incompleto." };
+  }
+
+  if (userId !== expectedUserId) {
+    return { ok: false, reason: "Stato OAuth non corrisponde all'utente autenticato." };
+  }
+
+  const exp = Number(expRaw);
+  if (!Number.isFinite(exp) || Date.now() > exp) {
+    return { ok: false, reason: "Stato OAuth scaduto. Riprova il collegamento." };
+  }
+
+  const payload = `${userId}.${nonce}.${expRaw}`;
+  const expected = createHmac("sha256", secret).update(payload).digest("hex");
+
+  try {
+    const left = Buffer.from(signature, "utf8");
+    const right = Buffer.from(expected, "utf8");
+    if (left.length !== right.length || !timingSafeEqual(left, right)) {
+      return { ok: false, reason: "Firma stato OAuth non valida." };
+    }
+  } catch {
+    return { ok: false, reason: "Firma stato OAuth non valida." };
+  }
+
+  return { ok: true };
 }
 
 function formatGoogleOAuthError(context: string, payload: unknown): string {
@@ -55,6 +122,14 @@ function parseEmailFromIdToken(idToken: string): string | null {
   }
 }
 
+export function hasRequiredCalendarScope(scope: string | undefined | null): boolean {
+  if (!scope?.trim()) {
+    return false;
+  }
+  const granted = new Set(scope.split(/\s+/).filter(Boolean));
+  return granted.has(GOOGLE_CALENDAR_SCOPE);
+}
+
 export function validateGoogleTokenResponse(
   token: GoogleTokenResponse
 ): ValidatedGoogleTokenResponse {
@@ -85,11 +160,14 @@ export function validateGoogleTokenResponse(
   };
 }
 
-export function buildGoogleCalendarAuthUrl(state: string): string {
-  assertGoogleCalendarEnvConfigured();
+export function buildGoogleCalendarAuthUrl(
+  state: string,
+  options?: { forceConsent?: boolean; requestUrl?: string | null }
+): string {
+  assertGoogleCalendarEnvConfigured(options?.requestUrl);
 
   const clientId = getGoogleClientId();
-  const redirectUri = getGoogleOAuthRedirectUri();
+  const redirectUri = resolveGoogleOAuthRedirectUri(options?.requestUrl);
 
   const params = new URLSearchParams({
     client_id: clientId!,
@@ -97,7 +175,8 @@ export function buildGoogleCalendarAuthUrl(state: string): string {
     response_type: "code",
     scope: GOOGLE_OAUTH_SCOPE,
     access_type: "offline",
-    prompt: "consent",
+    include_granted_scopes: "false",
+    prompt: options?.forceConsent === false ? "select_account" : "consent",
     state,
   });
 
@@ -108,8 +187,11 @@ export function getGoogleOAuthScopes(): readonly string[] {
   return GOOGLE_OAUTH_SCOPES;
 }
 
-export async function exchangeGoogleAuthCode(code: string): Promise<ValidatedGoogleTokenResponse> {
-  assertGoogleCalendarEnvConfigured();
+export async function exchangeGoogleAuthCode(
+  code: string,
+  requestUrl?: string | null
+): Promise<ValidatedGoogleTokenResponse> {
+  assertGoogleCalendarEnvConfigured(requestUrl);
 
   const normalizedCode = code.trim();
   if (!normalizedCode) {
@@ -118,7 +200,7 @@ export async function exchangeGoogleAuthCode(code: string): Promise<ValidatedGoo
 
   const clientId = getGoogleClientId();
   const clientSecret = getGoogleClientSecret();
-  const redirectUri = getGoogleOAuthRedirectUri();
+  const redirectUri = resolveGoogleOAuthRedirectUri(requestUrl);
 
   const body = new URLSearchParams({
     code: normalizedCode,
@@ -145,7 +227,15 @@ export async function exchangeGoogleAuthCode(code: string): Promise<ValidatedGoo
     throw new Error(formatGoogleOAuthError("Scambio token Google non riuscito", payload));
   }
 
-  return validateGoogleTokenResponse(payload);
+  const validated = validateGoogleTokenResponse(payload);
+
+  if (!hasRequiredCalendarScope(validated.scope)) {
+    throw new Error(
+      "Permessi Google Calendar insufficienti: manca lo scope calendar.events. Ricollega e concedi l'accesso al calendario."
+    );
+  }
+
+  return validated;
 }
 
 export async function refreshGoogleAccessToken(
@@ -232,4 +322,27 @@ export async function fetchGoogleUserEmail(
 
 export function tokenExpiresAt(expiresInSeconds: number): string {
   return new Date(Date.now() + expiresInSeconds * 1000).toISOString();
+}
+
+/** Log sicuro: nessun token/secret. */
+export function logGoogleCalendarSafe(
+  level: "info" | "warn" | "error",
+  message: string,
+  meta?: Record<string, string | number | boolean | null | undefined>
+): void {
+  const safe = meta
+    ? Object.fromEntries(
+        Object.entries(meta).filter(
+          ([key]) => !/token|secret|password|authorization|code/i.test(key)
+        )
+      )
+    : undefined;
+  const line = safe ? `[google-calendar] ${message} ${JSON.stringify(safe)}` : `[google-calendar] ${message}`;
+  if (level === "error") {
+    console.error(line);
+  } else if (level === "warn") {
+    console.warn(line);
+  } else {
+    console.info(line);
+  }
 }

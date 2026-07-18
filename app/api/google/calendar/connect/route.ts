@@ -5,13 +5,17 @@ import { GOOGLE_OAUTH_STATE_COOKIE } from "@/lib/google-calendar/constants";
 import {
   assertGoogleCalendarEnvConfigured,
   getAppBaseUrl,
-  getGoogleOAuthRedirectUri,
   isGoogleCalendarConfigured,
+  resolveGoogleOAuthRedirectUri,
 } from "@/lib/google-calendar/env";
-import { buildGoogleCalendarAuthUrl, generateOAuthState } from "@/lib/google-calendar/oauth";
+import {
+  buildGoogleCalendarAuthUrl,
+  createSignedOAuthState,
+  logGoogleCalendarSafe,
+} from "@/lib/google-calendar/oauth";
 
-export async function GET() {
-  const base = getAppBaseUrl();
+export async function GET(request: Request) {
+  const base = getAppBaseUrl(request.url);
 
   try {
     if (!isGoogleCalendarConfigured()) {
@@ -23,9 +27,9 @@ export async function GET() {
       );
     }
 
-    assertGoogleCalendarEnvConfigured();
+    assertGoogleCalendarEnvConfigured(request.url);
 
-    const redirectUri = getGoogleOAuthRedirectUri();
+    const redirectUri = resolveGoogleOAuthRedirectUri(request.url);
     if (!redirectUri?.startsWith("http")) {
       return NextResponse.redirect(
         new URL(
@@ -40,7 +44,10 @@ export async function GET() {
       return NextResponse.redirect(new URL("/login", base));
     }
 
-    const state = generateOAuthState();
+    // Sempre consent sul flusso Calendar: garantisce refresh_token + scope calendar.events.
+    const forceConsent = true;
+
+    const state = createSignedOAuthState(user.id);
     const cookieStore = await cookies();
     cookieStore.set(GOOGLE_OAUTH_STATE_COOKIE, state, {
       httpOnly: true,
@@ -50,11 +57,22 @@ export async function GET() {
       maxAge: 600,
     });
 
-    const authUrl = buildGoogleCalendarAuthUrl(state);
+    logGoogleCalendarSafe("info", "oauth_connect_started", {
+      userId: user.id,
+      forceConsent,
+    });
+
+    const authUrl = buildGoogleCalendarAuthUrl(state, {
+      forceConsent,
+      requestUrl: request.url,
+    });
     return NextResponse.redirect(authUrl);
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Avvio collegamento Google Calendar non riuscito.";
+    logGoogleCalendarSafe("error", "oauth_connect_failed", {
+      reason: message.slice(0, 120),
+    });
     return NextResponse.redirect(
       new URL(
         `/settings?google_calendar=error&message=${encodeURIComponent(message)}`,

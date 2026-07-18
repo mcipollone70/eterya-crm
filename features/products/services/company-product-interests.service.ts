@@ -27,6 +27,10 @@ export interface CompanyProductInterestItem {
   updated_at: string;
 }
 
+export interface ProductCompanyInterestItem extends CompanyProductInterestItem {
+  company_name: string | null;
+}
+
 export interface CompanyProductInterestHistoryItem {
   id: string;
   company_id: string;
@@ -136,6 +140,38 @@ export async function listCompanyProductInterests(
   const items = (data ?? [])
     .map((row) => mapInterestRow(row as InterestRow))
     .filter((item): item is CompanyProductInterestItem => item !== null);
+
+  return { data: items, error: null };
+}
+
+export async function listProductCompanyInterests(
+  productId: string
+): Promise<{ data: ProductCompanyInterestItem[]; error: string | null }> {
+  const supabase = await createServerClient();
+  const { data, error } = await supabase
+    .from("company_product_interests")
+    .select(
+      "id,company_id,product_id,relation_type,interest_level,last_interest_at,commercial_notes,created_at,updated_at,products(name,family),companies(name)"
+    )
+    .eq("product_id", productId)
+    .order("updated_at", { ascending: false });
+
+  if (error) {
+    return { data: [], error: describeDbError(error) };
+  }
+
+  const items: ProductCompanyInterestItem[] = [];
+  for (const raw of data ?? []) {
+    const mapped = mapInterestRow(raw as InterestRow);
+    if (!mapped) continue;
+    const companies = (raw as { companies?: { name: string } | { name: string }[] | null })
+      .companies;
+    const company = relationOne(companies);
+    items.push({
+      ...mapped,
+      company_name: company?.name ?? null,
+    });
+  }
 
   return { data: items, error: null };
 }
@@ -261,6 +297,55 @@ export async function addCompanyProductInterest(
         ? "Prodotto registrato come acquistato."
         : "Prodotto di interesse aggiunto.",
   };
+}
+
+export async function removeCompanyProductInterest(
+  interestId: string,
+  companyId: string
+): Promise<{ success: boolean; message: string }> {
+  const supabase = await createServerClient();
+
+  const { data: existing, error: loadError } = await supabase
+    .from("company_product_interests")
+    .select("id,company_id,product_id,relation_type,interest_level,products(name,family)")
+    .eq("id", interestId)
+    .eq("company_id", companyId)
+    .maybeSingle();
+
+  if (loadError || !existing) {
+    return { success: false, message: "Interesse prodotto non trovato." };
+  }
+
+  const { error } = await supabase
+    .from("company_product_interests")
+    .delete()
+    .eq("id", interestId)
+    .eq("company_id", companyId);
+
+  if (error) {
+    return { success: false, message: describeDbError(error) ?? "Errore database." };
+  }
+
+  const product = relationOne(
+    existing.products as { name: string; family: string } | { name: string; family: string }[] | null
+  );
+  const productName = product?.name ?? "Prodotto";
+  const familyLabel =
+    product && isProductFamily(product.family)
+      ? PRODUCT_FAMILY_LABELS[product.family]
+      : product?.family ?? "";
+
+  await appendInterestHistory({
+    companyId,
+    productId: existing.product_id,
+    relationType: existing.relation_type,
+    interestLevel: existing.interest_level,
+    eventType: "removed",
+    notes: `Rimosso ${existing.relation_type === "purchased" ? "acquisto" : "interesse"}: ${productName}${familyLabel ? ` (${familyLabel})` : ""}`,
+    occurredAt: new Date().toISOString(),
+  });
+
+  return { success: true, message: "Prodotto rimosso dall'azienda." };
 }
 
 export async function resolveCompanyIdsForProductFilters(options: {

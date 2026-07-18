@@ -31,7 +31,6 @@ export async function AutoPage() {
     <AutoModeScreen
       appointment={data.appointment}
       calendar={data.calendar}
-      companies={data.companies}
     />
   );
 }

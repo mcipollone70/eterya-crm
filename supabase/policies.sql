@@ -128,6 +128,36 @@ BEGIN
     EXECUTE 'DROP POLICY IF EXISTS "authenticated_own_dashboard_layout" ON dashboard_layouts';
     EXECUTE 'CREATE POLICY "authenticated_own_dashboard_layout" ON dashboard_layouts FOR ALL TO authenticated USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid())';
   END IF;
+
+  IF to_regclass('public.product_samples') IS NOT NULL THEN
+    EXECUTE 'DROP POLICY IF EXISTS "authenticated_all_product_samples" ON product_samples';
+    EXECUTE 'CREATE POLICY "authenticated_all_product_samples" ON product_samples FOR ALL TO authenticated USING (true) WITH CHECK (true)';
+  END IF;
+
+  IF to_regclass('public.service_tickets') IS NOT NULL THEN
+    EXECUTE 'DROP POLICY IF EXISTS "authenticated_all_service_tickets" ON service_tickets';
+    EXECUTE 'CREATE POLICY "authenticated_all_service_tickets" ON service_tickets FOR ALL TO authenticated USING (true) WITH CHECK (true)';
+  END IF;
+
+  IF to_regclass('public.joy_conversations') IS NOT NULL THEN
+    EXECUTE 'DROP POLICY IF EXISTS "authenticated_all_joy_conversations" ON joy_conversations';
+    EXECUTE 'CREATE POLICY "authenticated_all_joy_conversations" ON joy_conversations FOR ALL TO authenticated USING (true) WITH CHECK (true)';
+  END IF;
+
+  IF to_regclass('public.opportunity_change_history') IS NOT NULL THEN
+    EXECUTE 'DROP POLICY IF EXISTS "authenticated_all_opportunity_change_history" ON opportunity_change_history';
+    EXECUTE 'CREATE POLICY "authenticated_all_opportunity_change_history" ON opportunity_change_history FOR ALL TO authenticated USING (true) WITH CHECK (true)';
+  END IF;
+
+  IF to_regclass('public.commercial_document_sequences') IS NOT NULL THEN
+    EXECUTE 'DROP POLICY IF EXISTS "authenticated_all_commercial_document_sequences" ON commercial_document_sequences';
+    EXECUTE 'CREATE POLICY "authenticated_all_commercial_document_sequences" ON commercial_document_sequences FOR ALL TO authenticated USING (true) WITH CHECK (true)';
+  END IF;
+
+  IF to_regclass('public.audit_logs') IS NOT NULL THEN
+    EXECUTE 'DROP POLICY IF EXISTS "authenticated_all_audit_logs" ON audit_logs';
+    EXECUTE 'CREATE POLICY "authenticated_all_audit_logs" ON audit_logs FOR ALL TO authenticated USING (true) WITH CHECK (true)';
+  END IF;
 END $$;
 
 -- -----------------------------------------------------------------------------

@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
   CheckCircle2,
-  FileText,
   Navigation,
   Phone,
   Sparkles,

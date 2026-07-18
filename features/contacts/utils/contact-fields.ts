@@ -5,13 +5,8 @@ export const CONTACT_PRIMARY_OPTIONS: SelectOption[] = [
   { value: "true", label: "Sì" },
 ];
 
-/**
- * Costruisce i campi del form contatto. Le opzioni azienda sono dinamiche
- * (caricate lato server), perciò la config è generata a runtime dalla pagina.
- */
-export function buildContactSections(
-  companyOptions: SelectOption[]
-): FormSection[] {
+/** Campi del form contatto; l'azienda usa ricerca server-side dinamica. */
+export function buildContactSections(): FormSection[] {
   return [
     {
       title: "Referente",
@@ -19,9 +14,8 @@ export function buildContactSections(
         {
           name: "company_id",
           label: "Azienda",
-          type: "select",
+          type: "company_select",
           required: true,
-          options: companyOptions,
           colSpan: 2,
         },
         { name: "full_name", label: "Nome completo", required: true, colSpan: 2 },

@@ -9,6 +9,12 @@ import {
   isOpenOpportunityStage,
 } from "@/lib/constants/opportunity-pipeline";
 import { getJoyData } from "../../services/joy-ai.service";
+import { buildUnifiedCommercialProposals } from "../../chat/services/joy-commercial-proposals.service";
+import { getCurrentUser } from "@/features/auth/session";
+import {
+  decisionsFromProposals,
+  mergeJoyDecisions,
+} from "../../os/decision/joy-decision-engine";
 import type {
   JoyAutonomousData,
   JoyAutonomousFocusItem,
@@ -20,7 +26,8 @@ import { buildAutonomousNotifications } from "../utils/build-autonomous-notifica
 function buildMorningBriefing(
   joyData: Awaited<ReturnType<typeof getJoyData>>,
   missionData: Awaited<ReturnType<typeof getMissionControlData>>,
-  overdueFollowUps: FollowUpListItem[]
+  overdueFollowUps: FollowUpListItem[],
+  osAdvice?: string | null
 ): JoyAutonomousMorningBriefing {
   const openOpps = joyData.suggestions
     .filter((item) => item.signals.openOpportunityCount > 0)
@@ -53,9 +60,13 @@ function buildMorningBriefing(
     `pipeline ${formatOpportunityAmount(joyData.summary.pipelineValue)}`,
   ];
 
+  const topAdvice =
+    osAdvice?.trim() ||
+    "Joy ha preparato priorità, percorso e azioni consigliate.";
+
   return {
     headline: `Briefing del ${joyData.dateLabel}`,
-    narrative: `Oggi hai ${narrativeParts.join(", ")}. Joy ha preparato priorità, percorso e azioni consigliate.`,
+    narrative: `Oggi hai ${narrativeParts.join(", ")}. Ti consiglio: ${topAdvice}`,
     priorityClients: joyData.suggestions.slice(0, 8),
     urgentOpportunities: openOpps,
     followUpsDue,
@@ -114,23 +125,39 @@ export async function getJoyAutonomousData(): Promise<JoyAutonomousData> {
   const generatedAt = new Date().toISOString();
 
   try {
-    const [joyData, missionData, overdueFollowUpsResult, overdueVisitsResult, opportunitiesResult] =
-      await Promise.all([
-        getJoyData(),
-        getMissionControlData(),
-        listFollowUps({ period: "overdue", limit: 20 }),
-        listVisits({ period: "overdue", limit: 20 }),
-        listOpportunities({ limit: 200 }),
-      ]);
+    const user = await getCurrentUser();
+    const userId = user?.id ?? null;
+
+    const [
+      joyData,
+      missionData,
+      overdueFollowUpsResult,
+      overdueVisitsResult,
+      opportunitiesResult,
+      proposals,
+    ] = await Promise.all([
+      getJoyData(),
+      getMissionControlData(),
+      listFollowUps({ period: "overdue", limit: 20 }),
+      listVisits({ period: "overdue", limit: 20 }),
+      listOpportunities({ limit: 200 }),
+      buildUnifiedCommercialProposals({ userId, limit: 8 }),
+    ]);
 
     const openOpportunities = (opportunitiesResult.data ?? []).filter((item) =>
       isOpenOpportunityStage(item.stage)
     );
 
+    const osDecisions = mergeJoyDecisions(decisionsFromProposals(proposals));
+    const osAdvice = osDecisions[0]
+      ? `${osDecisions[0].title}. ${osDecisions[0].reason}`.slice(0, 220)
+      : null;
+
     const briefing = buildMorningBriefing(
       joyData,
       missionData,
-      overdueFollowUpsResult.data ?? []
+      overdueFollowUpsResult.data ?? [],
+      osAdvice
     );
     const notifications = buildAutonomousNotifications({
       suggestions: joyData.suggestions,
@@ -210,6 +237,8 @@ export async function getJoyAutonomousData(): Promise<JoyAutonomousData> {
         lastSyncError: null,
         connectedAt: null,
         needsReconnect: false,
+        syncInProgress: false,
+        temporaryError: false,
       },
       error: error instanceof Error ? error.message : "Errore Joy Autonomous.",
     };

@@ -44,10 +44,12 @@ const SHORT_KEYWORD_EXACT_ONLY = new Set([
   "prov",
   "sede",
   "n.",
-  "stato",
   "paese",
   "name",
   "fax",
+  "cell",
+  "ruolo",
+  "codice",
 ]);
 
 const MIN_SUBSTRING_KEYWORD_LENGTH = 4;
@@ -70,7 +72,16 @@ const HEADER_PATTERNS: HeaderPattern[] = [
   },
   {
     field: "vat_number",
-    keywords: ["partita iva", "p.iva", "p iva", "vat", "pi", "tax id"],
+    keywords: [
+      "partita iva",
+      "p.iva",
+      "p iva",
+      "piva",
+      "vat",
+      "pi",
+      "tax id",
+      "vat number",
+    ],
   },
   {
     field: "tax_code",
@@ -82,7 +93,14 @@ const HEADER_PATTERNS: HeaderPattern[] = [
   },
   {
     field: "street_number",
-    keywords: ["civico", "n civico", "numero civico", "n.", "street number"],
+    keywords: [
+      "civico",
+      "n civico",
+      "numero civico",
+      "n.",
+      "street number",
+      "nr civico",
+    ],
   },
   {
     field: "address",
@@ -97,16 +115,20 @@ const HEADER_PATTERNS: HeaderPattern[] = [
     keywords: ["provincia", "prov", "province", "state", "sigla prov"],
   },
   {
+    field: "region",
+    keywords: ["regione", "region"],
+  },
+  {
     field: "postal_code",
     keywords: ["cap", "codice postale", "postal code", "zip", "zip code"],
   },
   {
     field: "country",
-    keywords: ["nazione", "country", "stato", "paese"],
+    keywords: ["nazione", "country", "paese"],
   },
   {
     field: "email",
-    keywords: ["email", "e-mail", "mail", "posta elettronica"],
+    keywords: ["email", "e-mail", "mail", "posta elettronica", "e mail"],
   },
   {
     field: "phone_prefix",
@@ -120,12 +142,59 @@ const HEADER_PATTERNS: HeaderPattern[] = [
     ],
   },
   {
+    field: "mobile",
+    keywords: [
+      "cellulare",
+      "mobile",
+      "cell",
+      "telefono cellulare",
+      "tel cellulare",
+      "gsm",
+    ],
+  },
+  {
     field: "phone",
-    keywords: ["telefono", "tel", "phone", "cellulare", "mobile", "fax"],
+    keywords: [
+      "telefono",
+      "tel",
+      "phone",
+      "numero telefono",
+      "n telefono",
+      "fax",
+    ],
   },
   {
     field: "contact_name",
-    keywords: ["referente", "contatto", "contact", "nome referente", "persona di contatto"],
+    keywords: [
+      "referente",
+      "contatto",
+      "contact",
+      "nome referente",
+      "persona di contatto",
+    ],
+  },
+  {
+    field: "contact_role",
+    keywords: [
+      "ruolo referente",
+      "ruolo contatto",
+      "qualifica",
+      "mansione",
+      "contact role",
+      "ruolo",
+    ],
+  },
+  {
+    field: "customer_code",
+    keywords: [
+      "codice cliente",
+      "cod cliente",
+      "cod. cliente",
+      "codice anagrafica",
+      "cod anagrafica",
+      "customer code",
+      "codice",
+    ],
   },
   {
     field: "website",

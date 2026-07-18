@@ -17,6 +17,10 @@ import {
   PRODUCT_FAMILY_LABELS,
   type ProductFamily,
 } from "@/lib/constants/product-catalog";
+import {
+  matchesPipelinePriority,
+  type PipelineFilters,
+} from "@/lib/constants/pipeline-filters";
 import { groupOpportunitiesByStage as groupOpportunityItemsByStage } from "@/lib/opportunities/kanban";
 import { createServerClient } from "@/lib/supabase/server";
 import { describeDbError } from "@/lib/supabase/errors";
@@ -268,8 +272,16 @@ async function replaceOpportunityProducts(
     return { error: null };
   }
 
+  const uniqueIds = [...new Set(productIds.filter(Boolean))];
+  if (uniqueIds.length !== productIds.filter(Boolean).length) {
+    return {
+      error:
+        "Lo stesso prodotto non può apparire più volte. Rimuovi i duplicati dalla selezione.",
+    };
+  }
+
   const { error: insertError } = await supabase.from("opportunity_products").insert(
-    productIds.map((productId) => ({
+    uniqueIds.map((productId) => ({
       opportunity_id: opportunityId,
       product_id: productId,
     }))
@@ -278,16 +290,53 @@ async function replaceOpportunityProducts(
   return { error: describeDbError(insertError) };
 }
 
+function applyPipelineFiltersToQuery<T extends {
+  eq: (column: string, value: string) => T;
+  is: (column: string, value: null) => T;
+  gte: (column: string, value: string) => T;
+  lte: (column: string, value: string) => T;
+}>(query: T, filters?: PipelineFilters): T {
+  // Quotes/orders use document numbers; pipeline deals leave number null.
+  query = query.is("number", null);
+  if (filters?.agentId) {
+    query = query.eq("user_id", filters.agentId);
+  }
+  if (filters?.companyId) {
+    query = query.eq("company_id", filters.companyId);
+  }
+  if (filters?.dateFrom) {
+    query = query.gte("expected_close_at", filters.dateFrom);
+  }
+  if (filters?.dateTo) {
+    query = query.lte("expected_close_at", filters.dateTo);
+  }
+  return query;
+}
+
+function applyClientPipelineFilters(
+  items: OpportunityListItem[],
+  filters?: PipelineFilters
+): OpportunityListItem[] {
+  if (!filters?.priority) {
+    return items;
+  }
+
+  return items.filter((item) => matchesPipelinePriority(item.probability, filters.priority!));
+}
+
 export async function listOpportunities(options?: {
   companyId?: string;
   limit?: number;
+  filters?: PipelineFilters;
 }): Promise<{ data: OpportunityListItem[]; count: number; error: string | null }> {
   const supabase = await createServerClient();
+  const mergedFilters: PipelineFilters = {
+    ...(options?.filters ?? {}),
+    ...(options?.companyId ? { companyId: options.companyId } : {}),
+  };
 
   let countQuery = supabase.from("opportunities").select("id", { count: "exact", head: true });
-  if (options?.companyId) {
-    countQuery = countQuery.eq("company_id", options.companyId);
-  }
+  countQuery = applyPipelineFiltersToQuery(countQuery, mergedFilters);
   const countResult = await countQuery;
 
   async function runQuery(select: string) {
@@ -297,9 +346,7 @@ export async function listOpportunities(options?: {
       .order("updated_at", { ascending: false })
       .limit(options?.limit ?? 500);
 
-    if (options?.companyId) {
-      query = query.eq("company_id", options.companyId);
-    }
+    query = applyPipelineFiltersToQuery(query, mergedFilters);
 
     return query;
   }
@@ -318,16 +365,75 @@ export async function listOpportunities(options?: {
     return { data: [], count: 0, error: describeDbError(result.error) };
   }
 
-  const items = (result.data ?? []).map((row) =>
-    mapOpportunityRow(row as unknown as OpportunityRow)
+  const items = applyClientPipelineFilters(
+    (result.data ?? []).map((row) => mapOpportunityRow(row as unknown as OpportunityRow)),
+    mergedFilters
   );
 
   return {
     data: items,
-    count: countResult.count ?? items.length,
+    count: mergedFilters.priority ? items.length : (countResult.count ?? items.length),
     error: null,
   };
 }
+
+export const listPipelineFilterOptions = cache(async (): Promise<{
+  data: {
+    agents: Array<{ id: string; label: string }>;
+    companies: Array<{ id: string; label: string }>;
+  };
+  error: string | null;
+}> => {
+  const supabase = await createServerClient();
+
+  const [usersRes, opportunitiesRes] = await Promise.all([
+    supabase
+      .from("users")
+      .select("id,full_name,email")
+      .eq("is_active", true)
+      .order("full_name", { ascending: true }),
+    supabase
+      .from("opportunities")
+      .select("company_id,companies(id,name)")
+      .order("updated_at", { ascending: false })
+      .limit(1000),
+  ]);
+
+  if (usersRes.error) {
+    return {
+      data: { agents: [], companies: [] },
+      error: describeDbError(usersRes.error),
+    };
+  }
+
+  const agents = (usersRes.data ?? []).map((user) => ({
+    id: user.id,
+    label: user.full_name?.trim() || user.email,
+  }));
+
+  const companyMap = new Map<string, string>();
+  for (const row of opportunitiesRes.data ?? []) {
+    const typed = row as {
+      company_id: string;
+      companies: { id: string; name: string } | { id: string; name: string }[] | null;
+    };
+    const company = relationOne(typed.companies);
+    if (company?.id && company.name) {
+      companyMap.set(company.id, company.name);
+    } else if (typed.company_id) {
+      companyMap.set(typed.company_id, typed.company_id);
+    }
+  }
+
+  const companies = [...companyMap.entries()]
+    .map(([id, label]) => ({ id, label }))
+    .sort((a, b) => a.label.localeCompare(b.label, "it"));
+
+  return {
+    data: { agents, companies },
+    error: opportunitiesRes.error ? describeDbError(opportunitiesRes.error) : null,
+  };
+});
 
 export async function getCompanyOpportunitySummary(
   companyId: string

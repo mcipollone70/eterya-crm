@@ -12,7 +12,11 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui";
-import type { JoyChatActionButton, JoyChatMessage } from "../types/joy-chat";
+import type {
+  JoyChatActionButton,
+  JoyChatMessage,
+  JoyDebriefFieldKey,
+} from "../types/joy-chat";
 
 const ACTION_ICONS: Partial<Record<JoyChatActionButton["kind"], typeof Sparkles>> = {
   open_company: Briefcase,
@@ -42,6 +46,11 @@ interface JoyChatMessageBubbleProps {
   executingCopilotId?: string | null;
   onConfirmCopilot?: (messageId: string) => void;
   onCancelCopilot?: (messageId: string) => void;
+  onModifyCopilot?: (messageId: string) => void;
+  onRegenerateCopilot?: (messageId: string) => void;
+  onToggleDebriefField?: (messageId: string, key: JoyDebriefFieldKey) => void;
+  /** When true, skips outer alignment wrapper (for Joy AI chat layout with avatars). */
+  embedded?: boolean;
 }
 
 export function JoyChatMessageBubble({
@@ -49,131 +58,196 @@ export function JoyChatMessageBubble({
   executingCopilotId,
   onConfirmCopilot,
   onCancelCopilot,
+  onModifyCopilot,
+  onRegenerateCopilot,
+  onToggleDebriefField,
+  embedded = false,
 }: JoyChatMessageBubbleProps) {
   const isUser = message.role === "user";
   const pending = message.pendingAction;
   const isExecuting = pending && executingCopilotId === pending.id;
   const showCopilotConfirm =
     pending?.status === "pending" && onConfirmCopilot && onCancelCopilot;
+  const debriefFields = pending?.debriefFields;
+  const hasEnabledDebriefField = debriefFields
+    ? debriefFields.some((field) => field.enabled)
+    : true;
 
-  return (
-    <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
+  const content = (
+    <div
+      className={`max-w-[92%] space-y-3 sm:max-w-[80%] ${
+        isUser ? "items-end" : "items-start"
+      }`}
+    >
       <div
-        className={`max-w-[92%] space-y-3 sm:max-w-[80%] ${
-          isUser ? "items-end" : "items-start"
+        className={`rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm ${
+          isUser
+            ? "bg-indigo-600 text-white"
+            : "border border-slate-200 bg-white text-slate-700"
         }`}
       >
-        <div
-          className={`rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm ${
-            isUser
-              ? "bg-indigo-600 text-white"
-              : "border border-slate-200 bg-white text-slate-700"
-          }`}
-        >
-          <div className="whitespace-pre-wrap">
-            {isUser ? message.content : renderMessageContent(message.content)}
-          </div>
+        <div className="whitespace-pre-wrap">
+          {isUser ? message.content : renderMessageContent(message.content)}
         </div>
+      </div>
 
-        {!isUser && pending && pending.status === "executed" ? (
-          <div className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800">
-            <CheckCircle2 className="h-4 w-4" />
-            Azione completata
-          </div>
-        ) : null}
+      {!isUser && pending && pending.status === "executed" ? (
+        <div className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800">
+          <CheckCircle2 className="h-4 w-4" />
+          Azione completata
+        </div>
+      ) : null}
 
-        {!isUser && pending && pending.status === "cancelled" ? (
-          <div className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-            <X className="h-4 w-4" />
-            Azione annullata
-          </div>
-        ) : null}
+      {!isUser && pending && pending.status === "failed" ? (
+        <div className="inline-flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-800">
+          <X className="h-4 w-4" />
+          Azione non riuscita
+        </div>
+      ) : null}
 
-        {!isUser && showCopilotConfirm ? (
-          <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-3 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wide text-amber-800">
-              Conferma azione Copilot
-            </p>
-            <p className="mt-1 text-sm font-medium text-slate-900">{pending.title}</p>
-            <p className="mt-0.5 text-xs text-slate-600">{pending.description}</p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Button
-                type="button"
-                size="sm"
-                disabled={Boolean(isExecuting)}
-                onClick={() => onConfirmCopilot(message.id)}
-                className="bg-emerald-600 hover:bg-emerald-700"
-              >
-                {isExecuting ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <CheckCircle2 className="h-4 w-4" />
-                )}
-                Conferma
-              </Button>
+      {!isUser && pending && pending.status === "cancelled" ? (
+        <div className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+          <X className="h-4 w-4" />
+          Azione annullata
+        </div>
+      ) : null}
+
+      {!isUser && showCopilotConfirm ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-3 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-amber-800">
+            Conferma azione Copilot
+          </p>
+          <p className="mt-1 text-sm font-medium text-slate-900">{pending.title}</p>
+          <p className="mt-0.5 text-xs text-slate-600">{pending.description}</p>
+
+          {debriefFields && debriefFields.length > 0 ? (
+            <fieldset className="mt-3 space-y-2 rounded-lg border border-amber-100 bg-white/70 p-2.5">
+              <legend className="px-1 text-[11px] font-semibold uppercase tracking-wide text-amber-800">
+                Cosa salvare
+              </legend>
+              {debriefFields.map((field) => (
+                <label
+                  key={field.key}
+                  className="flex min-h-10 cursor-pointer items-center gap-3 rounded-md px-1 py-1 text-sm text-slate-800"
+                >
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                    checked={field.enabled}
+                    disabled={Boolean(isExecuting) || !onToggleDebriefField}
+                    onChange={() => onToggleDebriefField?.(message.id, field.key)}
+                  />
+                  <span>{field.label}</span>
+                </label>
+              ))}
+            </fieldset>
+          ) : null}
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button
+              type="button"
+              size="sm"
+              disabled={Boolean(isExecuting) || !hasEnabledDebriefField}
+              onClick={() => onConfirmCopilot(message.id)}
+              className="bg-emerald-600 hover:bg-emerald-700"
+            >
+              {isExecuting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <CheckCircle2 className="h-4 w-4" />
+              )}
+              Conferma
+            </Button>
+            {onRegenerateCopilot ? (
               <Button
                 type="button"
                 size="sm"
                 variant="outline"
                 disabled={Boolean(isExecuting)}
-                onClick={() => onCancelCopilot(message.id)}
+                onClick={() => onRegenerateCopilot(message.id)}
               >
-                Annulla
+                Rigenera
               </Button>
-            </div>
+            ) : null}
+            {onModifyCopilot ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={Boolean(isExecuting)}
+                onClick={() => onModifyCopilot(message.id)}
+              >
+                Modifica
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={Boolean(isExecuting)}
+              onClick={() => onCancelCopilot(message.id)}
+            >
+              Annulla
+            </Button>
           </div>
-        ) : null}
+        </div>
+      ) : null}
 
-        {!isUser && message.items && message.items.length > 0 && (
-          <ul className="space-y-1.5 rounded-xl border border-slate-100 bg-slate-50/80 p-3">
-            {message.items.map((item) => (
-              <li key={item.id} className="text-xs text-slate-600">
-                <span className="font-medium text-slate-900">{item.title}</span>
-                {item.subtitle ? ` · ${item.subtitle}` : ""}
-              </li>
-            ))}
-          </ul>
-        )}
+      {!isUser && message.items && message.items.length > 0 && (
+        <ul className="space-y-1.5 rounded-xl border border-slate-100 bg-slate-50/80 p-3">
+          {message.items.map((item) => (
+            <li key={item.id} className="text-xs text-slate-600">
+              <span className="font-medium text-slate-900">{item.title}</span>
+              {item.subtitle ? ` · ${item.subtitle}` : ""}
+            </li>
+          ))}
+        </ul>
+      )}
 
-        {!isUser && message.actions && message.actions.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {message.actions.map((action) => {
-              const Icon = ACTION_ICONS[action.kind];
-              const isExternal = action.external || action.href.startsWith("tel:");
-              const className = "inline-flex";
+      {!isUser && message.actions && message.actions.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {message.actions.map((action) => {
+            const Icon = ACTION_ICONS[action.kind];
+            const isExternal = action.external || action.href.startsWith("tel:");
+            const className = "inline-flex";
 
-              if (isExternal) {
-                return (
-                  <a
-                    key={action.id}
-                    href={action.href}
-                    target={action.href.startsWith("tel:") ? undefined : "_blank"}
-                    rel={action.href.startsWith("tel:") ? undefined : "noopener noreferrer"}
-                    className={className}
-                  >
-                    <Button variant="outline" size="sm" type="button">
-                      {Icon ? <Icon className="h-3.5 w-3.5" /> : null}
-                      {action.label}
-                      {!action.href.startsWith("tel:") ? (
-                        <ExternalLink className="h-3 w-3 opacity-60" />
-                      ) : null}
-                    </Button>
-                  </a>
-                );
-              }
-
+            if (isExternal) {
               return (
-                <Link key={action.id} href={action.href} className={className}>
+                <a
+                  key={action.id}
+                  href={action.href}
+                  target={action.href.startsWith("tel:") ? undefined : "_blank"}
+                  rel={action.href.startsWith("tel:") ? undefined : "noopener noreferrer"}
+                  className={className}
+                >
                   <Button variant="outline" size="sm" type="button">
                     {Icon ? <Icon className="h-3.5 w-3.5" /> : null}
                     {action.label}
+                    {!action.href.startsWith("tel:") ? (
+                      <ExternalLink className="h-3 w-3 opacity-60" />
+                    ) : null}
                   </Button>
-                </Link>
+                </a>
               );
-            })}
-          </div>
-        )}
-      </div>
+            }
+
+            return (
+              <Link key={action.id} href={action.href} className={className}>
+                <Button variant="outline" size="sm" type="button">
+                  {Icon ? <Icon className="h-3.5 w-3.5" /> : null}
+                  {action.label}
+                </Button>
+              </Link>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
+
+  if (embedded) {
+    return content;
+  }
+
+  return <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>{content}</div>;
 }

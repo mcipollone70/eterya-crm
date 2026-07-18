@@ -19,7 +19,7 @@ export type CommandCenterDecisionIcon =
 
 export interface CommandCenterSyncStatus {
   label: string;
-  variant: "success" | "warning" | "danger" | "muted";
+  variant: "success" | "warning" | "danger" | "muted" | "default" | "info";
 }
 
 export interface CommandCenterMission {

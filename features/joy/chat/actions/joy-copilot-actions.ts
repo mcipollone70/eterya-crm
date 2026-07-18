@@ -20,3 +20,42 @@ export async function executeJoyCopilotAction(
 
   return executeJoyCopilotOperation(operation);
 }
+
+/** Esegue operazione principale + eventuali follow-up in sequenza (debrief multi-step). */
+export async function executeJoyCopilotActionBatch(
+  operation: JoyCopilotOperation,
+  followUpOperations: JoyCopilotOperation[] = []
+): Promise<JoyCopilotExecuteResult> {
+  if (!isSupabaseConfigured()) {
+    return { success: false, message: NOT_CONFIGURED_MESSAGE };
+  }
+
+  const primary = await executeJoyCopilotOperation(operation);
+  if (!primary.success) {
+    return primary;
+  }
+
+  const messages = [primary.message];
+  let lastHref = primary.href;
+
+  for (const followOp of followUpOperations) {
+    const result = await executeJoyCopilotOperation(followOp);
+    if (!result.success) {
+      return {
+        success: false,
+        message: `${messages.join(" ")} Poi: ${result.message}`,
+        href: lastHref,
+      };
+    }
+    messages.push(result.message);
+    if (result.href) {
+      lastHref = result.href;
+    }
+  }
+
+  return {
+    success: true,
+    message: messages.join(" "),
+    href: lastHref,
+  };
+}

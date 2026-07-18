@@ -1,9 +1,6 @@
-import { JoyPage } from "@/features/joy";
+import { redirect } from "next/navigation";
 
-export const metadata = { title: "Joy AI" };
-
-export const dynamic = "force-dynamic";
-
+/** Legacy hub — canonico: JOY Command Center. */
 export default function Page() {
-  return <JoyPage />;
+  redirect("/joy-ai");
 }

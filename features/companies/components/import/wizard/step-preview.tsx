@@ -1,34 +1,55 @@
 import {
   AlertTriangle,
   Building2,
+  CheckCircle2,
   Copy,
   FileWarning,
+  Link2,
   Mail,
   MapPin,
   MapPinOff,
   Phone,
+  UserX,
   Wrench,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import type { CompanyImportRecord, ImportPreviewStats } from "../../../types/import";
+import type {
+  CompanyImportBrandOptions,
+  CompanyImportRecord,
+  ImportPreviewStats,
+} from "../../../types/import";
+import { IMPORT_RELATIONSHIP_UI_OPTIONS } from "../../../types/import";
 
 interface StepPreviewProps {
   stats: ImportPreviewStats;
   records: CompanyImportRecord[];
+  brandOptions: CompanyImportBrandOptions;
 }
 
-export function StepPreview({ stats, records }: StepPreviewProps) {
+export function StepPreview({ stats, records, brandOptions }: StepPreviewProps) {
+  const relationshipLabel =
+    IMPORT_RELATIONSHIP_UI_OPTIONS.find(
+      (o) => o.value === brandOptions.relationshipStatus
+    )?.label ?? brandOptions.relationshipStatus;
+
   const statCards = [
-    { label: "Totale aziende", value: stats.totalCompanies, icon: Building2, variant: "default" as const },
-    { label: "Duplicati Partita IVA", value: stats.duplicateVatNumbers, icon: Copy, variant: "warning" as const },
-    { label: "Duplicati Codice Fiscale", value: stats.duplicateTaxCodes, icon: Copy, variant: "warning" as const },
-    { label: "Record incompleti", value: stats.incompleteRecords, icon: FileWarning, variant: "warning" as const },
-    { label: "Senza telefono", value: stats.withoutPhone, icon: Phone, variant: "muted" as const },
-    { label: "Senza email", value: stats.withoutEmail, icon: Mail, variant: "muted" as const },
-    { label: "Senza indirizzo", value: stats.withoutAddress, icon: MapPin, variant: "muted" as const },
-    { label: "Record geocodificati", value: stats.geocodedRecords, icon: MapPinOff, variant: "info" as const },
-    { label: "Record da correggere", value: stats.recordsToFix, icon: Wrench, variant: "danger" as const },
+    { label: "Righe totali", value: stats.totalCompanies, icon: Building2 },
+    { label: "Righe valide", value: stats.validRecords, icon: CheckCircle2 },
+    { label: "Senza ragione sociale", value: stats.missingNameRecords, icon: UserX },
+    { label: "Duplicati nel file", value: stats.duplicateInFile, icon: Copy },
+    {
+      label: "Possibili già presenti",
+      value: stats.possibleExistingMatches,
+      icon: Link2,
+    },
+    { label: "Duplicati Partita IVA", value: stats.duplicateVatNumbers, icon: Copy },
+    { label: "Record incompleti", value: stats.incompleteRecords, icon: FileWarning },
+    { label: "Senza telefono", value: stats.withoutPhone, icon: Phone },
+    { label: "Senza email", value: stats.withoutEmail, icon: Mail },
+    { label: "Senza indirizzo", value: stats.withoutAddress, icon: MapPin },
+    { label: "Record geocodificati", value: stats.geocodedRecords, icon: MapPinOff },
+    { label: "Record da correggere", value: stats.recordsToFix, icon: Wrench },
   ];
 
   const preview = records.slice(0, 10);
@@ -36,6 +57,24 @@ export function StepPreview({ stats, records }: StepPreviewProps) {
 
   return (
     <div className="space-y-6">
+      <Card>
+        <CardContent className="flex flex-wrap items-center gap-3 pt-5 text-sm text-slate-700">
+          <span>
+            Brand:{" "}
+            <strong>{brandOptions.brandName || brandOptions.brandId}</strong>
+          </span>
+          <span className="text-slate-300">·</span>
+          <span>
+            Relazione: <strong>{relationshipLabel}</strong>
+          </span>
+          <span className="text-slate-300">·</span>
+          <span>
+            Principale se assente:{" "}
+            <strong>{brandOptions.setPrimaryIfNone ? "sì" : "no"}</strong>
+          </span>
+        </CardContent>
+      </Card>
+
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {statCards.map(({ label, value, icon: Icon }) => (
           <Card key={label}>
@@ -93,18 +132,18 @@ export function StepPreview({ stats, records }: StepPreviewProps) {
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto rounded-lg border border-slate-200">
-            <table className="w-full min-w-[1100px] text-left text-sm">
+            <table className="w-full min-w-[1200px] text-left text-sm">
               <thead className="bg-slate-50">
                 <tr>
                   <th className="px-3 py-2 text-xs font-semibold text-slate-500">Ragione sociale</th>
                   <th className="px-3 py-2 text-xs font-semibold text-slate-500">P.IVA</th>
+                  <th className="px-3 py-2 text-xs font-semibold text-slate-500">Cod. cliente</th>
                   <th className="px-3 py-2 text-xs font-semibold text-slate-500">Comune</th>
                   <th className="px-3 py-2 text-xs font-semibold text-slate-500">Provincia</th>
                   <th className="px-3 py-2 text-xs font-semibold text-slate-500">CAP</th>
                   <th className="px-3 py-2 text-xs font-semibold text-slate-500">Indirizzo</th>
                   <th className="px-3 py-2 text-xs font-semibold text-slate-500">Email</th>
                   <th className="px-3 py-2 text-xs font-semibold text-slate-500">Telefono</th>
-                  <th className="px-3 py-2 text-xs font-semibold text-slate-500">Coordinate</th>
                 </tr>
               </thead>
               <tbody>
@@ -112,15 +151,13 @@ export function StepPreview({ stats, records }: StepPreviewProps) {
                   <tr key={record.id} className="border-t border-slate-100">
                     <td className="px-3 py-2.5 font-medium text-slate-900">{record.name || "—"}</td>
                     <td className="px-3 py-2.5 text-slate-700">{record.vatNumber || "—"}</td>
+                    <td className="px-3 py-2.5 text-slate-700">{record.customerCode || "—"}</td>
                     <td className="px-3 py-2.5 text-slate-700">{record.city || "—"}</td>
                     <td className="px-3 py-2.5 text-slate-700">{record.province || "—"}</td>
                     <td className="px-3 py-2.5 text-slate-700">{record.postalCode || "—"}</td>
                     <td className="px-3 py-2.5 text-slate-700">{record.address || "—"}</td>
                     <td className="px-3 py-2.5 text-slate-700">{record.email || "—"}</td>
                     <td className="px-3 py-2.5 font-mono text-slate-700">{record.phone || "—"}</td>
-                    <td className="px-3 py-2.5">
-                      <Badge variant="warning">NON GEOCODIFICATE</Badge>
-                    </td>
                   </tr>
                 ))}
               </tbody>

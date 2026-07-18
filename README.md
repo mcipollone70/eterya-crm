@@ -81,6 +81,7 @@ npm run start
 | `GOOGLE_OAUTH_REDIRECT_URI` | solo server | Callback OAuth (es. `{APP_URL}/api/google/calendar/callback`) |
 | `SIGNUP_INVITE_SECRET` | solo server | Codice invito registrazione (produzione) |
 | `ALLOW_PUBLIC_SIGNUP` | solo server | `"true"` per abilitare signup in produzione |
+| `OPENAI_API_KEY` | solo server | Voce naturale Joy (OpenAI TTS `gpt-4o-mini-tts`) |
 | `NODE_ENV` | runtime | `development` / `production` |
 
 Vedi `.env.example` per un template minimo.

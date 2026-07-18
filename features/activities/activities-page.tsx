@@ -15,6 +15,7 @@ import {
   isFollowUpView,
 } from "@/lib/constants/follow-up";
 import { ActivitiesSectionTabs } from "./components/activities-section-tabs";
+import { JoyAiPageLink } from "@/features/joy/components/joy-ai-page-link";
 import { ContactHistoryFilters } from "./components/contact-history-filters";
 import { ContactHistoryTimeline } from "./components/contact-history-timeline";
 import { FollowUpCalendar } from "./components/follow-up-calendar";
@@ -24,10 +25,7 @@ import {
   listContactHistory,
   listContactHistoryOperators,
 } from "./services/contact-history.service";
-import {
-  listFollowUpCompanyOptions,
-  listFollowUps,
-} from "./services/follow-ups.service";
+import { listFollowUps } from "./services/follow-ups.service";
 
 interface ActivitiesPageProps {
   section?: string;
@@ -71,16 +69,13 @@ export async function ActivitiesPage({
   }
 
   if (activeSection === "followups") {
-    const [{ data: followUps, error }, { data: companies }] = await Promise.all([
-      listFollowUps({
-        companyId: fcompany || undefined,
-        status: isFollowUpStatus(fstatus) ? fstatus : null,
-        priority: isFollowUpPriority(fpriority) ? fpriority : null,
-        period: isFollowUpPeriod(fperiod) && fperiod ? fperiod : null,
-        limit: 500,
-      }),
-      listFollowUpCompanyOptions(),
-    ]);
+    const { data: followUps, error } = await listFollowUps({
+      companyId: fcompany || undefined,
+      status: isFollowUpStatus(fstatus) ? fstatus : null,
+      priority: isFollowUpPriority(fpriority) ? fpriority : null,
+      period: isFollowUpPeriod(fperiod) && fperiod ? fperiod : null,
+      limit: 500,
+    });
 
     return (
       <div className="space-y-6">
@@ -89,6 +84,7 @@ export async function ActivitiesPage({
           subtitle={`${followUps.length.toLocaleString("it-IT")} follow-up${
             followUpView === "calendar" ? " · vista calendario" : " · vista elenco"
           }.`}
+          actions={<JoyAiPageLink prompt="Quali follow-up sono in ritardo?" />}
         />
 
         <Suspense fallback={null}>
@@ -96,7 +92,7 @@ export async function ActivitiesPage({
         </Suspense>
 
         <Suspense fallback={null}>
-          <FollowUpFilters companies={companies} />
+          <FollowUpFilters />
         </Suspense>
 
         {error ? (
@@ -142,6 +138,7 @@ export async function ActivitiesPage({
         subtitle={`${items.length.toLocaleString("it-IT")} voci nello storico contatti${
           search ? " · ricerca attiva" : ""
         }.`}
+        actions={<JoyAiPageLink prompt="Riepiloga la mia giornata" />}
       />
 
       <Suspense fallback={null}>

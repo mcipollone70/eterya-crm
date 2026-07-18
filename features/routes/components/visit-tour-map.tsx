@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { CircleMarker, Polyline, TileLayer, useMap } from "react-leaflet";
+import { CircleMarker, Polyline, TileLayer, useMap, useMapEvents } from "react-leaflet";
 import { COMMERCIAL_STATUS_MARKER_COLORS } from "@/features/maps/constants/map-config";
 import type {
   GeoPoint,
@@ -14,9 +14,11 @@ interface VisitTourMapProps {
   routeCoordinates: GeoPoint[];
   destination: VisitTourDestination | null;
   selectedCompanies: VisitTourCandidate[];
+  candidateCompanies?: VisitTourCandidate[];
   origin: GeoPoint | null;
   orderedStopIds?: string[];
   onViewportChange?: (bounds: VisitTourGeoBounds, zoom: number) => void;
+  onCompanyClick?: (company: VisitTourCandidate) => void;
 }
 
 function FitTourBounds({
@@ -90,15 +92,25 @@ function MapViewportReporter({
   return null;
 }
 
+function MapClickDismiss({ onDismiss }: { onDismiss?: () => void }) {
+  useMapEvents({
+    click: () => onDismiss?.(),
+  });
+  return null;
+}
+
 export function VisitTourMap({
   routeCoordinates,
   destination,
   selectedCompanies,
+  candidateCompanies = [],
   origin,
   orderedStopIds,
   onViewportChange,
+  onCompanyClick,
 }: VisitTourMapProps) {
   const selectedIds = new Set(selectedCompanies.map((company) => company.id));
+  const visibleCandidates = candidateCompanies.filter((company) => !selectedIds.has(company.id));
 
   const orderedTourLine: GeoPoint[] = [];
   if (origin) {
@@ -129,6 +141,7 @@ export function VisitTourMap({
         origin={origin}
       />
       <MapViewportReporter onViewportChange={onViewportChange} />
+      <MapClickDismiss onDismiss={() => undefined} />
 
       {routeCoordinates.length > 1 && (
         <Polyline
@@ -160,6 +173,23 @@ export function VisitTourMap({
         />
       )}
 
+      {visibleCandidates.map((company) => (
+        <CircleMarker
+          key={`candidate-${company.id}`}
+          center={[company.latitude, company.longitude]}
+          radius={6}
+          pathOptions={{
+            color: "#ffffff",
+            weight: 1,
+            fillColor: COMMERCIAL_STATUS_MARKER_COLORS[company.commercial_status],
+            fillOpacity: 0.45,
+          }}
+          eventHandlers={{
+            click: () => onCompanyClick?.(company),
+          }}
+        />
+      ))}
+
       {selectedCompanies.map((company) => (
         <CircleMarker
           key={company.id}
@@ -168,8 +198,11 @@ export function VisitTourMap({
           pathOptions={{
             color: "#ffffff",
             weight: 2,
-            fillColor: COMMERCIAL_STATUS_MARKER_COLORS[company.commercial_status],
+            fillColor: selectedIds.has(company.id) ? "#4f46e5" : COMMERCIAL_STATUS_MARKER_COLORS[company.commercial_status],
             fillOpacity: selectedIds.has(company.id) ? 1 : 0.7,
+          }}
+          eventHandlers={{
+            click: () => onCompanyClick?.(company),
           }}
         />
       ))}

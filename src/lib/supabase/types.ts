@@ -21,6 +21,8 @@ export type CommercialStatus =
   | "ex_cliente"
   | "da_ricontattare"
   | "non_interessato";
+/** Relazione commerciale sul singolo marchio (company_brands). Distinta da CommercialStatus legacy. */
+export type BrandRelationshipStatus = "prospect" | "customer" | "former_customer";
 export type UserRole = "super_admin" | "org_admin" | "manager" | "agent" | "viewer";
 export type ActivityStatus = "todo" | "in_progress" | "done" | "cancelled";
 export type FollowUpStatus = "todo" | "completed" | "postponed" | "cancelled";
@@ -36,7 +38,7 @@ export type ActivityType =
   | "quote"
   | "note";
 export type VisitStatus = "scheduled" | "in_progress" | "completed" | "cancelled" | "no_show";
-export type VisitTourStatus = "draft" | "planned" | "completed" | "cancelled";
+export type VisitTourStatus = "draft" | "planned" | "in_progress" | "completed" | "cancelled";
 export type VoiceNoteStatus = "recorded" | "transcribing" | "transcribed" | "processed" | "failed";
 export type OpportunityStatus = "draft" | "sent" | "accepted" | "rejected" | "expired" | "cancelled";
 export type OpportunityStage =
@@ -52,8 +54,23 @@ export type ProductFamily =
   | "tapparelle"
   | "vepa"
   | "tende_cristal"
-  | "tende_tecniche_rullo";
+  | "tende_tecniche_rullo"
+  | "altro";
+export type OrderFulfillmentStatus =
+  | "bozza"
+  | "confermato"
+  | "in_lavorazione"
+  | "pronto"
+  | "consegnato"
+  | "annullato";
 export type ProductInterestLevel = "low" | "medium" | "high";
+export type SampleStatus = "consegnato" | "restituito" | "acquistato" | "perso";
+export type ServiceTicketStatus =
+  | "aperto"
+  | "in_lavorazione"
+  | "in_attesa"
+  | "risolto"
+  | "chiuso";
 export type CompanyProductRelation = "interest" | "purchased";
 export type AttachmentEntityType =
   | "company"
@@ -181,6 +198,32 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [];
+      };
+      brands: {
+        Row: {
+          id: string;
+          name: string;
+          slug: string;
+          short_code: string | null;
+          color: string | null;
+          logo_url: string | null;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          name: string;
+          slug: string;
+          short_code?: string | null;
+          color?: string | null;
+          logo_url?: string | null;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["brands"]["Insert"]>;
         Relationships: [];
       };
       companies: {
@@ -339,7 +382,29 @@ export interface Database {
           updated_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["agenda_reminders"]["Insert"]>;
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: "agenda_reminders_company_id_fkey";
+            columns: ["company_id"];
+            isOneToOne: false;
+            referencedRelation: "companies";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "agenda_reminders_contact_id_fkey";
+            columns: ["contact_id"];
+            isOneToOne: false;
+            referencedRelation: "contacts";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "agenda_reminders_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       google_calendar_connections: {
         Row: {
@@ -354,6 +419,9 @@ export interface Database {
           last_sync_error: string | null;
           connected_at: string;
           updated_at: string;
+          sync_token: string | null;
+          sync_in_progress_at: string | null;
+          granted_scopes: string | null;
         };
         Insert: {
           user_id: string;
@@ -367,6 +435,9 @@ export interface Database {
           last_sync_error?: string | null;
           connected_at?: string;
           updated_at?: string;
+          sync_token?: string | null;
+          sync_in_progress_at?: string | null;
+          granted_scopes?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["google_calendar_connections"]["Insert"]>;
         Relationships: [];
@@ -399,6 +470,46 @@ export interface Database {
           updated_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["calendar_external_events"]["Insert"]>;
+        Relationships: [];
+      };
+      calendar_google_events: {
+        Row: {
+          id: string;
+          user_id: string;
+          google_event_id: string;
+          google_calendar_id: string;
+          summary: string;
+          description: string | null;
+          start_at: string;
+          end_at: string | null;
+          all_day: boolean;
+          status: string | null;
+          html_link: string | null;
+          recurring_event_id: string | null;
+          is_crm_managed: boolean;
+          last_seen_at: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          google_event_id: string;
+          google_calendar_id: string;
+          summary?: string;
+          description?: string | null;
+          start_at: string;
+          end_at?: string | null;
+          all_day?: boolean;
+          status?: string | null;
+          html_link?: string | null;
+          recurring_event_id?: string | null;
+          is_crm_managed?: boolean;
+          last_seen_at?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["calendar_google_events"]["Insert"]>;
         Relationships: [];
       };
       activities: {
@@ -441,7 +552,22 @@ export interface Database {
           updated_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["activities"]["Insert"]>;
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: "activities_company_id_fkey";
+            columns: ["company_id"];
+            isOneToOne: false;
+            referencedRelation: "companies";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "activities_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       follow_ups: {
         Row: {
@@ -475,7 +601,29 @@ export interface Database {
           updated_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["follow_ups"]["Insert"]>;
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: "follow_ups_company_id_fkey";
+            columns: ["company_id"];
+            isOneToOne: false;
+            referencedRelation: "companies";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "follow_ups_contact_id_fkey";
+            columns: ["contact_id"];
+            isOneToOne: false;
+            referencedRelation: "contacts";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "follow_ups_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       visits: {
         Row: {
@@ -511,7 +659,22 @@ export interface Database {
           updated_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["visits"]["Insert"]>;
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: "visits_company_id_fkey";
+            columns: ["company_id"];
+            isOneToOne: false;
+            referencedRelation: "companies";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "visits_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       visit_tours: {
         Row: {
@@ -551,6 +714,34 @@ export interface Database {
           updated_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["visit_tours"]["Insert"]>;
+        Relationships: [
+          {
+            foreignKeyName: "visit_tours_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      joy_conversations: {
+        Row: {
+          id: string;
+          user_id: string;
+          title: string;
+          messages: Json;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          title?: string;
+          messages?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["joy_conversations"]["Insert"]>;
         Relationships: [];
       };
       dashboard_layouts: {
@@ -626,6 +817,12 @@ export interface Database {
           opened_at: string;
           expected_close_at: string | null;
           product_family: ProductFamily;
+          order_status: OrderFulfillmentStatus | null;
+          expected_delivery_at: string | null;
+          order_date: string | null;
+          next_action: string | null;
+          loss_reason: string | null;
+          converted_from_id: string | null;
           metadata: Json;
           created_at: string;
           updated_at: string;
@@ -650,12 +847,40 @@ export interface Database {
           opened_at?: string;
           expected_close_at?: string | null;
           product_family?: ProductFamily;
+          order_status?: OrderFulfillmentStatus | null;
+          expected_delivery_at?: string | null;
+          order_date?: string | null;
+          next_action?: string | null;
+          loss_reason?: string | null;
+          converted_from_id?: string | null;
           metadata?: Json;
           created_at?: string;
           updated_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["opportunities"]["Insert"]>;
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: "opportunities_company_id_fkey";
+            columns: ["company_id"];
+            isOneToOne: false;
+            referencedRelation: "companies";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "opportunities_contact_id_fkey";
+            columns: ["contact_id"];
+            isOneToOne: false;
+            referencedRelation: "contacts";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "opportunities_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       opportunity_stage_history: {
         Row: {
@@ -677,7 +902,15 @@ export interface Database {
           notes?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["opportunity_stage_history"]["Insert"]>;
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: "opportunity_stage_history_changed_by_fkey";
+            columns: ["changed_by"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       products: {
         Row: {
@@ -743,6 +976,49 @@ export interface Database {
         Update: Partial<Database["public"]["Tables"]["company_products"]["Insert"]>;
         Relationships: [];
       };
+      company_brands: {
+        Row: {
+          company_id: string;
+          brand_id: string;
+          is_primary: boolean;
+          relationship_status: BrandRelationshipStatus;
+          customer_code: string | null;
+          relationship_started_at: string | null;
+          relationship_ended_at: string | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          company_id: string;
+          brand_id: string;
+          is_primary?: boolean;
+          relationship_status?: BrandRelationshipStatus;
+          customer_code?: string | null;
+          relationship_started_at?: string | null;
+          relationship_ended_at?: string | null;
+          notes?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["company_brands"]["Insert"]>;
+        Relationships: [
+          {
+            foreignKeyName: "company_brands_company_id_fkey";
+            columns: ["company_id"];
+            isOneToOne: false;
+            referencedRelation: "companies";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "company_brands_brand_id_fkey";
+            columns: ["brand_id"];
+            isOneToOne: false;
+            referencedRelation: "brands";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       company_product_interests: {
         Row: {
           id: string;
@@ -767,7 +1043,22 @@ export interface Database {
           updated_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["company_product_interests"]["Insert"]>;
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: "company_product_interests_company_id_fkey";
+            columns: ["company_id"];
+            isOneToOne: false;
+            referencedRelation: "companies";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "company_product_interests_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "products";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       company_product_interest_history: {
         Row: {
@@ -793,20 +1084,227 @@ export interface Database {
           created_by?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["company_product_interest_history"]["Insert"]>;
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: "company_product_interest_history_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "products";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       opportunity_products: {
         Row: {
+          id: string;
           opportunity_id: string;
           product_id: string;
+          quantity: number;
+          unit_price: number;
+          discount_percent: number;
+          vat_rate: number;
+          line_total: number;
+          description: string | null;
+          sort_order: number;
           created_at: string;
         };
         Insert: {
+          id?: string;
           opportunity_id: string;
           product_id: string;
+          quantity?: number;
+          unit_price?: number;
+          discount_percent?: number;
+          vat_rate?: number;
+          line_total?: number;
+          description?: string | null;
+          sort_order?: number;
           created_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["opportunity_products"]["Insert"]>;
+        Relationships: [
+          {
+            foreignKeyName: "opportunity_products_opportunity_id_fkey";
+            columns: ["opportunity_id"];
+            isOneToOne: false;
+            referencedRelation: "opportunities";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "opportunity_products_product_id_fkey";
+            columns: ["product_id"];
+            isOneToOne: false;
+            referencedRelation: "products";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      opportunity_change_history: {
+        Row: {
+          id: string;
+          opportunity_id: string;
+          event_type: string;
+          field_name: string | null;
+          old_value: string | null;
+          new_value: string | null;
+          notes: string | null;
+          changed_at: string;
+          changed_by: string | null;
+        };
+        Insert: {
+          id?: string;
+          opportunity_id: string;
+          event_type: string;
+          field_name?: string | null;
+          old_value?: string | null;
+          new_value?: string | null;
+          notes?: string | null;
+          changed_at?: string;
+          changed_by?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["opportunity_change_history"]["Insert"]>;
+        Relationships: [];
+      };
+      commercial_document_sequences: {
+        Row: {
+          doc_type: string;
+          year: number;
+          last_value: number;
+          updated_at: string;
+        };
+        Insert: {
+          doc_type: string;
+          year: number;
+          last_value?: number;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["commercial_document_sequences"]["Insert"]>;
+        Relationships: [];
+      };
+      app_settings: {
+        Row: {
+          key: string;
+          value: Json;
+          updated_by: string | null;
+          updated_at: string;
+          created_at: string;
+        };
+        Insert: {
+          key: string;
+          value?: Json;
+          updated_by?: string | null;
+          updated_at?: string;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["app_settings"]["Insert"]>;
+        Relationships: [];
+      };
+      audit_logs: {
+        Row: {
+          id: string;
+          user_id: string | null;
+          actor_email: string | null;
+          action: string;
+          entity_type: string;
+          entity_id: string | null;
+          summary: string | null;
+          metadata: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id?: string | null;
+          actor_email?: string | null;
+          action: string;
+          entity_type: string;
+          entity_id?: string | null;
+          summary?: string | null;
+          metadata?: Json;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["audit_logs"]["Insert"]>;
+        Relationships: [];
+      };
+      product_samples: {
+        Row: {
+          id: string;
+          company_id: string;
+          product_id: string | null;
+          contact_id: string | null;
+          user_id: string;
+          title: string;
+          quantity: number;
+          status: SampleStatus;
+          given_at: string;
+          expected_return_at: string | null;
+          returned_at: string | null;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          company_id: string;
+          product_id?: string | null;
+          contact_id?: string | null;
+          user_id: string;
+          title: string;
+          quantity?: number;
+          status?: SampleStatus;
+          given_at?: string;
+          expected_return_at?: string | null;
+          returned_at?: string | null;
+          notes?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["product_samples"]["Insert"]>;
+        Relationships: [];
+      };
+      service_tickets: {
+        Row: {
+          id: string;
+          company_id: string;
+          product_id: string | null;
+          contact_id: string | null;
+          user_id: string;
+          order_id: string | null;
+          number: string | null;
+          title: string;
+          description: string | null;
+          category: string;
+          status: ServiceTicketStatus;
+          priority: ActivityPriority;
+          opened_at: string;
+          scheduled_at: string | null;
+          resolved_at: string | null;
+          closed_at: string | null;
+          resolution: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          company_id: string;
+          product_id?: string | null;
+          contact_id?: string | null;
+          user_id: string;
+          order_id?: string | null;
+          number?: string | null;
+          title: string;
+          description?: string | null;
+          category?: string;
+          status?: ServiceTicketStatus;
+          priority?: ActivityPriority;
+          opened_at?: string;
+          scheduled_at?: string | null;
+          resolved_at?: string | null;
+          closed_at?: string | null;
+          resolution?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["service_tickets"]["Insert"]>;
         Relationships: [];
       };
       attachments: {
@@ -841,7 +1339,12 @@ export interface Database {
       };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      next_commercial_document_number: {
+        Args: { p_doc_type: string };
+        Returns: string;
+      };
+    };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
   };

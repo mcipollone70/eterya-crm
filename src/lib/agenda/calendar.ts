@@ -131,7 +131,6 @@ export function buildMonthDays(referenceDateKey: string): Date[] {
 }
 
 export function buildWeekDays(referenceDateKey: string): Date[] {
-  const range = getWeekRange(referenceDateKey);
   const start = parseReferenceDate(referenceDateKey);
   const dayOfWeek = (start.getDay() + 6) % 7;
   const weekStart = parseReferenceDate(referenceDateKey);

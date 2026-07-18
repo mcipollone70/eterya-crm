@@ -2,10 +2,13 @@
 export const PRODUCTS_MODULE = "products" as const;
 
 export { ProductsPage } from "./products-page";
-export { saveProductAction, addCompanyProductAction } from "./actions/product-actions";
+export { saveProductAction, updateProductAction, addCompanyProductAction } from "./actions/product-actions";
 export {
   listProducts,
+  getProductById,
   saveProduct,
+  updateProduct,
+  getProductCatalogSummary,
   getProductDashboardMetrics,
   type ProductListItem,
   type ProductFamilyDashboardMetrics,

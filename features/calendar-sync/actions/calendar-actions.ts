@@ -6,6 +6,7 @@ import {
   getGoogleCalendarConnectionView,
   getGoogleCalendarPublicConfig,
 } from "../services/connection.service";
+import { runFullCalendarSyncNow } from "../services/sync.service";
 import type { GoogleCalendarConnectionView } from "@/lib/google-calendar/types";
 
 export interface GoogleCalendarSettingsData {
@@ -25,6 +26,20 @@ export async function getGoogleCalendarSettingsAction(): Promise<GoogleCalendarS
   };
 }
 
+export async function syncGoogleCalendarNowAction(): Promise<{
+  success: boolean;
+  message: string;
+}> {
+  const result = await runFullCalendarSyncNow();
+  if (result.success) {
+    revalidatePath("/settings");
+    revalidatePath("/agenda");
+    revalidatePath("/");
+    revalidatePath("/mission-control");
+  }
+  return result;
+}
+
 export async function disconnectGoogleCalendarAction(): Promise<{
   success: boolean;
   message: string;
@@ -36,5 +51,7 @@ export async function disconnectGoogleCalendarAction(): Promise<{
 
   revalidatePath("/settings");
   revalidatePath("/agenda");
+  revalidatePath("/");
+  revalidatePath("/mission-control");
   return { success: true, message: "Google Calendar scollegato." };
 }

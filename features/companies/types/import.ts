@@ -1,3 +1,5 @@
+import type { BrandRelationshipStatus } from "@/lib/supabase/types";
+
 export type CompanyImportField =
   | "name"
   | "vat_number"
@@ -7,12 +9,16 @@ export type CompanyImportField =
   | "street_number"
   | "city"
   | "province"
+  | "region"
   | "postal_code"
   | "country"
   | "email"
   | "phone_prefix"
   | "phone"
+  | "mobile"
   | "contact_name"
+  | "contact_role"
+  | "customer_code"
   | "website"
   | "notes"
   | "skip"
@@ -73,13 +79,19 @@ export interface CompanyImportRecord {
   vatNumber: string;
   taxCode: string;
   address: string;
+  street: string;
+  streetNumber: string;
   city: string;
   province: string;
+  region: string;
   postalCode: string;
   country: string;
   email: string;
   phone: string;
+  mobile: string;
   contactName: string;
+  contactRole: string;
+  customerCode: string;
   website: string;
   notes: string;
   latitude: number | null;
@@ -94,6 +106,9 @@ export interface CompanyImportRecord {
 
 export interface ImportPreviewStats {
   totalCompanies: number;
+  validRecords: number;
+  missingNameRecords: number;
+  duplicateInFile: number;
   duplicateVatNumbers: number;
   duplicateTaxCodes: number;
   incompleteRecords: number;
@@ -102,6 +117,18 @@ export interface ImportPreviewStats {
   withoutAddress: number;
   geocodedRecords: number;
   recordsToFix: number;
+  /** Stima lato client: righe con P.IVA/email già tipiche di match DB (opzionale). */
+  possibleExistingMatches: number;
+}
+
+/** Opzioni Brand / relazione scelte prima dell'upload. */
+export interface CompanyImportBrandOptions {
+  brandId: string;
+  brandName: string;
+  relationshipStatus: BrandRelationshipStatus;
+  setPrimaryIfNone: boolean;
+  /** Se true, sovrascrive campi azienda già valorizzati. Default false = solo campi vuoti. */
+  overwriteExistingFields: boolean;
 }
 
 export interface ImportWizardData {
@@ -113,20 +140,24 @@ export interface ImportWizardData {
 }
 
 export const COMPANY_FIELD_LABELS: Record<CompanyImportField, string> = {
-  name: "Ragione sociale",
+  name: "Ragione sociale / nome azienda",
   vat_number: "Partita IVA",
-  tax_code: "Codice Fiscale",
+  tax_code: "Codice fiscale",
   address: "Indirizzo completo",
   street: "Via",
-  street_number: "Civico",
+  street_number: "Numero civico",
   city: "Comune",
   province: "Provincia",
+  region: "Regione",
   postal_code: "CAP",
   country: "Nazione",
   email: "Email",
-  phone_prefix: "Prefisso telefono",
+  phone_prefix: "Prefisso",
   phone: "Telefono",
+  mobile: "Cellulare",
   contact_name: "Referente",
+  contact_role: "Ruolo referente",
+  customer_code: "Codice cliente",
   website: "Sito web",
   notes: "Note",
   skip: "Ignora colonna",
@@ -137,17 +168,21 @@ export const MAPPABLE_FIELDS: CompanyImportField[] = [
   "name",
   "vat_number",
   "tax_code",
-  "address",
-  "street",
-  "street_number",
-  "city",
-  "province",
-  "postal_code",
-  "country",
   "email",
   "phone_prefix",
   "phone",
+  "mobile",
+  "address",
+  "street",
+  "street_number",
+  "postal_code",
+  "city",
+  "province",
+  "region",
+  "country",
   "contact_name",
+  "contact_role",
+  "customer_code",
   "website",
   "notes",
   "skip",
@@ -162,3 +197,12 @@ export const GEOCODE_STATUS_LABELS: Record<GeocodeStatus, string> = {
   completed: "GEOCODIFICATE",
   needs_review: "DA VERIFICARE",
 };
+
+export const IMPORT_RELATIONSHIP_UI_OPTIONS: Array<{
+  value: BrandRelationshipStatus;
+  label: string;
+}> = [
+  { value: "customer", label: "Cliente" },
+  { value: "prospect", label: "Prospect" },
+  { value: "former_customer", label: "Ex cliente" },
+];

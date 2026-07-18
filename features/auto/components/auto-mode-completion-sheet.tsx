@@ -4,20 +4,19 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { CalendarPlus, Check, Loader2, X } from "lucide-react";
 import { Button } from "@/components/ui";
+import { CompanySelect } from "@/features/companies/components/company-select";
 import { saveFollowUpAction } from "@/features/activities/actions/follow-up-actions";
 import {
   completeScheduledVisitAction,
   scheduleVisitAction,
 } from "@/features/visits/actions/visit-mutations";
 import { VoiceNotesInput } from "@/features/voice/components/voice-notes-input";
-import type { VisitCompanyOption } from "@/features/visits/services/visits.service";
 import { CONTACT_HISTORY_TYPE_OPTIONS } from "@/lib/constants/contact-history";
 import { VISIT_OUTCOME_OPTIONS } from "@/lib/constants/last-visit";
 import type { AutoModeAppointment } from "../types/auto-mode";
 
 interface AutoModeCompletionSheetProps {
   appointment: AutoModeAppointment;
-  companies: VisitCompanyOption[];
   pendingNotes: string;
   userLocation: { lat: number; lng: number } | null;
   onClose: () => void;
@@ -39,7 +38,6 @@ function defaultNextVisitDateTimeLocal(): string {
 
 export function AutoModeCompletionSheet({
   appointment,
-  companies,
   pendingNotes,
   userLocation,
   onClose,
@@ -222,18 +220,14 @@ export function AutoModeCompletionSheet({
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="block text-base sm:col-span-2">
                   <span className="mb-1 block font-medium text-slate-700">Azienda</span>
-                  <select
+                  <CompanySelect
                     value={nextVisitCompanyId}
-                    onChange={(event) => setNextVisitCompanyId(event.target.value)}
-                    className="field-input w-full rounded-xl border border-slate-200 px-4 py-3"
-                  >
-                    {companies.map((company) => (
-                      <option key={company.id} value={company.id}>
-                        {company.name}
-                        {company.city ? ` · ${company.city}` : ""}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setNextVisitCompanyId}
+                    allowEmpty={false}
+                    placeholder="Seleziona azienda"
+                    selectClassName="field-input w-full rounded-xl border border-slate-200 px-4 py-3"
+                    pinnedIds={[appointment.companyId]}
+                  />
                 </label>
                 <label className="block text-base sm:col-span-2">
                   <span className="mb-1 block font-medium text-slate-700">Data e ora</span>

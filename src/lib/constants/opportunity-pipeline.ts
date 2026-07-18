@@ -47,9 +47,10 @@ export function isOpenOpportunityStage(stage: OpportunityStage): boolean {
 }
 
 export function formatOpportunityAmount(value: number, currency = "EUR"): string {
+  const safe = Number.isFinite(value) ? value : 0;
   return new Intl.NumberFormat("it-IT", {
     style: "currency",
     currency,
     maximumFractionDigits: 0,
-  }).format(value);
+  }).format(safe);
 }

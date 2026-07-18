@@ -1,5 +1,6 @@
-import { JoyChatPage } from "@/features/joy/joy-chat-page";
+import { redirect } from "next/navigation";
 
+/** Legacy Copilot UI — canonico: JOY Command Center. */
 export default function Page() {
-  return <JoyChatPage />;
+  redirect("/joy-ai");
 }

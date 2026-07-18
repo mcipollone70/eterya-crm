@@ -21,7 +21,9 @@ import {
   listVisitToursAction,
   loadVisitTourAction,
   renameVisitTourAction,
+  updateVisitTourStatusAction,
 } from "../actions/visit-tour-actions";
+import { VISIT_TOUR_STATUS_LABELS } from "../constants/visit-tour-status";
 import type {
   VisitTourListItem,
   VisitTourListSortKey,
@@ -101,6 +103,25 @@ export function VisitTourSavedList({
     [onOpenTour]
   );
 
+  const handleCompleteTour = useCallback(
+    (tourId: string) => {
+      setMessage(null);
+      setError(null);
+
+      startTransition(async () => {
+        const result = await updateVisitTourStatusAction(tourId, "completed");
+        if (!result.success) {
+          setError(result.message);
+          return;
+        }
+
+        setMessage(result.message);
+        loadTours();
+      });
+    },
+    [loadTours]
+  );
+
   const handleStartTour = useCallback(
     (tourId: string) => {
       setMessage(null);
@@ -166,6 +187,26 @@ export function VisitTourSavedList({
       });
     },
     []
+  );
+
+  const handleStartInProgress = useCallback(
+    (tourId: string) => {
+      setMessage(null);
+      setError(null);
+
+      startTransition(async () => {
+        const result = await updateVisitTourStatusAction(tourId, "in_progress");
+        if (!result.success) {
+          setError(result.message);
+          return;
+        }
+
+        setMessage(result.message);
+        loadTours();
+        handleStartTour(tourId);
+      });
+    },
+    [handleStartTour, loadTours]
   );
 
   const handleDuplicate = useCallback(
@@ -378,6 +419,9 @@ export function VisitTourSavedList({
                   ) : (
                     <div className="flex flex-wrap items-center gap-2">
                       <h4 className="text-sm font-semibold text-slate-900">{tour.name}</h4>
+                      <span className="rounded-full bg-white px-2 py-0.5 text-xs font-medium text-slate-700 ring-1 ring-slate-200">
+                        {VISIT_TOUR_STATUS_LABELS[tour.status]}
+                      </span>
                       <button
                         type="button"
                         onClick={() => handleStartRename(tour)}
@@ -408,6 +452,9 @@ export function VisitTourSavedList({
                       <span>{formatDurationMinutes(tour.estimatedMinutes)}</span>
                     )}
                   </div>
+                  <p className="text-xs text-slate-500">
+                    {tour.originLabel} → {tour.destinationLabel}
+                  </p>
                 </div>
 
                 <div className="flex flex-wrap gap-2">
@@ -422,13 +469,23 @@ export function VisitTourSavedList({
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleStartTour(tour.id)}
-                    disabled={isPending}
+                    onClick={() => handleStartInProgress(tour.id)}
+                    disabled={isPending || tour.status === "completed"}
                     className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 text-xs font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
                   >
                     <Play className="h-3.5 w-3.5" />
-                    Avvia giro
+                    Avvia
                   </button>
+                  {tour.status !== "completed" && (
+                    <button
+                      type="button"
+                      onClick={() => handleCompleteTour(tour.id)}
+                      disabled={isPending}
+                      className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+                    >
+                      Completa
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => handleDuplicate(tour.id)}

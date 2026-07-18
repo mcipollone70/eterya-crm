@@ -1,9 +1,7 @@
-import Link from "next/link";
 import { Users } from "lucide-react";
-import { Button, EmptyState, EntityForm } from "@/components/ui";
+import { EmptyState, EntityForm } from "@/components/ui";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import type { FormState } from "@/lib/forms";
-import { listCompanyOptions } from "../services/contacts.service";
 import { buildContactSections } from "../utils/contact-fields";
 
 interface ContactFormProps {
@@ -14,9 +12,7 @@ interface ContactFormProps {
 }
 
 /**
- * Wrapper server del form contatto: carica le opzioni azienda per la select e
- * gestisce il degrado grazioso (DB non configurato / nessuna azienda). Condiviso
- * tra le pagine di creazione e modifica.
+ * Wrapper server del form contatto. Condiviso tra le pagine di creazione e modifica.
  */
 export async function ContactForm({
   action,
@@ -34,39 +30,9 @@ export async function ContactForm({
     );
   }
 
-  const includeCompanyId =
-    defaults?.company_id !== null &&
-    defaults?.company_id !== undefined &&
-    String(defaults.company_id).trim() !== ""
-      ? String(defaults.company_id)
-      : undefined;
-
-  const { options, error } = await listCompanyOptions(500, includeCompanyId);
-
-  if (error) {
-    return (
-      <EmptyState icon={Users} title="Impossibile caricare le aziende" message={error} />
-    );
-  }
-
-  if (options.length === 0) {
-    return (
-      <EmptyState
-        icon={Users}
-        title="Nessuna azienda disponibile"
-        message="Un contatto deve essere collegato a un'azienda. Crea prima un'azienda."
-        action={
-          <Link href="/companies/new">
-            <Button>Crea azienda</Button>
-          </Link>
-        }
-      />
-    );
-  }
-
   return (
     <EntityForm
-      sections={buildContactSections(options)}
+      sections={buildContactSections()}
       action={action}
       submitLabel={submitLabel}
       cancelHref={cancelHref}

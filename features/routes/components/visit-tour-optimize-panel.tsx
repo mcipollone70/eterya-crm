@@ -86,29 +86,44 @@ export function VisitTourOptimizePanel({
   onTourSaved,
 }: VisitTourOptimizePanelProps) {
   const { companies, companyById, loadForPoints } = useVisitTourCompanies();
-  const [originType, setOriginType] = useState<"current" | VisitTourDestinationType>("current");
-  const [destinationType, setDestinationType] =
-    useState<VisitTourDestinationType>("company");
-  const [originCompanyId, setOriginCompanyId] = useState("");
-  const [destinationCompanyId, setDestinationCompanyId] = useState("");
+  const [originType, setOriginType] = useState<"current" | VisitTourDestinationType>(
+    loadedTour?.originType ?? "current"
+  );
+  const [destinationType, setDestinationType] = useState<VisitTourDestinationType>(
+    loadedTour?.destinationType ?? "company"
+  );
+  const [originCompanyId, setOriginCompanyId] = useState(loadedTour?.originCompanyId ?? "");
+  const [destinationCompanyId, setDestinationCompanyId] = useState(
+    loadedTour?.destinationCompanyId ?? ""
+  );
   const [originAddressInput, setOriginAddressInput] = useState("");
   const [destinationAddressInput, setDestinationAddressInput] = useState("");
-  const [origin, setOrigin] = useState<GeoPoint | null>(null);
-  const [originLabel, setOriginLabel] = useState("Posizione corrente");
-  const [destination, setDestination] = useState<VisitTourDestination | null>(null);
-  const [constraints, setConstraints] = useState<VisitTourConstraints>({
-    maxDurationMinutes: VISIT_TOUR_DEFAULT_MAX_DURATION_MIN,
-    maxStops: VISIT_TOUR_DEFAULT_MAX_STOPS,
-    maxDeviationKm: VISIT_TOUR_DEFAULT_MAX_DEVIATION_KM,
-  });
-  const [plan, setPlan] = useState<VisitTourOptimizePlan | null>(null);
-  const [stops, setStops] = useState<VisitTourOptimizeStop[]>([]);
+  const [origin, setOrigin] = useState<GeoPoint | null>(loadedTour?.origin ?? null);
+  const [originLabel, setOriginLabel] = useState(
+    loadedTour?.originLabel ?? "Posizione corrente"
+  );
+  const [destination, setDestination] = useState<VisitTourDestination | null>(
+    loadedTour?.destination ?? null
+  );
+  const [constraints, setConstraints] = useState<VisitTourConstraints>(
+    loadedTour?.constraints ?? {
+      maxDurationMinutes: VISIT_TOUR_DEFAULT_MAX_DURATION_MIN,
+      maxStops: VISIT_TOUR_DEFAULT_MAX_STOPS,
+      maxDeviationKm: VISIT_TOUR_DEFAULT_MAX_DEVIATION_KM,
+    }
+  );
+  const [plan, setPlan] = useState<VisitTourOptimizePlan | null>(loadedTour?.plan ?? null);
+  const [stops, setStops] = useState<VisitTourOptimizeStop[]>(loadedTour?.stops ?? []);
   const [optimizeContext, setOptimizeContext] = useState<VisitTourOptimizeContext | null>(null);
   const [manualCompanyId, setManualCompanyId] = useState("");
-  const [tourName, setTourName] = useState("");
-  const [notes, setNotes] = useState("");
+  const [tourName, setTourName] = useState(loadedTour?.name ?? "");
+  const [notes, setNotes] = useState(loadedTour?.notes ?? "");
   const [savedTourId, setSavedTourId] = useState<string | null>(loadedTour?.id ?? null);
-  const [message, setMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(
+    loadedTour
+      ? `Giro "${loadedTour.name}" caricato con ${loadedTour.stops.length} tappe.`
+      : null
+  );
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -123,7 +138,7 @@ export function VisitTourOptimizePanel({
       setPlan(nextPlan);
       onPlanChange(nextPlan, nextOrigin, nextDestination);
     },
-    [destination?.point, onPlanChange, origin]
+    [destination, onPlanChange, origin]
   );
 
   useEffect(() => {
@@ -131,26 +146,8 @@ export function VisitTourOptimizePanel({
       return;
     }
 
-    setOriginType(loadedTour.originType);
-    setDestinationType(loadedTour.destinationType);
-    setOriginCompanyId(loadedTour.originCompanyId);
-    setDestinationCompanyId(loadedTour.destinationCompanyId);
-    setOrigin(loadedTour.origin);
-    setOriginLabel(loadedTour.originLabel);
-    setDestination(loadedTour.destination);
-    setConstraints(loadedTour.constraints);
-    setTourName(loadedTour.name);
-    setNotes(loadedTour.notes ?? "");
-    setSavedTourId(loadedTour.id);
-    setMessage(`Giro "${loadedTour.name}" caricato con ${loadedTour.stops.length} tappe.`);
-    setError(null);
-    syncPlan(
-      loadedTour.stops,
-      loadedTour.plan,
-      loadedTour.origin,
-      loadedTour.destination.point
-    );
-  }, [loadedTour, syncPlan]);
+    onPlanChange(loadedTour.plan, loadedTour.origin, loadedTour.destination.point);
+  }, [loadedTour, onPlanChange]);
 
   const resolveOrigin = useCallback(async (): Promise<{
     point: GeoPoint;
@@ -328,7 +325,7 @@ export function VisitTourOptimizePanel({
       );
       syncPlan(nextPlan.stops, nextPlan);
     },
-    [destination?.point, optimizeContext, origin, plan, syncPlan]
+    [destination, optimizeContext, origin, plan, syncPlan]
   );
 
   const handleRemoveStop = useCallback(

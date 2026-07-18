@@ -8,6 +8,7 @@ import {
   createGoogleCalendarEvent,
   deleteGoogleCalendarEvent,
   isGoogleCalendarEventMissingError,
+  isGoogleCalendarUnauthorizedError,
   updateGoogleCalendarEvent,
 } from "@/lib/google-calendar/api-client";
 import {
@@ -16,15 +17,19 @@ import {
   buildCompletedEventPayload,
   type EntityContext,
 } from "@/lib/google-calendar/event-builder";
+import { logGoogleCalendarSafe } from "@/lib/google-calendar/oauth";
 import type {
   CalendarEntityKind,
   CalendarSyncOperation,
+  GoogleCalendarConnectionRow,
 } from "@/lib/google-calendar/types";
 import {
   ensureGoogleAccessToken,
   getActiveGoogleCalendarConnection,
+  markSyncInProgress,
   recordConnectionSyncError,
   recordConnectionSyncSuccess,
+  updateConnectionSyncToken,
 } from "./connection.service";
 import {
   getExternalEventMapping,
@@ -32,6 +37,7 @@ import {
   markExternalEventError,
   upsertExternalEventMapping,
 } from "./external-events.service";
+import { pullGoogleCalendarEvents } from "./inbound-sync.service";
 
 const VISIT_STATUS_LABELS: Record<string, string> = {
   scheduled: "Pianificata",
@@ -240,6 +246,33 @@ function buildPayloadForOperation(
   return buildCalendarEventPayload(context);
 }
 
+async function withAccessTokenRetry<T>(
+  connection: GoogleCalendarConnectionRow,
+  run: (accessToken: string, active: GoogleCalendarConnectionRow) => Promise<T>
+): Promise<T> {
+  let tokenResult = await ensureGoogleAccessToken(connection);
+  if (tokenResult.error) {
+    throw new Error(tokenResult.error);
+  }
+
+  try {
+    return await run(tokenResult.accessToken, tokenResult.connection);
+  } catch (error) {
+    if (!isGoogleCalendarUnauthorizedError(error)) {
+      throw error;
+    }
+
+    // Un solo retry dopo force refresh — niente loop infinito.
+    tokenResult = await ensureGoogleAccessToken(tokenResult.connection, {
+      forceRefresh: true,
+    });
+    if (tokenResult.error) {
+      throw new Error(tokenResult.error);
+    }
+    return run(tokenResult.accessToken, tokenResult.connection);
+  }
+}
+
 export async function syncCalendarEntity(
   kind: CalendarEntityKind,
   entityId: string,
@@ -265,53 +298,46 @@ export async function syncCalendarEntity(
     return;
   }
 
-  const tokenResult = await ensureGoogleAccessToken(connection);
-  if (tokenResult.error) {
-    await recordConnectionSyncError(connection.user_id, tokenResult.error);
-    await markExternalEventError(connection.user_id, kind, entityId, tokenResult.error);
-    return;
-  }
-
-  const accessToken = tokenResult.accessToken;
-  const activeConnection = tokenResult.connection;
-  const entityRef = buildEntityRef(kind, entityId);
-  const mapping = await getExternalEventMapping(activeConnection.user_id, kind, entityId);
-
   try {
-    if (operation === "cancel") {
-      if (mapping?.google_event_id) {
-        await deleteGoogleCalendarEvent(
+    await withAccessTokenRetry(connection, async (accessToken, activeConnection) => {
+      const entityRef = buildEntityRef(kind, entityId);
+      const mapping = await getExternalEventMapping(activeConnection.user_id, kind, entityId);
+
+      if (operation === "cancel") {
+        if (mapping?.google_event_id) {
+          await deleteGoogleCalendarEvent(
+            accessToken,
+            mapping.google_calendar_id,
+            mapping.google_event_id
+          );
+        }
+        await markExternalEventDeleted(activeConnection.user_id, kind, entityId);
+        await recordConnectionSyncSuccess(activeConnection.user_id);
+        return;
+      }
+
+      const payload = buildPayloadForOperation(context, operation);
+
+      if (operation === "upsert" || operation === "complete") {
+        await upsertGoogleCalendarEvent(
           accessToken,
-          mapping.google_calendar_id,
-          mapping.google_event_id
+          activeConnection,
+          kind,
+          entityId,
+          payload,
+          entityRef,
+          mapping
         );
       }
-      await markExternalEventDeleted(activeConnection.user_id, kind, entityId);
+
       await recordConnectionSyncSuccess(activeConnection.user_id);
-      return;
-    }
-
-    const payload = buildPayloadForOperation(context, operation);
-
-    if (operation === "upsert" || operation === "complete") {
-      await upsertGoogleCalendarEvent(
-        accessToken,
-        activeConnection,
-        kind,
-        entityId,
-        payload,
-        entityRef,
-        mapping
-      );
-    }
-
-    await recordConnectionSyncSuccess(activeConnection.user_id);
+    });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Sincronizzazione Google Calendar non riuscita.";
 
-    await recordConnectionSyncError(activeConnection.user_id, message);
-    await markExternalEventError(activeConnection.user_id, kind, entityId, message);
+    await recordConnectionSyncError(connection.user_id, message);
+    await markExternalEventError(connection.user_id, kind, entityId, message);
   }
 }
 
@@ -323,7 +349,70 @@ export async function triggerCalendarSync(
   try {
     await syncCalendarEntity(kind, entityId, operation);
   } catch (error) {
-    console.error("[calendar-sync]", kind, entityId, operation, error);
+    logGoogleCalendarSafe("error", "sync_entity_failed", {
+      kind,
+      entityId,
+      operation,
+    });
+    console.error("[calendar-sync]", kind, entityId, operation, error instanceof Error ? error.message : "error");
+  }
+}
+
+/** Sync manuale bidirezionale: verifica token + pull inbound Google → Agenda. */
+export async function runFullCalendarSyncNow(): Promise<{
+  success: boolean;
+  message: string;
+}> {
+  const user = await getCurrentUser();
+  if (!user) {
+    return { success: false, message: "Utente non autenticato." };
+  }
+
+  const connection = await getActiveGoogleCalendarConnection();
+  if (!connection) {
+    return {
+      success: false,
+      message: "Google Calendar non collegato. Collega l'account dalle Impostazioni.",
+    };
+  }
+
+  await markSyncInProgress(connection.user_id, true);
+
+  try {
+    const result = await withAccessTokenRetry(connection, async (accessToken, active) => {
+      const pull = await pullGoogleCalendarEvents({
+        accessToken,
+        connection: active,
+      });
+
+      if (pull.error) {
+        throw new Error(pull.error);
+      }
+
+      if (pull.nextSyncToken) {
+        await updateConnectionSyncToken(active.user_id, pull.nextSyncToken);
+      }
+
+      return pull;
+    });
+
+    await recordConnectionSyncSuccess(connection.user_id);
+    logGoogleCalendarSafe("info", "full_sync_ok", {
+      userId: connection.user_id,
+      imported: result.imported,
+    });
+
+    return {
+      success: true,
+      message: `Sincronizzazione completata (${result.imported} eventi Google aggiornati).`,
+    };
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Sincronizzazione Google Calendar non riuscita.";
+    await recordConnectionSyncError(connection.user_id, message);
+    return { success: false, message };
+  } finally {
+    await markSyncInProgress(connection.user_id, false);
   }
 }
 

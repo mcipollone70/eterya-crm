@@ -1,11 +1,6 @@
-import { JoyAutonomousPage } from "@/features/joy/joy-autonomous-page";
+import { redirect } from "next/navigation";
 
-interface PageProps {
-  searchParams?: Promise<{
-    focus?: string;
-  }>;
-}
-
-export default function Page({ searchParams }: PageProps) {
-  return <JoyAutonomousPage searchParams={searchParams} />;
+/** Legacy Autonomous — azioni ora in JOY Command Center con conferma Copilot. */
+export default function Page() {
+  redirect("/joy-ai");
 }

@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { cn } from "@/utils/cn";
+import { CompanySelect } from "@/features/companies/components/company-select";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "./card";
 import { Button } from "./button";
 import type { FieldConfig, FormSection, FormState } from "@/lib/forms";
@@ -33,6 +34,28 @@ function inputType(type: FieldConfig["type"]): string {
   }
 }
 
+function CompanySelectField({
+  field,
+  defaultValue,
+}: {
+  field: FieldConfig;
+  defaultValue: string;
+}) {
+  const [companyId, setCompanyId] = useState(defaultValue);
+
+  return (
+    <CompanySelect
+      name={field.name}
+      value={companyId}
+      onChange={setCompanyId}
+      required={field.required}
+      placeholder={field.placeholder ?? "Seleziona azienda"}
+      allowEmpty={!field.required}
+      emptyLabel={field.placeholder ?? "Seleziona azienda"}
+    />
+  );
+}
+
 function FieldControl({
   field,
   defaultValue,
@@ -47,6 +70,10 @@ function FieldControl({
     placeholder: field.placeholder,
     defaultValue,
   };
+
+  if (field.type === "company_select") {
+    return <CompanySelectField field={field} defaultValue={defaultValue} />;
+  }
 
   if (field.type === "textarea") {
     return (

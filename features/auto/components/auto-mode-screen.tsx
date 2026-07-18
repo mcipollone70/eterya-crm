@@ -6,7 +6,7 @@ import { CalendarDays, Car } from "lucide-react";
 import { Badge, EmptyState } from "@/components/ui";
 import { formatDistanceKm, getDistanceKm } from "@/features/maps/utils/geo-distance";
 import { buildGoogleMapsDirectionsUrl } from "@/features/maps/utils/map-filters";
-import type { VisitCompanyOption } from "@/features/visits/services/visits.service";
+import { resolveCalendarIntegrationStatus } from "@/lib/integrations/status";
 import type { GoogleCalendarConnectionView } from "@/lib/google-calendar/types";
 import type { AutoModeAppointment } from "../types/auto-mode";
 import { AutoModeCompletionSheet } from "./auto-mode-completion-sheet";
@@ -15,32 +15,6 @@ import { AutoModeRecordSheet } from "./auto-mode-record-sheet";
 interface AutoModeScreenProps {
   appointment: AutoModeAppointment | null;
   calendar: GoogleCalendarConnectionView;
-  companies: VisitCompanyOption[];
-}
-
-function calendarStatusLabel(calendar: GoogleCalendarConnectionView): string {
-  if (!calendar.configured) {
-    return "Google Calendar non configurato";
-  }
-  if (!calendar.connected) {
-    return "Google Calendar non collegato";
-  }
-  if (calendar.needsReconnect) {
-    return "Riconnessione richiesta";
-  }
-  return calendar.googleEmail ? `Sincronizzato · ${calendar.googleEmail}` : "Google Calendar attivo";
-}
-
-function calendarStatusVariant(
-  calendar: GoogleCalendarConnectionView
-): "success" | "warning" | "danger" | "muted" {
-  if (!calendar.configured || !calendar.connected) {
-    return "muted";
-  }
-  if (calendar.needsReconnect || calendar.lastSyncError) {
-    return "danger";
-  }
-  return "success";
 }
 
 function requestUserLocation(
@@ -95,19 +69,23 @@ function AutoActionButton({ emoji, label, tone, href, disabled, onClick }: AutoA
   );
 }
 
-export function AutoModeScreen({ appointment, calendar, companies }: AutoModeScreenProps) {
+export function AutoModeScreen({ appointment, calendar }: AutoModeScreenProps) {
+  const calendarStatus = resolveCalendarIntegrationStatus(calendar);
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
-  const [pendingNotes, setPendingNotes] = useState("");
+  const notesVisitId = appointment?.visitId ?? null;
+  const [pendingNotes, setPendingNotes] = useState(appointment?.notes ?? "");
+  const [notesSourceVisitId, setNotesSourceVisitId] = useState(notesVisitId);
   const [showRecordSheet, setShowRecordSheet] = useState(false);
   const [showCompletionSheet, setShowCompletionSheet] = useState(false);
+
+  if (notesSourceVisitId !== notesVisitId) {
+    setNotesSourceVisitId(notesVisitId);
+    setPendingNotes(appointment?.notes ?? "");
+  }
 
   useEffect(() => {
     requestUserLocation(setUserLocation);
   }, []);
-
-  useEffect(() => {
-    setPendingNotes(appointment?.notes ?? "");
-  }, [appointment?.visitId, appointment?.notes]);
 
   const distanceLabel = useMemo(() => {
     if (!appointment?.latitude || !appointment?.longitude || !userLocation) {
@@ -138,6 +116,7 @@ export function AutoModeScreen({ appointment, calendar, companies }: AutoModeScr
   }, []);
 
   if (!appointment) {
+    const startDayHref = `/joy-ai?q=${encodeURIComponent("Inizia la giornata")}`;
     return (
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
         <header className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
@@ -147,21 +126,31 @@ export function AutoModeScreen({ appointment, calendar, companies }: AutoModeScr
             </span>
             <div>
               <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">Modalità Auto</h1>
-              <p className="text-base text-slate-600 sm:text-lg">Nessun appuntamento in programma oggi</p>
+              <p className="text-base text-slate-600 sm:text-lg">
+                Nessun appuntamento in agenda — Joy può proporti un giro operativo
+              </p>
             </div>
           </div>
         </header>
         <EmptyState
           icon={CalendarDays}
-          title="Nessuna visita pianificata"
-          message="Pianifica un appuntamento dall'agenda o dalla pagina Visite per usarlo in modalità auto."
+          title="Giornata libera"
+          message="Joy analizza aziende, follow-up, opportunità e priorità commerciali e ti propone 3–5 visite da confermare. Nessun salvataggio automatico."
         />
-        <Link
-          href="/agenda"
-          className="touch-target inline-flex min-h-16 items-center justify-center rounded-2xl bg-indigo-600 px-6 text-lg font-semibold text-white hover:bg-indigo-700"
-        >
-          Apri agenda
-        </Link>
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <Link
+            href={startDayHref}
+            className="touch-target inline-flex min-h-16 flex-1 items-center justify-center rounded-2xl bg-indigo-600 px-6 text-lg font-semibold text-white hover:bg-indigo-700"
+          >
+            Inizia la giornata con Joy
+          </Link>
+          <Link
+            href={`/joy-ai?q=${encodeURIComponent("Organizza il mio giro visite per oggi")}`}
+            className="touch-target inline-flex min-h-16 flex-1 items-center justify-center rounded-2xl border border-indigo-200 bg-indigo-50 px-6 text-lg font-semibold text-indigo-800 hover:bg-indigo-100"
+          >
+            Organizza il giro
+          </Link>
+        </div>
       </div>
     );
   }
@@ -184,10 +173,7 @@ export function AutoModeScreen({ appointment, calendar, companies }: AutoModeScr
                 <h1 className="text-xl font-bold text-slate-900 sm:text-2xl">Prossimo appuntamento</h1>
               </div>
             </div>
-            <Badge variant={calendarStatusVariant(calendar)}>
-              <CalendarDays className="mr-1 h-4 w-4" />
-              {calendarStatusLabel(calendar)}
-            </Badge>
+            <Badge variant={calendarStatus.variant}>{calendarStatus.label}</Badge>
           </div>
         </header>
 
@@ -266,7 +252,6 @@ export function AutoModeScreen({ appointment, calendar, companies }: AutoModeScr
       {showCompletionSheet ? (
         <AutoModeCompletionSheet
           appointment={appointment}
-          companies={companies}
           pendingNotes={pendingNotes}
           userLocation={userLocation}
           onClose={() => setShowCompletionSheet(false)}

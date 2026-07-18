@@ -17,9 +17,11 @@ export const COMPANY_IMPORT_REVALIDATE_PATHS = [
   "/command-center",
   "/assistant",
   "/joy",
+  "/joy-ai",
   "/joy/chat",
   "/joy/autonomous",
   "/maps",
+  "/giro-visite",
   "/routes",
   "/auto",
 ] as const;

@@ -1,6 +1,10 @@
 import Link from "next/link";
 import { AlertCircle, Calendar, CheckCircle2, RefreshCw } from "lucide-react";
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle } from "@/components/ui";
+import {
+  buildCalendarStatusTooltip,
+  resolveCalendarIntegrationStatus,
+} from "@/lib/integrations/status";
 import type { GoogleCalendarConnectionView } from "@/lib/google-calendar/types";
 import { GoogleCalendarSettingsActions } from "./google-calendar-settings-actions";
 
@@ -13,19 +17,12 @@ interface GoogleCalendarSettingsPanelProps {
 }
 
 function statusBadge(connection: GoogleCalendarConnectionView) {
-  if (!connection.configured) {
-    return <Badge variant="muted">Non configurato</Badge>;
-  }
-  if (!connection.connected) {
-    return <Badge variant="muted">Non collegato</Badge>;
-  }
-  if (connection.needsReconnect) {
-    return <Badge variant="warning">Riconnessione richiesta</Badge>;
-  }
-  if (connection.lastSyncError) {
-    return <Badge variant="warning">Errore sync</Badge>;
-  }
-  return <Badge variant="success">Sincronizzato</Badge>;
+  const status = resolveCalendarIntegrationStatus(connection);
+  return (
+    <Badge variant={status.variant} title={buildCalendarStatusTooltip(connection)}>
+      {status.label}
+    </Badge>
+  );
 }
 
 export function GoogleCalendarSettingsPanel({
@@ -36,6 +33,8 @@ export function GoogleCalendarSettingsPanel({
   flashError,
 }: GoogleCalendarSettingsPanelProps) {
   const connectHref = "/api/google/calendar/connect";
+  const showConnect =
+    configured && (!connection.connected || connection.needsReconnect);
 
   return (
     <Card>
@@ -46,7 +45,8 @@ export function GoogleCalendarSettingsPanel({
             Google Calendar
           </CardTitle>
           <p className="text-sm text-slate-500">
-            Esporta visite, follow-up e promemoria del CRM nel tuo calendario Google.
+            Sincronizzazione bidirezionale: visite, follow-up e promemoria verso Google; eventi
+            Google in Agenda come «Evento Google» (senza conversione automatica).
           </p>
         </div>
         {statusBadge(connection)}
@@ -59,7 +59,7 @@ export function GoogleCalendarSettingsPanel({
               Imposta <code className="text-xs">GOOGLE_CLIENT_ID</code>,{" "}
               <code className="text-xs">GOOGLE_CLIENT_SECRET</code> e{" "}
               <code className="text-xs">GOOGLE_OAUTH_REDIRECT_URI</code> nel file{" "}
-              <code className="text-xs">.env.local</code>.
+              <code className="text-xs">.env.local</code> (e su Vercel in produzione).
             </p>
             {redirectUri && (
               <p className="mt-2 text-xs text-amber-800">
@@ -83,7 +83,7 @@ export function GoogleCalendarSettingsPanel({
           </div>
         )}
 
-        {connection.connected && connection.googleEmail && (
+        {(connection.connected || connection.needsReconnect) && connection.googleEmail && (
           <dl className="grid gap-2 text-sm sm:grid-cols-2">
             <div>
               <dt className="text-slate-500">Account collegato</dt>
@@ -108,17 +108,17 @@ export function GoogleCalendarSettingsPanel({
         )}
 
         <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-          {configured && (!connection.connected || connection.needsReconnect) && (
+          {showConnect && !connection.connected && (
             <Link href={connectHref} className="block sm:inline-block">
               <Button size="lg" className="w-full sm:w-auto">
                 <RefreshCw className="h-4 w-4" />
-                {connection.needsReconnect ? "Ricollega Google Calendar" : "Collega Google Calendar"}
+                Collega Google Calendar
               </Button>
             </Link>
           )}
 
-          {connection.connected && (
-            <GoogleCalendarSettingsActions />
+          {(connection.connected || connection.needsReconnect) && (
+            <GoogleCalendarSettingsActions needsReconnect={connection.needsReconnect} />
           )}
         </div>
 

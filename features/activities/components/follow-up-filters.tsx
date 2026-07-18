@@ -1,21 +1,18 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
+import { CompanySelect } from "@/features/companies/components/company-select";
 import {
   FOLLOW_UP_PERIOD_OPTIONS,
   FOLLOW_UP_PRIORITY_OPTIONS,
   FOLLOW_UP_STATUS_OPTIONS,
 } from "@/lib/constants/follow-up";
-import type { CompanyOption } from "../services/follow-ups.service";
 
-interface FollowUpFiltersProps {
-  companies: CompanyOption[];
-}
-
-export function FollowUpFilters({ companies }: FollowUpFiltersProps) {
+export function FollowUpFilters() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const view = searchParams.get("view") === "calendar" ? "calendar" : "list";
+  const selectedCompanyId = searchParams.get("fcompany") ?? "";
 
   function updateParam(key: string, value: string) {
     const params = new URLSearchParams(searchParams.toString());
@@ -102,18 +99,16 @@ export function FollowUpFilters({ companies }: FollowUpFiltersProps) {
           ))}
         </select>
 
-        <select
-          value={searchParams.get("fcompany") ?? ""}
-          onChange={(event) => updateParam("fcompany", event.target.value)}
-          className="h-9 min-w-[180px] rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 shadow-sm"
-        >
-          <option value="">Tutte le aziende</option>
-          {companies.map((company) => (
-            <option key={company.id} value={company.id}>
-              {company.name}
-            </option>
-          ))}
-        </select>
+        <div className="min-w-[220px] flex-1 sm:max-w-sm">
+          <CompanySelect
+            value={selectedCompanyId}
+            onChange={(companyId) => updateParam("fcompany", companyId)}
+            allowEmpty
+            emptyLabel="Tutte le aziende"
+            placeholder="Tutte le aziende"
+            pinnedIds={selectedCompanyId ? [selectedCompanyId] : []}
+          />
+        </div>
       </div>
     </div>
   );

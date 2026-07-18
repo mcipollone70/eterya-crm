@@ -2,11 +2,9 @@ import Link from "next/link";
 import { Building2, FileSpreadsheet, LayoutDashboard } from "lucide-react";
 import { Card, CardContent } from "@/components/ui";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
-import { getCommercialStatusCounts } from "@/features/companies/services/companies.service";
-import { DASHBOARD_COMMERCIAL_STATUSES } from "@/lib/constants/commercial-status";
 import { cn } from "@/utils/cn";
-import { MissionControlDashboard } from "./components/mission-control-dashboard";
-import { getMissionControlData } from "./services/mission-control.service";
+import { IntelligentDashboard } from "./components/intelligent-dashboard/intelligent-dashboard";
+import { getIntelligentDashboardData } from "./services/intelligent-dashboard.service";
 
 export async function DashboardPage() {
   const configured = isSupabaseConfigured();
@@ -21,7 +19,7 @@ export async function DashboardPage() {
             </div>
             <h3 className="mt-4 text-lg font-semibold text-slate-900">Database non configurato</h3>
             <p className="mt-2 max-w-md text-sm text-slate-500">
-              Aggiungi le variabili Supabase in .env.local per avviare Mission Control.
+              Aggiungi le variabili Supabase in .env.local per avviare il Centro Operativo.
             </p>
           </CardContent>
         </Card>
@@ -29,19 +27,17 @@ export async function DashboardPage() {
     );
   }
 
-  const [missionControl, countsResult] = await Promise.all([
-    getMissionControlData(),
-    getCommercialStatusCounts(),
-  ]);
+  const data = await getIntelligentDashboardData();
 
-  const counts = countsResult.data;
-  const hasData =
-    counts != null && DASHBOARD_COMMERCIAL_STATUSES.some((key) => (counts[key] ?? 0) > 0);
+  const hasAnyData =
+    data.statistics.totalCompanies > 0 ||
+    data.todayActivities.appointmentsToday > 0 ||
+    data.recentActivities.length > 0;
 
-  if (!hasData) {
+  if (!hasAnyData) {
     return (
       <div className="space-y-6">
-        <MissionControlDashboard data={missionControl} />
+        <IntelligentDashboard data={data} />
         <Card>
           <CardContent className="flex flex-col items-center py-12 text-center">
             <div className="flex h-14 w-14 items-center justify-center rounded-full bg-slate-100">
@@ -67,5 +63,5 @@ export async function DashboardPage() {
     );
   }
 
-  return <MissionControlDashboard data={missionControl} />;
+  return <IntelligentDashboard data={data} />;
 }

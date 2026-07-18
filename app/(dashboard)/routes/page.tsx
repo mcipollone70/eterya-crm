@@ -1,9 +1,6 @@
-import { RoutesPage } from "@/features/routes";
+import { redirect } from "next/navigation";
 
-export const metadata = { title: "Giro Visite" };
-
-export const dynamic = "force-dynamic";
-
+/** Compatibilità link esistenti — reindirizza alla route canonica. */
 export default function Page() {
-  return <RoutesPage />;
+  redirect("/giro-visite");
 }

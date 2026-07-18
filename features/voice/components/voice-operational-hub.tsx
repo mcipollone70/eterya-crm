@@ -1,9 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useCallback, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Bell, CalendarPlus, Loader2, Mic, Save } from "lucide-react";
 import { Button, StickyActionBar } from "@/components/ui";
+import { CompanySelect } from "@/features/companies/components/company-select";
+import type { CompanySelectOption } from "@/features/companies/components/company-select";
 import { saveFollowUpAction } from "@/features/activities/actions/follow-up-actions";
 import { agendaSaveReminderAction } from "@/features/agenda/actions/agenda-actions";
 import { saveVisitAction } from "@/features/visits/actions/visit-mutations";
@@ -18,7 +20,6 @@ import type { ActivityPriority } from "@/lib/supabase/types";
 import { useSpeechRecognition } from "../hooks/use-speech-recognition";
 
 interface VoiceOperationalHubProps {
-  companies: Array<{ id: string; name: string; city?: string | null }>;
   defaultCompanyId?: string;
   defaultIntent?: VoiceIntent;
 }
@@ -35,13 +36,13 @@ function defaultVisitDateTimeLocal(): string {
 }
 
 export function VoiceOperationalHub({
-  companies,
   defaultCompanyId = "",
   defaultIntent = "visit_note",
 }: VoiceOperationalHubProps) {
   const router = useRouter();
   const [intent, setIntent] = useState<VoiceIntent>(defaultIntent);
   const [companyId, setCompanyId] = useState(defaultCompanyId);
+  const [selectedCompany, setSelectedCompany] = useState<CompanySelectOption | null>(null);
   const [transcript, setTranscript] = useState("");
   const [scheduledAt, setScheduledAt] = useState(defaultDateTimeLocal());
   const [visitCompletedAt, setVisitCompletedAt] = useState(defaultVisitDateTimeLocal());
@@ -58,8 +59,14 @@ export function VoiceOperationalHub({
     if (!trimmed) {
       return;
     }
-    setTranscript((current) => (current ? `${current.trimEnd()}\n${trimmed}` : trimmed));
-  }, []);
+    setTranscript((current) => {
+      const next = current ? `${current.trimEnd()}\n${trimmed}` : trimmed;
+      setReminderTitle((title) =>
+        intent === "reminder" && !title.trim() ? defaultReminderTitle(next) : title
+      );
+      return next;
+    });
+  }, [intent]);
 
   const {
     isSupported,
@@ -68,16 +75,6 @@ export function VoiceOperationalHub({
     error: speechError,
     toggleListening,
   } = useSpeechRecognition({ onFinalChunk: appendTranscript });
-
-  useEffect(() => {
-    setCompanyId(defaultCompanyId);
-  }, [defaultCompanyId]);
-
-  useEffect(() => {
-    if (intent === "reminder" && transcript && !reminderTitle) {
-      setReminderTitle(defaultReminderTitle(transcript));
-    }
-  }, [intent, transcript, reminderTitle]);
 
   function handleReset() {
     setTranscript("");
@@ -154,7 +151,7 @@ export function VoiceOperationalHub({
     });
   }
 
-  const selectedCompany = companies.find((company) => company.id === companyId);
+  const selectedCompanyName = selectedCompany?.name ?? null;
 
   return (
     <div className="space-y-4 pb-24 sm:space-y-6 sm:pb-0">
@@ -165,7 +162,12 @@ export function VoiceOperationalHub({
             <button
               key={option.value}
               type="button"
-              onClick={() => setIntent(option.value)}
+              onClick={() => {
+                setIntent(option.value);
+                if (option.value === "reminder" && transcript.trim() && !reminderTitle.trim()) {
+                  setReminderTitle(defaultReminderTitle(transcript));
+                }
+              }}
               className={`inline-flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 text-sm font-medium sm:flex-none sm:h-9 ${
                 intent === option.value
                   ? option.value === "visit_note"
@@ -186,9 +188,9 @@ export function VoiceOperationalHub({
       </div>
 
       <form id="voice-operational-form" onSubmit={handleSubmit} className="space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
-        {selectedCompany && (
+        {selectedCompanyName && (
           <div className="rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2 text-sm text-indigo-800">
-            Azienda: <span className="font-medium">{selectedCompany.name}</span>
+            Azienda: <span className="font-medium">{selectedCompanyName}</span>
           </div>
         )}
 
@@ -196,22 +198,17 @@ export function VoiceOperationalHub({
           <span className="mb-1 block font-medium text-slate-700">
             Azienda {intent === "reminder" ? "(opzionale)" : ""}
           </span>
-          <select
+          <CompanySelect
             value={companyId}
-            onChange={(event) => setCompanyId(event.target.value)}
+            onChange={setCompanyId}
+            onCompanyChange={setSelectedCompany}
             required={intent !== "reminder"}
-            className="field-input w-full rounded-lg border border-slate-200 px-3"
-          >
-            <option value="">
-              {intent === "reminder" ? "Nessuna azienda" : "Seleziona azienda"}
-            </option>
-            {companies.map((company) => (
-              <option key={company.id} value={company.id}>
-                {company.name}
-                {company.city ? ` · ${company.city}` : ""}
-              </option>
-            ))}
-          </select>
+            allowEmpty
+            emptyLabel={intent === "reminder" ? "Nessuna azienda" : "Seleziona azienda"}
+            placeholder={intent === "reminder" ? "Nessuna azienda" : "Seleziona azienda"}
+            selectClassName="field-input"
+            pinnedIds={defaultCompanyId ? [defaultCompanyId] : []}
+          />
         </label>
 
         <div className="rounded-lg border border-indigo-100 bg-indigo-50/50 p-4">

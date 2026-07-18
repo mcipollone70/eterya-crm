@@ -2,11 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { COMMERCIAL_STATUS_OPTIONS } from "@/lib/constants/commercial-status";
+import { BrandFilter, type BrandFilterOption } from "@/features/brands/components/brand-filter";
 import { DEFAULT_MAP_FILTERS, type MapFiltersState } from "../types/map";
 import { fetchMapFilterCitiesAction } from "../actions/map-actions";
 
 interface MapSidebarFiltersProps {
   provinces: string[];
+  brands: BrandFilterOption[];
   filters: MapFiltersState;
   visibleCount: number;
   onChange: (filters: MapFiltersState) => void;
@@ -15,6 +17,7 @@ interface MapSidebarFiltersProps {
 
 export function MapSidebarFilters({
   provinces,
+  brands,
   filters,
   visibleCount,
   onChange,
@@ -59,8 +62,25 @@ export function MapSidebarFilters({
         </p>
       </div>
 
+      <div className="block text-sm">
+        <span className="mb-1 block font-medium text-slate-700">Brand</span>
+        <BrandFilter
+          brands={brands}
+          basePath="/maps"
+          controlled={{
+            selectedSlugs: filters.brandSlugs,
+            matchMode: filters.brandMatchMode,
+            onChange: (selectedSlugs, matchMode) =>
+              updateFilters({ brandSlugs: selectedSlugs, brandMatchMode: matchMode }),
+          }}
+        />
+        <p className="mt-1 text-[11px] text-slate-500">
+          Multibrand visibile se ha almeno uno dei brand selezionati (non solo primario).
+        </p>
+      </div>
+
       <label className="block text-sm">
-        <span className="mb-1 block font-medium text-slate-700">Stato commerciale</span>
+        <span className="mb-1 block font-medium text-slate-700">Relazione commerciale</span>
         <select
           value={filters.commercialStatus}
           onChange={(event) =>
@@ -77,6 +97,9 @@ export function MapSidebarFilters({
             </option>
           ))}
         </select>
+        <p className="mt-1 text-[11px] text-slate-500">
+          Con Brand attivo: usa relationship_status del Brand filtrato (fallback commercial_status).
+        </p>
       </label>
 
       <label className="block text-sm">

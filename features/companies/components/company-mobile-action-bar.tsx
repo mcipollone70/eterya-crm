@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { CalendarPlus, MapPin, Mic } from "lucide-react";
+import { CalendarPlus, MapPin, Mic, Bot } from "lucide-react";
 import { StickyActionBar } from "@/components/ui";
 import { companyRegisterVisitHref } from "@/lib/constants/visit-workflow";
 
@@ -36,10 +36,11 @@ export function CompanyMobileActionBar({ companyId }: CompanyMobileActionBarProp
           Pianifica
         </Link>
         <Link
-          href={`/assistant?briefing=${companyId}`}
-          className="inline-flex min-h-11 flex-col items-center justify-center gap-0.5 rounded-lg border border-slate-200 bg-white px-1 text-[10px] font-medium text-slate-700"
+          href={`/joy-ai?company=${companyId}`}
+          className="inline-flex min-h-11 flex-col items-center justify-center gap-0.5 rounded-lg border border-violet-200 bg-violet-50 px-1 text-[10px] font-medium text-violet-700"
         >
-          Briefing
+          <Bot className="h-4 w-4" />
+          Joy AI
         </Link>
       </div>
     </StickyActionBar>

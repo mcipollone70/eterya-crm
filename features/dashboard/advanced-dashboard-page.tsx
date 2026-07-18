@@ -10,6 +10,7 @@ import {
 } from "./services/commercial-dashboard.service";
 import { AdvancedDashboardClient } from "./components/advanced-dashboard-client";
 import { DashboardFiltersBar } from "./components/dashboard-filters-bar";
+import { JoyAiPageLink } from "@/features/joy/components/joy-ai-page-link";
 
 interface AdvancedDashboardPageProps {
   agent?: string;
@@ -73,6 +74,14 @@ export async function AdvancedDashboardPage({
 
   return (
     <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-900">Report commerciali</h2>
+          <p className="mt-1 text-sm text-slate-500">KPI, trend e indicatori di vendita.</p>
+        </div>
+        <JoyAiPageLink prompt="Mostrami le statistiche commerciali" />
+      </div>
+
       <Suspense fallback={null}>
         <DashboardFiltersBar
           agents={filterOptions.agents}
