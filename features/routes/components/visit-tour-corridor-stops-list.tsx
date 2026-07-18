@@ -12,6 +12,11 @@ import { COMPANY_STATUS_LABELS } from "@/features/companies/utils/company-fields
 import { COMMERCIAL_STATUS_LABELS } from "@/lib/constants/commercial-status";
 import { formatDistanceKm } from "@/features/maps/utils/geo-distance";
 import type { VisitTourCandidate } from "../types/visit-tour";
+import {
+  GOOGLE_MAPS_LINK_TARGET,
+  isValidGeoPoint,
+  tryBuildGoogleMapsDestinationUrl,
+} from "../utils/google-maps-tour-url";
 
 interface VisitTourCorridorStopsListProps {
   stops: VisitTourCandidate[];
@@ -154,15 +159,34 @@ export function VisitTourCorridorStopsList({
                   Chiama
                 </a>
               )}
-              <a
-                href={`https://www.google.com/maps/dir/?api=1&destination=${stop.latitude},${stop.longitude}&travelmode=driving`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex h-8 items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-3 text-xs font-medium text-indigo-700"
-              >
-                <ExternalLink className="h-3.5 w-3.5" />
-                Naviga
-              </a>
+              {(() => {
+                const navUrl = tryBuildGoogleMapsDestinationUrl({
+                  lat: stop.latitude,
+                  lng: stop.longitude,
+                });
+                if (navUrl) {
+                  return (
+                    <a
+                      href={navUrl}
+                      target={GOOGLE_MAPS_LINK_TARGET}
+                      rel="noopener noreferrer"
+                      data-testid={`google-maps-corridor-stop-${stop.id}`}
+                      className="inline-flex h-8 items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-3 text-xs font-medium text-indigo-700"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                      Avvia questa tappa
+                    </a>
+                  );
+                }
+                if (!isValidGeoPoint({ lat: stop.latitude, lng: stop.longitude })) {
+                  return (
+                    <span className="inline-flex h-8 items-center rounded-lg border border-dashed border-amber-200 bg-amber-50 px-3 text-xs text-amber-800">
+                      Coordinate non valide
+                    </span>
+                  );
+                }
+                return null;
+              })()}
             </div>
           </article>
         ))}

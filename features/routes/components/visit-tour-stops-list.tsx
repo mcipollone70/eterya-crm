@@ -12,7 +12,7 @@ import {
 import { companyRegisterVisitHref } from "@/lib/constants/visit-workflow";
 import { formatDistanceKm } from "@/features/maps/utils/geo-distance";
 import type { VisitTourOptimizeStop } from "../types/visit-tour";
-import { buildGoogleMapsDestinationUrl, isValidGeoPoint } from "../utils/google-maps-tour-url";
+import { buildGoogleMapsDestinationUrl, GOOGLE_MAPS_LINK_TARGET, isValidGeoPoint } from "../utils/google-maps-tour-url";
 
 interface VisitTourStopsListProps {
   stops: VisitTourOptimizeStop[];
@@ -138,17 +138,24 @@ export function VisitTourStopsList({
               >
                 Visita
               </Link>
-              {navUrl && (
+              {navUrl ? (
                 <a
                   href={navUrl}
-                  target="_blank"
+                  target={GOOGLE_MAPS_LINK_TARGET}
                   rel="noopener noreferrer"
                   data-testid={`google-maps-stop-${stop.id}`}
                   className="inline-flex min-h-10 items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-medium text-emerald-800 hover:bg-emerald-100"
                 >
                   <ExternalLink className="h-3.5 w-3.5" />
-                  Avvia navigazione
+                  Avvia questa tappa
                 </a>
+              ) : (
+                <span
+                  className="inline-flex min-h-10 items-center rounded-lg border border-dashed border-amber-200 bg-amber-50 px-3 text-xs text-amber-800"
+                  data-testid={`google-maps-stop-invalid-${stop.id}`}
+                >
+                  Coordinate non valide
+                </span>
               )}
             </div>
           </article>

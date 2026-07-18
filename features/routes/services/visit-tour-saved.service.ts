@@ -10,7 +10,7 @@ import type {
   VisitTourListItem,
   VisitTourSaveStatus,
 } from "../types/visit-tour";
-import { tryBuildGoogleMapsTourUrl } from "../utils/google-maps-tour-url";
+import { tryBuildGoogleMapsTourUrlFromMyLocation } from "../utils/google-maps-tour-url";
 import { buildDefaultTourName } from "../utils/visit-tour-restore";
 import {
   isMissingVisitTourNameColumn,
@@ -57,13 +57,9 @@ function parseOriginDestinationLabels(
 }
 
 function buildListGoogleMapsUrl(row: VisitTourRow): string | null {
-  const origin = row.origin as { lat?: number; lng?: number } | null;
   const destination = row.destination as { lat?: number; lng?: number } | null;
   if (
-    !origin ||
     !destination ||
-    !Number.isFinite(origin.lat) ||
-    !Number.isFinite(origin.lng) ||
     !Number.isFinite(destination.lat) ||
     !Number.isFinite(destination.lng)
   ) {
@@ -92,8 +88,8 @@ function buildListGoogleMapsUrl(row: VisitTourRow): string | null {
     return null;
   }
 
-  return tryBuildGoogleMapsTourUrl(
-    { lat: Number(origin.lat), lng: Number(origin.lng) },
+  // From current position (no origin) — better chance of navigation on iPhone.
+  return tryBuildGoogleMapsTourUrlFromMyLocation(
     { lat: Number(destination.lat), lng: Number(destination.lng) },
     waypoints
   );

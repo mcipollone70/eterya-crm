@@ -48,8 +48,10 @@ import type {
 } from "../types/visit-tour";
 import { findCompaniesAlongRoute, toGeoPoint } from "../utils/find-route-candidates";
 import {
-  buildGoogleMapsTourUrlDetailed,
-  tryBuildGoogleMapsTourUrl,
+  buildGoogleMapsTourUrlFromMyLocation,
+  GOOGLE_MAPS_LINK_TARGET,
+  tryBuildGoogleMapsDestinationUrl,
+  tryBuildGoogleMapsTourPreviewUrl,
 } from "../utils/google-maps-tour-url";
 import { applyVisitTourPlannerFilters } from "../utils/visit-tour-filters";
 import { optimizeNearestNeighborOrder } from "../utils/visit-tour-nearest-neighbor";
@@ -576,33 +578,43 @@ export function VisitTourPlanner({ agents }: VisitTourPlannerProps) {
     tourName,
   ]);
 
-  const googleMapsTour =
-    origin && destination
+  const corridorWaypoints = selectedWaypoints.map((company) => ({
+    lat: company.latitude,
+    lng: company.longitude,
+  }));
+
+  const googleMapsFromMyLocation =
+    destination
       ? (() => {
           try {
-            return buildGoogleMapsTourUrlDetailed(
-              origin,
-              destination.point,
-              selectedWaypoints.map((company) => ({
-                lat: company.latitude,
-                lng: company.longitude,
-              }))
-            );
+            return buildGoogleMapsTourUrlFromMyLocation(destination.point, corridorWaypoints);
           } catch {
-            const url = tryBuildGoogleMapsTourUrl(
-              origin,
-              destination.point,
-              selectedWaypoints.map((company) => ({
-                lat: company.latitude,
-                lng: company.longitude,
-              }))
-            );
-            return url
-              ? { url, waypointCount: selectedWaypoints.length, truncated: false, warning: null }
-              : null;
+            return null;
           }
         })()
       : null;
+
+  const googleMapsPreview =
+    origin && destination
+      ? (() => {
+          const url = tryBuildGoogleMapsTourPreviewUrl(
+            origin,
+            destination.point,
+            corridorWaypoints
+          );
+          return url
+            ? { url, warning: googleMapsFromMyLocation?.warning ?? null }
+            : null;
+        })()
+      : null;
+
+  const nextCorridorStop = selectedWaypoints[0] ?? null;
+  const nextCorridorNavUrl = nextCorridorStop
+    ? tryBuildGoogleMapsDestinationUrl({
+        lat: nextCorridorStop.latitude,
+        lng: nextCorridorStop.longitude,
+      })
+    : null;
 
   const handleOptimizePlanChange = useCallback(
     (plan: VisitTourOptimizePlan | null, nextOrigin: GeoPoint | null, nextDestination: GeoPoint | null) => {
@@ -995,17 +1007,49 @@ export function VisitTourPlanner({ agents }: VisitTourPlannerProps) {
                   Salva giro
                 </button>
 
-                {googleMapsTour && (
+                {nextCorridorNavUrl ? (
                   <a
-                    href={googleMapsTour.url}
-                    target="_blank"
+                    href={nextCorridorNavUrl}
+                    target={GOOGLE_MAPS_LINK_TARGET}
                     rel="noopener noreferrer"
-                    onClick={() => setMapsWarning(googleMapsTour.warning)}
+                    data-testid="google-maps-corridor-next-stop-link"
+                    className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 text-sm font-medium text-white hover:bg-indigo-700"
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                    Avvia prossima tappa
+                    {nextCorridorStop ? `: ${nextCorridorStop.name}` : ""}
+                  </a>
+                ) : selectedWaypoints.length > 0 ? (
+                  <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    Coordinate della prossima tappa non valide: impossibile aprire la navigazione.
+                  </p>
+                ) : null}
+
+                {googleMapsFromMyLocation && (
+                  <a
+                    href={googleMapsFromMyLocation.url}
+                    target={GOOGLE_MAPS_LINK_TARGET}
+                    rel="noopener noreferrer"
+                    onClick={() => setMapsWarning(googleMapsFromMyLocation.warning)}
                     data-testid="google-maps-corridor-link"
                     className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-4 text-sm font-medium text-indigo-700 hover:bg-indigo-100"
                   >
                     <ExternalLink className="h-4 w-4" />
-                    Apri in Google Maps
+                    Visualizza giro completo
+                  </a>
+                )}
+
+                {googleMapsPreview && (
+                  <a
+                    href={googleMapsPreview.url}
+                    target={GOOGLE_MAPS_LINK_TARGET}
+                    rel="noopener noreferrer"
+                    onClick={() => setMapsWarning(googleMapsPreview.warning)}
+                    data-testid="google-maps-corridor-preview-link"
+                    className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                    Visualizza anteprima
                   </a>
                 )}
               </div>

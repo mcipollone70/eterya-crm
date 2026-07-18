@@ -5,7 +5,8 @@
     "width": 393,
     "height": 660
   },
-  "startedAt": "2026-07-18T10:45:48.961Z",
+  "startedAt": "2026-07-18T18:13:45.007Z",
+  "note": "Multi-stop tour may remain preview-only on real iOS; primary CTA is single-stop next stop.",
   "syntheticLayout": {
     "shell": {
       "clientWidth": 393,
@@ -17,30 +18,102 @@
       "clientWidth": 393,
       "clientHeight": 476
     },
-    "cta": {
-      "href": "https://www.google.com/maps/dir/?api=1&origin=41.4677%2C12.9037&destination=41.4677%2C12.9037&waypoints=41.4612%2C12.9125%7C41.4821%2C12.8912%7C41.5755%2C12.8288%7C41.5901%2C12.6502&travelmode=driving&dir_action=navigate",
-      "y": 544,
-      "bottom": 588,
+    "primary": {
+      "href": "https://www.google.com/maps/dir/?api=1&destination=41.4612%2C12.9125&travelmode=driving&dir_action=navigate",
+      "target": "_self",
+      "tag": "A",
+      "y": 386,
+      "bottom": 430,
       "aboveNav": true
+    },
+    "tour": {
+      "href": "https://www.google.com/maps/dir/?api=1&destination=41.4677%2C12.9037&waypoints=41.4612%2C12.9125%7C41.4821%2C12.8912%7C41.5755%2C12.8288%7C41.5901%2C12.6502&travelmode=driving&dir_action=navigate",
+      "target": "_self",
+      "label": "Visualizza giro completo"
+    },
+    "preview": {
+      "href": "https://www.google.com/maps/dir/?api=1&origin=41.4677%2C12.9037&destination=41.4677%2C12.9037&waypoints=41.4612%2C12.9125%7C41.4821%2C12.8912%7C41.5755%2C12.8288%7C41.5901%2C12.6502&travelmode=driving",
+      "target": "_self",
+      "label": "Visualizza anteprima"
+    },
+    "stop": {
+      "href": "https://www.google.com/maps/dir/?api=1&destination=41.4612%2C12.9125&travelmode=driving&dir_action=navigate",
+      "target": "_self"
     },
     "viewport": {
       "w": 393,
       "h": 660
+    },
+    "usedWindowOpen": false
+  },
+  "nextStopHref": "https://www.google.com/maps/dir/?api=1&destination=41.4612%2C12.9125&travelmode=driving&dir_action=navigate",
+  "googleMapsTourHref": "https://www.google.com/maps/dir/?api=1&destination=41.4677%2C12.9037&waypoints=41.4612%2C12.9125%7C41.4821%2C12.8912%7C41.5755%2C12.8288%7C41.5901%2C12.6502&travelmode=driving&dir_action=navigate",
+  "previewHref": "https://www.google.com/maps/dir/?api=1&origin=41.4677%2C12.9037&destination=41.4677%2C12.9037&waypoints=41.4612%2C12.9125%7C41.4821%2C12.8912%7C41.5755%2C12.8288%7C41.5901%2C12.6502&travelmode=driving",
+  "stopHref": "https://www.google.com/maps/dir/?api=1&destination=41.4612%2C12.9125&travelmode=driving&dir_action=navigate",
+  "targets": {
+    "next": "_self",
+    "tour": "_self",
+    "expected": "_self"
+  },
+  "gates": {
+    "nextStop": {
+      "ok": true,
+      "checks": {
+        "https": true,
+        "api": true,
+        "destination": true,
+        "travelmode": true,
+        "dir_action": true,
+        "originAbsent": true
+      },
+      "href": "https://www.google.com/maps/dir/?api=1&destination=41.4612%2C12.9125&travelmode=driving&dir_action=navigate"
+    },
+    "fullTourFromMyLocation": {
+      "ok": true,
+      "checks": {
+        "https": true,
+        "api": true,
+        "destination": true,
+        "travelmode": true,
+        "dir_action": true,
+        "originAbsent": true
+      },
+      "href": "https://www.google.com/maps/dir/?api=1&destination=41.4677%2C12.9037&waypoints=41.4612%2C12.9125%7C41.4821%2C12.8912%7C41.5755%2C12.8288%7C41.5901%2C12.6502&travelmode=driving&dir_action=navigate"
+    },
+    "preview": {
+      "ok": true,
+      "checks": {
+        "https": true,
+        "api": true,
+        "destination": true,
+        "travelmode": true,
+        "dir_action": true,
+        "originAbsent": true
+      },
+      "href": "https://www.google.com/maps/dir/?api=1&origin=41.4677%2C12.9037&destination=41.4677%2C12.9037&waypoints=41.4612%2C12.9125%7C41.4821%2C12.8912%7C41.5755%2C12.8288%7C41.5901%2C12.6502&travelmode=driving"
+    },
+    "perStop": {
+      "ok": true,
+      "checks": {
+        "https": true,
+        "api": true,
+        "destination": true,
+        "travelmode": true,
+        "dir_action": true,
+        "originAbsent": true
+      },
+      "href": "https://www.google.com/maps/dir/?api=1&destination=41.4612%2C12.9125&travelmode=driving&dir_action=navigate"
     }
   },
-  "googleMapsTourHref": "https://www.google.com/maps/dir/?api=1&origin=41.4677%2C12.9037&destination=41.4677%2C12.9037&waypoints=41.4612%2C12.9125%7C41.4821%2C12.8912%7C41.5755%2C12.8288%7C41.5901%2C12.6502&travelmode=driving&dir_action=navigate",
-  "googleMapsTourHrefHttps": true,
-  "nextStopHref": "https://www.google.com/maps/dir/?api=1&destination=41.4612%2C12.9125&travelmode=driving&dir_action=navigate",
+  "noWindowOpenPattern": true,
+  "primaryIsRealAnchor": true,
+  "primaryTargetSelf": true,
   "webkitClickResult": {
     "opened": true,
-    "url": "https://consent.google.com/m?continue=https://www.google.com/maps/dir/?api%3D1%26origin%3D41.4677%252C12.9037%26destination%3D41.4677%252C12.9037%26waypoints%3D41.4612%252C12.9125%257C41.4821%252C12.8912%257C41.5755%252C12.8288%257C41.5901%252C12.6502%26travelmode%3Ddriving%26dir_action%3Dnavigate&gl=IT&m=1&pc=m&uxe=eomtm&cm=2&hl=it&src=1"
+    "note": "Primary uses target=_self real <a>; no window.open / setTimeout",
+    "currentUrl": "https://consent.google.com/m?continue=https://www.google.com/maps/dir/?api%3D1%26destination%3D41.4612%252C12.9125%26travelmode%3Ddriving%26dir_action%3Dnavigate&gl=IT&m=1&pc=m&uxe=eomtm&cm=2&hl=it&src=1"
   },
-  "liveMaps": {
-    "url": "http://127.0.0.1:3000/login?redirectedFrom=%2Fmaps",
-    "title": "Accedi | Eterya CRM",
-    "hasMapShell": false,
-    "hasLeaflet": false
-  },
+  "liveMapsError": "page.goto: Could not connect to server\nCall log:\n  - navigating to \"http://127.0.0.1:3000/maps\", waiting until \"domcontentloaded\"\n",
   "consoleErrors": [],
   "tileFailures": [],
   "passed": true

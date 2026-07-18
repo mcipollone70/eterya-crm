@@ -29,6 +29,7 @@ import type {
   VisitTourListSortKey,
   VisitTourLoadedState,
 } from "../types/visit-tour";
+import { GOOGLE_MAPS_LINK_TARGET } from "../utils/google-maps-tour-url";
 
 interface VisitTourSavedListProps {
   agents: Array<{ id: string; label: string }>;
@@ -134,7 +135,7 @@ export function VisitTourSavedList({
         }
 
         setMessage(
-          `${result.message} Usa «Apri in Google Maps» (link diretto) per avviare la navigazione.`
+          `${result.message} Usa «Visualizza giro completo» o apri il giro e usa «Avvia prossima tappa».`
         );
         loadTours();
       });
@@ -412,17 +413,17 @@ export function VisitTourSavedList({
                   {tour.googleMapsUrl ? (
                     <a
                       href={tour.googleMapsUrl}
-                      target="_blank"
+                      target={GOOGLE_MAPS_LINK_TARGET}
                       rel="noopener noreferrer"
                       data-testid={`google-maps-tour-${tour.id}`}
                       className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-medium text-emerald-800 hover:bg-emerald-100"
                     >
                       <ExternalLink className="h-3.5 w-3.5" />
-                      Apri in Google Maps
+                      Visualizza giro completo
                     </a>
                   ) : (
                     <span className="inline-flex min-h-11 items-center rounded-lg border border-dashed border-slate-200 px-3 text-xs text-slate-500">
-                      Maps: apri il giro e usa il link (giri legacy)
+                      Maps: apri il giro e usa «Avvia prossima tappa» (giri legacy)
                     </span>
                   )}
                   {tour.status !== "completed" && (

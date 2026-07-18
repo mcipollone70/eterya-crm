@@ -40,8 +40,10 @@ import type {
   VisitTourOptimizeStop,
 } from "../types/visit-tour";
 import {
-  buildGoogleMapsDestinationUrl,
-  tryBuildGoogleMapsTourUrl,
+  GOOGLE_MAPS_LINK_TARGET,
+  tryBuildGoogleMapsDestinationUrl,
+  tryBuildGoogleMapsTourPreviewUrl,
+  tryBuildGoogleMapsTourUrlFromMyLocation,
 } from "../utils/google-maps-tour-url";
 import { toGeoPoint } from "../utils/find-route-candidates";
 import { useVisitTourCompanies } from "./visit-tour-companies-provider";
@@ -530,30 +532,29 @@ export function VisitTourOptimizePanel({
     tourName,
   ]);
 
-  const googleMapsTourUrl =
+  const stopWaypoints = stops.map((stop) => ({
+    lat: stop.company.latitude,
+    lng: stop.company.longitude,
+  }));
+
+  // Full multi-stop from current position (iOS may stay in preview — not primary CTA).
+  const googleMapsFromMyLocationUrl = destination
+    ? tryBuildGoogleMapsTourUrlFromMyLocation(destination.point, stopWaypoints)
+    : null;
+
+  // Planned origin = preview only (never labeled “Avvia navigazione”).
+  const googleMapsPreviewUrl =
     origin && destination
-      ? tryBuildGoogleMapsTourUrl(
-          origin,
-          destination.point,
-          stops.map((stop) => ({
-            lat: stop.company.latitude,
-            lng: stop.company.longitude,
-          }))
-        )
+      ? tryBuildGoogleMapsTourPreviewUrl(origin, destination.point, stopWaypoints)
       : null;
 
+  // Single-stop is the reliable iPhone navigation path.
   const nextStop = stops[0] ?? null;
   const nextStopNavUrl = nextStop
-    ? (() => {
-        try {
-          return buildGoogleMapsDestinationUrl({
-            lat: nextStop.company.latitude,
-            lng: nextStop.company.longitude,
-          });
-        } catch {
-          return null;
-        }
-      })()
+    ? tryBuildGoogleMapsDestinationUrl({
+        lat: nextStop.company.latitude,
+        lng: nextStop.company.longitude,
+      })
     : null;
 
   return (
@@ -848,31 +849,58 @@ export function VisitTourOptimizePanel({
           Salva giro
         </button>
 
-        {googleMapsTourUrl && (
-          <a
-            href={googleMapsTourUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            data-testid="google-maps-tour-link"
-            className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-4 text-sm font-medium text-indigo-700 hover:bg-indigo-100"
-          >
-            <ExternalLink className="h-4 w-4" />
-            Apri in Google Maps
-          </a>
-        )}
-
-        {nextStopNavUrl && (
+        {nextStopNavUrl ? (
           <a
             href={nextStopNavUrl}
-            target="_blank"
+            target={GOOGLE_MAPS_LINK_TARGET}
             rel="noopener noreferrer"
             data-testid="google-maps-next-stop-link"
-            className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-medium text-slate-800 hover:bg-slate-50"
+            className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 text-sm font-medium text-white hover:bg-indigo-700"
           >
             <Navigation className="h-4 w-4" />
             Avvia prossima tappa
             {nextStop ? `: ${nextStop.company.name}` : ""}
           </a>
+        ) : stops.length > 0 ? (
+          <p
+            className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+            data-testid="google-maps-next-stop-invalid"
+          >
+            Coordinate della prossima tappa non valide: impossibile aprire la navigazione.
+          </p>
+        ) : null}
+
+        {googleMapsFromMyLocationUrl && (
+          <a
+            href={googleMapsFromMyLocationUrl}
+            target={GOOGLE_MAPS_LINK_TARGET}
+            rel="noopener noreferrer"
+            data-testid="google-maps-tour-link"
+            className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-4 text-sm font-medium text-indigo-700 hover:bg-indigo-100"
+          >
+            <ExternalLink className="h-4 w-4" />
+            Visualizza giro completo
+          </a>
+        )}
+
+        {googleMapsPreviewUrl && (
+          <a
+            href={googleMapsPreviewUrl}
+            target={GOOGLE_MAPS_LINK_TARGET}
+            rel="noopener noreferrer"
+            data-testid="google-maps-preview-link"
+            className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            <ExternalLink className="h-4 w-4" />
+            Visualizza anteprima
+          </a>
+        )}
+
+        {stops.length > 0 && (
+          <p className="text-[11px] leading-snug text-slate-500">
+            Su iPhone la navigazione affidabile è «Avvia prossima tappa» (una destinazione).
+            Il giro completo multi-tappa può restare in anteprima su Maps.
+          </p>
         )}
       </div>
     </aside>

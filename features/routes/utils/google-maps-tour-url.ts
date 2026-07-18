@@ -3,6 +3,9 @@ import type { GeoPoint } from "../types/visit-tour";
 /** Google Maps URL supporta al massimo ~10 tappe intermedie. */
 export const GOOGLE_MAPS_MAX_WAYPOINTS = 10;
 
+/** Target for Maps deep links: same-tab works reliably in iPhone PWA (no window.open). */
+export const GOOGLE_MAPS_LINK_TARGET = "_self" as const;
+
 export function isValidGeoPoint(point: GeoPoint | null | undefined): point is GeoPoint {
   if (!point) {
     return false;
@@ -26,18 +29,108 @@ export interface GoogleMapsTourUrlResult {
   warning: string | null;
 }
 
-/** Navigazione verso una singola destinazione (tappa). */
-export function buildGoogleMapsDestinationUrl(destination: GeoPoint): string {
+export interface BuildGoogleMapsDirOptions {
+  /** Omit to let Google Maps use the device current location. */
+  origin?: GeoPoint | null;
+  destination: GeoPoint;
+  waypoints?: GeoPoint[];
+  /** When true, request navigation start (dir_action=navigate). Default true. */
+  navigate?: boolean;
+}
+
+function waypointWarning(usedCount: number, validCount: number, truncated: boolean): string | null {
+  if (truncated) {
+    return `Google Maps accetta al massimo ${GOOGLE_MAPS_MAX_WAYPOINTS} tappe intermedie: il link include solo le prime ${GOOGLE_MAPS_MAX_WAYPOINTS} di ${validCount}.`;
+  }
+  if (validCount > 8) {
+    return "Molte tappe nel link: verifica su Google Maps che tutte le fermate siano incluse.";
+  }
+  return null;
+}
+
+/**
+ * Universal HTTPS Maps directions URL via URLSearchParams.
+ * Omitting origin = “from my position”. navigate=false = preview only.
+ */
+export function buildGoogleMapsDirUrl(options: BuildGoogleMapsDirOptions): GoogleMapsTourUrlResult {
+  const { origin, destination, waypoints = [], navigate = true } = options;
+
   if (!isValidGeoPoint(destination)) {
     throw new Error("Coordinate destinazione non valide per Google Maps.");
   }
+  if (origin != null && !isValidGeoPoint(origin)) {
+    throw new Error("Coordinate di partenza non valide per Google Maps.");
+  }
+
+  const validWaypoints = waypoints.filter(isValidGeoPoint);
+  const truncated = validWaypoints.length > GOOGLE_MAPS_MAX_WAYPOINTS;
+  const usedWaypoints = truncated
+    ? validWaypoints.slice(0, GOOGLE_MAPS_MAX_WAYPOINTS)
+    : validWaypoints;
 
   const url = new URL("https://www.google.com/maps/dir/");
   url.searchParams.set("api", "1");
+
+  if (origin != null) {
+    url.searchParams.set("origin", formatPoint(origin));
+  }
+
   url.searchParams.set("destination", formatPoint(destination));
+
+  if (usedWaypoints.length > 0) {
+    url.searchParams.set(
+      "waypoints",
+      usedWaypoints.map((point) => formatPoint(point)).join("|")
+    );
+  }
+
   url.searchParams.set("travelmode", "driving");
-  url.searchParams.set("dir_action", "navigate");
-  return url.toString();
+
+  if (navigate) {
+    url.searchParams.set("dir_action", "navigate");
+  }
+
+  return {
+    url: url.toString(),
+    waypointCount: usedWaypoints.length,
+    truncated,
+    warning: waypointWarning(usedWaypoints.length, validWaypoints.length, truncated),
+  };
+}
+
+/** Navigazione verso una singola destinazione (tappa) dalla posizione attuale. */
+export function buildGoogleMapsDestinationUrl(destination: GeoPoint): string {
+  return buildGoogleMapsDirUrl({ destination, navigate: true }).url;
+}
+
+/**
+ * Giro completo dalla posizione attuale: nessun origin, destination=ultima tappa,
+ * waypoints=intermedie, dir_action=navigate.
+ * Su iOS multi-tappa può restare in anteprima — preferire la tappa singola come CTA primaria.
+ */
+export function buildGoogleMapsTourUrlFromMyLocation(
+  destination: GeoPoint,
+  waypoints: GeoPoint[]
+): GoogleMapsTourUrlResult {
+  return buildGoogleMapsDirUrl({
+    destination,
+    waypoints,
+    navigate: true,
+  });
+}
+
+/** Anteprima giro pianificato con origin salvato (senza dir_action=navigate). */
+export function buildGoogleMapsTourPreviewUrl(
+  origin: GeoPoint,
+  destination: GeoPoint,
+  waypoints: GeoPoint[]
+): GoogleMapsTourUrlResult {
+  return buildGoogleMapsDirUrl({
+    origin,
+    destination,
+    waypoints,
+    navigate: false,
+  });
 }
 
 export function buildGoogleMapsTourUrl(
@@ -56,43 +149,12 @@ export function buildGoogleMapsTourUrlDetailed(
   if (!isValidGeoPoint(origin)) {
     throw new Error("Coordinate di partenza non valide per Google Maps.");
   }
-  if (!isValidGeoPoint(destination)) {
-    throw new Error("Coordinate di arrivo non valide per Google Maps.");
-  }
-
-  const validWaypoints = waypoints.filter(isValidGeoPoint);
-  const truncated = validWaypoints.length > GOOGLE_MAPS_MAX_WAYPOINTS;
-  const usedWaypoints = truncated
-    ? validWaypoints.slice(0, GOOGLE_MAPS_MAX_WAYPOINTS)
-    : validWaypoints;
-
-  const url = new URL("https://www.google.com/maps/dir/");
-  url.searchParams.set("api", "1");
-  url.searchParams.set("origin", formatPoint(origin));
-  url.searchParams.set("destination", formatPoint(destination));
-
-  if (usedWaypoints.length > 0) {
-    url.searchParams.set(
-      "waypoints",
-      usedWaypoints.map((point) => formatPoint(point)).join("|")
-    );
-  }
-
-  url.searchParams.set("travelmode", "driving");
-  url.searchParams.set("dir_action", "navigate");
-
-  const warning = truncated
-    ? `Google Maps accetta al massimo ${GOOGLE_MAPS_MAX_WAYPOINTS} tappe intermedie: il link include solo le prime ${GOOGLE_MAPS_MAX_WAYPOINTS} di ${validWaypoints.length}.`
-    : validWaypoints.length > 8
-      ? "Molte tappe nel link: verifica su Google Maps che tutte le fermate siano incluse."
-      : null;
-
-  return {
-    url: url.toString(),
-    waypointCount: usedWaypoints.length,
-    truncated,
-    warning,
-  };
+  return buildGoogleMapsDirUrl({
+    origin,
+    destination,
+    waypoints,
+    navigate: true,
+  });
 }
 
 /**
@@ -135,6 +197,48 @@ export function tryBuildGoogleMapsTourUrl(
   }
   try {
     return buildGoogleMapsTourUrl(origin, destination, waypoints);
+  } catch {
+    return null;
+  }
+}
+
+export function tryBuildGoogleMapsTourUrlFromMyLocation(
+  destination: GeoPoint | null | undefined,
+  waypoints: GeoPoint[]
+): string | null {
+  if (!isValidGeoPoint(destination)) {
+    return null;
+  }
+  try {
+    return buildGoogleMapsTourUrlFromMyLocation(destination, waypoints).url;
+  } catch {
+    return null;
+  }
+}
+
+export function tryBuildGoogleMapsTourPreviewUrl(
+  origin: GeoPoint | null | undefined,
+  destination: GeoPoint | null | undefined,
+  waypoints: GeoPoint[]
+): string | null {
+  if (!isValidGeoPoint(origin) || !isValidGeoPoint(destination)) {
+    return null;
+  }
+  try {
+    return buildGoogleMapsTourPreviewUrl(origin, destination, waypoints).url;
+  } catch {
+    return null;
+  }
+}
+
+export function tryBuildGoogleMapsDestinationUrl(
+  destination: GeoPoint | null | undefined
+): string | null {
+  if (!isValidGeoPoint(destination)) {
+    return null;
+  }
+  try {
+    return buildGoogleMapsDestinationUrl(destination);
   } catch {
     return null;
   }
