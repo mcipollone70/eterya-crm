@@ -35,6 +35,7 @@ export function JoyVoiceControls({
     setEnabled,
     interrupt,
     repeat,
+    unlockFromUserGesture,
   } = useJoyVoice();
 
   const showLiveDiag =
@@ -49,7 +50,12 @@ export function JoyVoiceControls({
           variant={enabled ? "outline" : "ghost"}
           size="sm"
           className={compact ? "min-h-9 rounded-xl px-2.5 text-xs" : "min-h-10 rounded-xl"}
-          onClick={() => setEnabled(!enabled)}
+          onClick={() => {
+            if (!enabled) {
+              unlockFromUserGesture();
+            }
+            setEnabled(!enabled);
+          }}
           title={enabled ? "Disattiva audio Joy" : "Attiva audio Joy"}
         >
           {enabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
@@ -73,7 +79,10 @@ export function JoyVoiceControls({
           size="sm"
           className={compact ? "min-h-9 rounded-xl px-2.5 text-xs" : "min-h-10 rounded-xl"}
           disabled={!lastText || isSpeaking}
-          onClick={() => void repeat()}
+          onClick={() => {
+            unlockFromUserGesture();
+            void repeat();
+          }}
           title="Ripeti ultima risposta (da cache se disponibile)"
         >
           <RotateCcw className="h-3.5 w-3.5" />

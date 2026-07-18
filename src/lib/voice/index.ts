@@ -22,6 +22,7 @@ export {
   joyVoice,
   speakItalian,
   stopSpeaking,
+  unlockJoyAudioFromUserGesture,
   isJoyVoiceBusy,
   type JoyVoiceState,
   type JoyVoiceEngine,

@@ -28,6 +28,7 @@ import {
   joyVoice,
   speakItalian,
   stopSpeaking,
+  unlockJoyAudioFromUserGesture,
 } from "@/lib/voice/joy-voice-queue";
 import { JoyVoiceControls } from "./joy-voice-controls";
 import { JoyVoiceTestPanel } from "./joy-voice-test-panel";
@@ -573,6 +574,8 @@ export function JoyAiAssistantScreen({
         autoBriefing?: boolean;
       }
     ) => {
+      // Best-effort: se chiamato sync dal tap/submit, sblocca iOS prima degli await.
+      unlockJoyAudioFromUserGesture();
       const trimmed = text.trim();
       if (!trimmed || isStreaming || !activeConversationId) {
         return;
@@ -1574,6 +1577,7 @@ export function JoyAiAssistantScreen({
           <form
             onSubmit={(event) => {
               event.preventDefault();
+              unlockJoyAudioFromUserGesture();
               void sendMessage(input);
             }}
             className="border-t border-slate-100 bg-white/90 p-3 backdrop-blur sm:p-4"
@@ -1589,6 +1593,7 @@ export function JoyAiAssistantScreen({
                   size={guideMode ? "md" : "sm"}
                   className={guideMode ? "min-h-12 min-w-12 rounded-xl" : "h-11 w-11 rounded-xl p-0"}
                   onClick={() => {
+                    unlockJoyAudioFromUserGesture();
                     toggleListening();
                     if (!isListening) {
                       setSessionOverride("listening");

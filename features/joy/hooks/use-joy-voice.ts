@@ -24,6 +24,9 @@ const INITIAL: JoyVoiceSnapshot = {
     audioDurationSec: null,
     audioSizeBytes: null,
     cached: false,
+    contentType: null,
+    playError: null,
+    httpStatus: null,
   },
 };
 
@@ -42,6 +45,7 @@ export function useJoyVoice() {
     pause: joyVoice.pause,
     resume: joyVoice.resume,
     setEnabled: joyVoice.setEnabled,
+    unlockFromUserGesture: joyVoice.unlockFromUserGesture,
     isSpeaking: isJoyVoiceBusy(snapshot.state),
     isPreparing: snapshot.state === "preparing" || snapshot.state === "ready",
   };

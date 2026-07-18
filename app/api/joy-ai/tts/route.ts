@@ -154,8 +154,9 @@ export async function POST(request: Request) {
   return new Response(new Uint8Array(result.buffer), {
     status: 200,
     headers: {
-      "Content-Type": result.contentType,
-      "Cache-Control": "no-store",
+      "Content-Type": result.contentType || "audio/mpeg",
+      "Cache-Control": "no-store, no-cache, must-revalidate",
+      Pragma: "no-cache",
       "X-Joy-TTS-Cached": result.cached ? "1" : "0",
       "X-Joy-TTS-Chars": String(result.text.length),
       "X-Joy-TTS-Provider": result.provider,

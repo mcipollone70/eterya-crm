@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 import L from "leaflet";
 import { MapContainer, TileLayer, useMap } from "react-leaflet";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -80,6 +87,101 @@ function MapViewportPersistence() {
       map.off("zoomend", persistViewport);
     };
   }, [map]);
+
+  return null;
+}
+
+const MAP_DIAG =
+  typeof process !== "undefined" && process.env.NODE_ENV !== "production";
+
+function logMapDiag(message: string, payload?: Record<string, unknown>) {
+  if (!MAP_DIAG) return;
+  if (payload) {
+    console.info(`[map/mobile] ${message}`, payload);
+  } else {
+    console.info(`[map/mobile] ${message}`);
+  }
+}
+
+/**
+ * Leaflet su mobile/PWA: se il contenitore ha width/height 0 all'init,
+ * tile e marker restano invisibili finché non si chiama invalidateSize().
+ */
+function MapSizeInvalidator({ containerRef }: { containerRef: RefObject<HTMLDivElement | null> }) {
+  const map = useMap();
+
+  useEffect(() => {
+    let cancelled = false;
+    const timeouts: number[] = [];
+
+    const measure = () => {
+      const el = containerRef.current ?? (map.getContainer() as HTMLElement | null);
+      if (!el) {
+        return { w: 0, h: 0 };
+      }
+      const rect = el.getBoundingClientRect();
+      return { w: Math.round(rect.width), h: Math.round(rect.height) };
+    };
+
+    const refresh = (reason: string) => {
+      if (cancelled) return;
+      const size = measure();
+      try {
+        map.invalidateSize({ animate: false });
+      } catch {
+        // ignore
+      }
+      logMapDiag(`invalidateSize (${reason})`, {
+        containerWidth: size.w,
+        containerHeight: size.h,
+        zoom: map.getZoom(),
+        center: map.getCenter(),
+        standalone:
+          typeof window !== "undefined" &&
+          (window.matchMedia("(display-mode: standalone)").matches ||
+            // iOS Safari PWA
+            ("standalone" in navigator &&
+              Boolean((navigator as Navigator & { standalone?: boolean }).standalone))),
+      });
+    };
+
+    map.whenReady(() => refresh("whenReady"));
+    timeouts.push(window.setTimeout(() => refresh("mount+50ms"), 50));
+    timeouts.push(window.setTimeout(() => refresh("mount+300ms"), 300));
+
+    const onResize = () => refresh("resize");
+    const onOrientation = () => refresh("orientationchange");
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") {
+        refresh("visibilitychange");
+      }
+    };
+
+    window.addEventListener("resize", onResize);
+    window.addEventListener("orientationchange", onOrientation);
+    document.addEventListener("visibilitychange", onVisibility);
+
+    const el = containerRef.current;
+    let observer: ResizeObserver | null = null;
+    if (el && typeof ResizeObserver !== "undefined") {
+      observer = new ResizeObserver(() => refresh("ResizeObserver"));
+      observer.observe(el);
+    }
+
+            map.on("tileerror", () => {
+      logMapDiag("tileerror", { note: "OSM tile failed to load" });
+    });
+
+    return () => {
+      cancelled = true;
+      for (const id of timeouts) window.clearTimeout(id);
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("orientationchange", onOrientation);
+      document.removeEventListener("visibilitychange", onVisibility);
+      observer?.disconnect();
+      map.off("tileerror");
+    };
+  }, [containerRef, map]);
 
   return null;
 }
@@ -290,11 +392,23 @@ export function CompaniesMap({ provinces, brands }: CompaniesMapProps) {
     requestBrowserLocation(handleLocationFound, handleLocationError);
   }, [handleLocationError, handleLocationFound]);
 
+  const mapShellRef = useRef<HTMLDivElement | null>(null);
+
   // Geolocalizzazione una sola volta al mount (non a ogni cambio filtri).
+  // Non bloccante: le aziende arrivano comunque da MapViewportLoader / bounds.
   useEffect(() => {
-    requestBrowserLocation(handleLocationFound, () => undefined);
+    requestBrowserLocation(handleLocationFound, (message) => {
+      logMapDiag("geolocation denied/unavailable (non-blocking)", { message });
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only
   }, []);
+
+  useEffect(() => {
+    logMapDiag("companies/markers update", {
+      companiesReceived: companies.length,
+      markersVisible: filteredCompanies.length,
+    });
+  }, [companies.length, filteredCompanies.length]);
 
   const subtitle = useMemo(
     () => formatMapPageSubtitle(filteredCompanies.length, stats, filters),
@@ -305,7 +419,8 @@ export function CompaniesMap({ provinces, brands }: CompaniesMapProps) {
     <div className="space-y-4">
       <PageHeader title="Mappa" subtitle={subtitle} />
 
-      <div className="flex flex-col gap-4 lg:h-[calc(100vh-12rem)] lg:flex-row">
+      {/* Mobile: altezza esplicita (dvh); non solo height:100% senza parent height. */}
+      <div className="flex flex-col gap-4 lg:h-[calc(100dvh-12rem)] lg:min-h-0 lg:flex-row">
         <div className="flex w-full flex-col gap-4 lg:w-72 lg:shrink-0 lg:overflow-y-auto">
           <MapSidebarFilters
             provinces={provinces}
@@ -324,17 +439,24 @@ export function CompaniesMap({ provinces, brands }: CompaniesMapProps) {
           />
         </div>
 
-        <div className="relative min-h-[480px] flex-1 overflow-hidden rounded-xl border border-slate-200 shadow-sm lg:min-h-0">
+        <div
+          ref={mapShellRef}
+          className="relative h-[min(62dvh,calc(100dvh-13rem))] min-h-[280px] w-full flex-1 overflow-hidden rounded-xl border border-slate-200 shadow-sm lg:h-auto lg:min-h-0"
+          data-testid="companies-map-shell"
+        >
           <MapContainer
             center={[initialViewport.lat, initialViewport.lng]}
             zoom={initialViewport.zoom}
-            className="h-full w-full"
+            className="absolute inset-0 z-0 h-full w-full"
+            style={{ height: "100%", width: "100%" }}
             scrollWheelZoom
           >
             <TileLayer
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              crossOrigin="anonymous"
             />
+            <MapSizeInvalidator containerRef={mapShellRef} />
             <MapViewportPersistence />
             <MapViewportLoader filters={filters} />
             <MapLocateController

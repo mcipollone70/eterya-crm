@@ -156,7 +156,7 @@ export async function synthesizeJoySpeech(
 
     const arrayBuffer = await response.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-    const contentType = response.headers.get("content-type") || "audio/mpeg";
+    const contentType = "audio/mpeg";
 
     ttsCache.set(key, {
       buffer,

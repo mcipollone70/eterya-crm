@@ -141,6 +141,9 @@ export function createVoicePreviewPlayer(onChange: (d: VoicePreviewDiagnostics) 
     if (!audio) {
       audio = new Audio();
       audio.preload = "auto";
+      audio.setAttribute("playsinline", "true");
+      audio.setAttribute("webkit-playsinline", "true");
+      (audio as HTMLAudioElement & { playsInline?: boolean }).playsInline = true;
     }
     audio.muted = false;
     audio.volume = 1;
@@ -408,6 +411,7 @@ export function createVoicePreviewPlayer(onChange: (d: VoicePreviewDiagnostics) 
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ text, voice }),
+          cache: "no-store",
         });
 
         if (gen !== generation) return;

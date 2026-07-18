@@ -24,6 +24,7 @@ import {
   joyVoice,
   speakItalian,
   stopSpeaking,
+  unlockJoyAudioFromUserGesture,
 } from "@/lib/voice/joy-voice-queue";
 import { JoyVoiceControls } from "./joy-voice-controls";
 import { executeJoyCopilotActionBatch } from "../chat/actions/joy-copilot-actions";
@@ -651,6 +652,8 @@ export function JoyDriveScreen({ userDisplayName }: JoyDriveScreenProps) {
 
   const openSession = useCallback(
     async (action: DriveHomeAction) => {
+      // Sync nel tap: sblocca HTMLAudioElement prima di qualsiasi await (iOS PWA).
+      unlockJoyAudioFromUserGesture();
       stopSpeaking();
       abortRef.current?.abort();
       setMessages([]);

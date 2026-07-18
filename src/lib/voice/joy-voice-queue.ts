@@ -2,6 +2,9 @@
  * Coda audio centrale Joy: una sola utterance = una sola richiesta TTS = un solo MP3.
  * Primary = OpenAI TTS. Nessun auto-play di speechSynthesis / voci Windows / Edge.
  * Se TTS fallisce → errore chiaro, nessuna voce robotica.
+ *
+ * Mobile/iOS: un solo HTMLAudioElement riusato, playsInline, unlock nel gesto utente.
+ * play() dopo fetch resta sullo stesso elemento (mai `new Audio()` post-await).
  */
 
 import { cancelBrowserSpeech } from "./browser-tts";
@@ -32,6 +35,30 @@ const ENABLED_STORAGE_KEY = "eterya.joy.voice.audioEnabled";
 
 const TTS_UNAVAILABLE_MSG = "Voce naturale non disponibile — errore TTS";
 
+/** WAV silenzioso — sblocca HTMLAudioElement nel gesto utente prima del fetch TTS. */
+const SILENT_WAV =
+  "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=";
+
+const VOICE_DIAG =
+  typeof process !== "undefined" && process.env.NODE_ENV !== "production";
+
+function logVoiceDiag(message: string, payload?: Record<string, unknown>) {
+  if (!VOICE_DIAG) return;
+  if (payload) {
+    console.info(`[joy/voice] ${message}`, payload);
+  } else {
+    console.info(`[joy/voice] ${message}`);
+  }
+}
+
+function isStandalonePwa(): boolean {
+  if (typeof window === "undefined") return false;
+  return (
+    window.matchMedia("(display-mode: standalone)").matches ||
+    Boolean((navigator as Navigator & { standalone?: boolean }).standalone)
+  );
+}
+
 type Listener = (snapshot: JoyVoiceSnapshot) => void;
 
 export interface JoyVoiceDiagnostics {
@@ -43,6 +70,9 @@ export interface JoyVoiceDiagnostics {
   audioDurationSec: number | null;
   audioSizeBytes: number | null;
   cached: boolean;
+  contentType: string | null;
+  playError: string | null;
+  httpStatus: number | null;
 }
 
 export interface JoyVoiceSnapshot {
@@ -76,6 +106,9 @@ const EMPTY_DIAGNOSTICS: JoyVoiceDiagnostics = {
   audioDurationSec: null,
   audioSizeBytes: null,
   cached: false,
+  contentType: null,
+  playError: null,
+  httpStatus: null,
 };
 
 class JoyVoiceQueue {
@@ -89,6 +122,7 @@ class JoyVoiceQueue {
   private diagnostics: JoyVoiceDiagnostics = { ...EMPTY_DIAGNOSTICS };
   private listeners = new Set<Listener>();
   private generation = 0;
+  /** Unico elemento audio riusato (critico per autoplay iOS dopo unlock). */
   private audio: HTMLAudioElement | null = null;
   private objectUrl: string | null = null;
   /** Cache client per Ripeti (stesso testo + voce). */
@@ -101,12 +135,14 @@ class JoyVoiceQueue {
     voice: string;
     sizeBytes: number;
     cached: boolean;
+    contentType: string;
   } | null = null;
   private playResolve: ((ok: boolean) => void) | null = null;
   private fetchAbort: AbortController | null = null;
   private openAiCommitted = false;
   private inFlightKey: string | null = null;
   private inFlightPromise: Promise<"played" | "failed" | "aborted"> | null = null;
+  private unlocked = false;
 
   constructor() {
     if (typeof window !== "undefined") {
@@ -114,7 +150,6 @@ class JoyVoiceQueue {
         const stored = window.localStorage.getItem(ENABLED_STORAGE_KEY);
         if (stored === "0") this.enabled = false;
         if (stored === "1") this.enabled = true;
-        // Pulisce preferenza legacy browser (non più usata)
         window.localStorage.removeItem("eterya.joy.voice.preferBrowser");
       } catch {
         // localStorage non disponibile
@@ -156,7 +191,9 @@ class JoyVoiceQueue {
         // ignore
       }
     }
-    if (!enabled) {
+    if (enabled) {
+      this.unlockFromUserGesture();
+    } else {
       this.interrupt();
     }
     this.emit();
@@ -168,6 +205,46 @@ class JoyVoiceQueue {
 
   getLastSpokenText(): string | null {
     return this.lastText;
+  }
+
+  /**
+   * Da chiamare in modo sincrono nel click/tap (prima di qualsiasi await di rete).
+   * Sblocca l'HTMLAudioElement per iOS/Android PWA.
+   */
+  unlockFromUserGesture(): void {
+    if (typeof window === "undefined") return;
+    const el = this.ensureAudio();
+    el.muted = false;
+    el.volume = 1;
+    el.playbackRate = 1;
+    try {
+      el.src = SILENT_WAV;
+      const playPromise = el.play();
+      void playPromise
+        .then(() => {
+          this.unlocked = true;
+          try {
+            el.pause();
+            el.currentTime = 0;
+          } catch {
+            // ignore
+          }
+          logVoiceDiag("audio unlocked", {
+            userAgent: navigator.userAgent.slice(0, 120),
+            standalone: isStandalonePwa(),
+          });
+        })
+        .catch((err) => {
+          logVoiceDiag("unlock play() rejected", {
+            error: err instanceof Error ? err.message : String(err),
+            standalone: isStandalonePwa(),
+          });
+        });
+    } catch (err) {
+      logVoiceDiag("unlock threw", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   /**
@@ -189,11 +266,12 @@ class JoyVoiceQueue {
       return;
     }
 
-    // Ferma audio precedente + speechSynthesis residuo (mai usato come motore)
+    // Ferma audio precedente sul medesimo elemento, poi unlock se ancora nel gesto.
     const gen = ++this.generation;
     this.abortInFlightFetch();
-    this.hardStopPlayback({ keepCache: true });
+    this.hardStopPlayback({ keepCache: true, keepAudioElement: true });
     cancelBrowserSpeech();
+    this.unlockFromUserGesture();
     this.openAiCommitted = false;
     this.lastText = prepared;
     this.lastDisplayText = displaySource;
@@ -231,6 +309,7 @@ class JoyVoiceQueue {
   }
 
   async repeat(): Promise<void> {
+    this.unlockFromUserGesture();
     if (!this.lastText) {
       return;
     }
@@ -244,7 +323,7 @@ class JoyVoiceQueue {
   interrupt(): void {
     this.generation += 1;
     this.abortInFlightFetch();
-    this.hardStopPlayback({ keepCache: true });
+    this.hardStopPlayback({ keepCache: true, keepAudioElement: true });
     cancelBrowserSpeech();
     this.openAiCommitted = false;
     this.setState("stopped", this.engine);
@@ -268,9 +347,29 @@ class JoyVoiceQueue {
 
   resume(): void {
     if (this.audio && this.audio.paused && this.state === "paused") {
-      void this.audio.play();
+      void this.audio.play().catch((err) => {
+        this.warning =
+          err instanceof Error ? err.message : "Ripresa audio bloccata.";
+        this.emit();
+      });
       this.setState("speaking", "openai");
     }
+  }
+
+  private ensureAudio(): HTMLAudioElement {
+    if (!this.audio) {
+      const el = new Audio();
+      el.preload = "auto";
+      el.setAttribute("playsinline", "true");
+      el.setAttribute("webkit-playsinline", "true");
+      // Safari iOS
+      (el as HTMLAudioElement & { playsInline?: boolean }).playsInline = true;
+      this.audio = el;
+    }
+    this.audio.muted = false;
+    this.audio.volume = 1;
+    this.audio.playbackRate = 1;
+    return this.audio;
   }
 
   private failNaturalVoice(message: string): void {
@@ -311,10 +410,13 @@ class JoyVoiceQueue {
         ttsRequestCount: 0,
         audioSizeBytes: this.cachedBlob.size,
         cached: true,
+        contentType: this.cachedMeta?.contentType ?? "audio/mpeg",
         provider: this.cachedMeta?.provider ?? JOY_TTS_PROVIDER,
         model: this.cachedMeta?.model ?? JOY_TTS_MODEL,
         voice: this.cachedMeta?.voice ?? (voiceOverride ?? JOY_TTS_VOICE),
         fallbackActive: false,
+        playError: null,
+        httpStatus: 200,
       };
       this.emit();
       const played = await this.playBlob(this.cachedBlob, gen);
@@ -373,6 +475,7 @@ class JoyVoiceQueue {
         ttsRequestCount: 1,
         fallbackActive: false,
         cached: false,
+        playError: null,
       };
       this.emit();
 
@@ -381,6 +484,7 @@ class JoyVoiceQueue {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
         signal: abort.signal,
+        cache: "no-store",
       });
 
       if (gen !== this.generation) {
@@ -396,6 +500,8 @@ class JoyVoiceQueue {
         voiceOverride ??
         JOY_TTS_VOICE;
       const headerCached = response.headers.get("X-Joy-TTS-Cached") === "1";
+      const contentType =
+        response.headers.get("Content-Type") || "audio/mpeg";
 
       this.diagnostics = {
         ...this.diagnostics,
@@ -405,8 +511,17 @@ class JoyVoiceQueue {
         fallbackActive: false,
         cached: headerCached,
         ttsRequestCount: 1,
+        contentType,
+        httpStatus: response.status,
       };
       this.emit();
+
+      logVoiceDiag("tts response", {
+        status: response.status,
+        contentType,
+        standalone: isStandalonePwa(),
+        userAgent: navigator.userAgent.slice(0, 120),
+      });
 
       if (response.status === 503 || !response.ok) {
         const payload = (await response.json().catch(() => null)) as {
@@ -426,10 +541,19 @@ class JoyVoiceQueue {
         return "failed";
       }
 
-      const blob = await response.blob();
+      const arrayBuffer = await response.arrayBuffer();
       if (gen !== this.generation) {
         return "aborted";
       }
+
+      const mime = contentType.split(";")[0]?.trim() || "audio/mpeg";
+      const blob = new Blob([arrayBuffer], { type: mime });
+
+      logVoiceDiag("tts blob", {
+        bytes: blob.size,
+        mime,
+        unlocked: this.unlocked,
+      });
 
       if (!blob || blob.size < 32) {
         this.warning = "Audio TTS vuoto o non valido.";
@@ -445,6 +569,7 @@ class JoyVoiceQueue {
         voice: headerVoice,
         sizeBytes: blob.size,
         cached: headerCached,
+        contentType: mime,
       };
       this.diagnostics = {
         ...this.diagnostics,
@@ -455,6 +580,8 @@ class JoyVoiceQueue {
         fallbackActive: false,
         ttsRequestCount: 1,
         cached: headerCached,
+        contentType: mime,
+        httpStatus: response.status,
       };
       this.emit();
 
@@ -479,24 +606,24 @@ class JoyVoiceQueue {
   }
 
   /**
-   * Un solo HTMLAudioElement per generation: preload completo → ready → play continuo.
+   * Stesso HTMLAudioElement della unlock: set src → load → await play().
+   * Mai creare un nuovo Audio() dopo il fetch (rompe la catena iOS).
    */
   private playBlob(blob: Blob, gen: number): Promise<boolean> {
     return new Promise((resolve) => {
       this.playResolve = resolve;
       this.openAiCommitted = false;
 
-      this.revokeObjectUrl();
+      const previousUrl = this.objectUrl;
       const url = URL.createObjectURL(blob);
       this.objectUrl = url;
 
-      const audio = new Audio();
-      audio.preload = "auto";
-      this.audio = audio;
+      const audio = this.ensureAudio();
       this.engine = "openai";
 
       let settled = false;
       let playStarted = false;
+
       const finish = (ok: boolean) => {
         if (settled) return;
         settled = true;
@@ -506,6 +633,14 @@ class JoyVoiceQueue {
         audio.ondurationchange = null;
         if (this.playResolve === resolve) {
           this.playResolve = null;
+        }
+        // Revoca URL solo a fine play / errore — non prima di play().
+        if (previousUrl && previousUrl !== this.objectUrl) {
+          try {
+            URL.revokeObjectURL(previousUrl);
+          } catch {
+            // ignore
+          }
         }
         if (gen === this.generation) {
           if (ok) {
@@ -541,6 +676,13 @@ class JoyVoiceQueue {
         audio.oncanplaythrough = null;
         updateDuration();
         this.setState("ready", "openai");
+        audio.muted = false;
+        audio.volume = 1;
+        try {
+          audio.currentTime = 0;
+        } catch {
+          // ignore
+        }
         void audio.play().then(
           () => {
             if (gen !== this.generation) {
@@ -548,10 +690,37 @@ class JoyVoiceQueue {
               return;
             }
             this.openAiCommitted = true;
+            this.unlocked = true;
+            this.diagnostics = {
+              ...this.diagnostics,
+              playError: null,
+            };
             this.setState("speaking", "openai");
+            logVoiceDiag("play() ok", {
+              volume: audio.volume,
+              muted: audio.muted,
+              bytes: blob.size,
+              mime: blob.type,
+            });
           },
-          () => {
-            this.warning = "Autoplay bloccato o errore audio.";
+          (err) => {
+            const msg =
+              err instanceof Error
+                ? err.message
+                : "audio.play() rejected (autoplay / policy).";
+            this.warning = msg;
+            this.diagnostics = {
+              ...this.diagnostics,
+              playError: msg,
+            };
+            this.emit();
+            logVoiceDiag("play() rejected", {
+              error: msg,
+              volume: audio.volume,
+              muted: audio.muted,
+              unlocked: this.unlocked,
+              standalone: isStandalonePwa(),
+            });
             finish(false);
           }
         );
@@ -560,15 +729,26 @@ class JoyVoiceQueue {
       audio.ondurationchange = () => updateDuration();
       audio.onended = () => {
         updateDuration();
+        if (this.objectUrl === url) {
+          try {
+            URL.revokeObjectURL(url);
+          } catch {
+            // ignore
+          }
+          this.objectUrl = null;
+        }
         finish(true);
       };
       audio.onerror = () => {
-        if (this.openAiCommitted) {
-          this.warning = "Riproduzione OpenAI interrotta.";
-          finish(false);
-          return;
-        }
-        this.warning = "Decodifica audio fallita prima dell'avvio.";
+        const msg = this.openAiCommitted
+          ? "Riproduzione OpenAI interrotta."
+          : "Decodifica audio fallita prima dell'avvio.";
+        this.warning = msg;
+        this.diagnostics = {
+          ...this.diagnostics,
+          playError: msg,
+        };
+        this.emit();
         finish(false);
       };
 
@@ -587,6 +767,10 @@ class JoyVoiceQueue {
           startPlayback();
         } else {
           this.warning = "Timeout preparazione audio.";
+          this.diagnostics = {
+            ...this.diagnostics,
+            playError: this.warning,
+          };
           finish(false);
         }
       }, 8000);
@@ -596,7 +780,10 @@ class JoyVoiceQueue {
     });
   }
 
-  private hardStopPlayback(options?: { keepCache?: boolean }): void {
+  private hardStopPlayback(options?: {
+    keepCache?: boolean;
+    keepAudioElement?: boolean;
+  }): void {
     if (this.audio) {
       this.audio.onended = null;
       this.audio.onerror = null;
@@ -607,13 +794,15 @@ class JoyVoiceQueue {
       } catch {
         // ignore
       }
-      try {
-        this.audio.removeAttribute("src");
-        this.audio.load();
-      } catch {
-        // ignore
+      if (!options?.keepAudioElement) {
+        try {
+          this.audio.removeAttribute("src");
+          this.audio.load();
+        } catch {
+          // ignore
+        }
+        this.audio = null;
       }
-      this.audio = null;
     }
     this.revokeObjectUrl();
     cancelBrowserSpeech();
@@ -651,14 +840,13 @@ class JoyVoiceQueue {
   }
 }
 
-const globalKey = "__eteryaJoyVoiceQueueV3";
+const globalKey = "__eteryaJoyVoiceQueueV4";
 
 function getQueue(): JoyVoiceQueue {
   if (typeof window === "undefined") {
     return new JoyVoiceQueue();
   }
   const w = window as unknown as Record<string, JoyVoiceQueue | undefined>;
-  // Reset singleton se schema snapshot è cambiato (dev HMR)
   if (!w[globalKey]) {
     w[globalKey] = new JoyVoiceQueue();
   }
@@ -676,6 +864,7 @@ export const joyVoice = {
   isEnabled: () => getQueue().isEnabled(),
   getState: () => getQueue().getState(),
   getLastSpokenText: () => getQueue().getLastSpokenText(),
+  unlockFromUserGesture: () => getQueue().unlockFromUserGesture(),
   subscribe: (listener: Listener) => getQueue().subscribe(listener),
   snapshot: () => getQueue().snapshot(),
 };
@@ -700,6 +889,11 @@ export async function speakItalian(
 
 export function stopSpeaking(): void {
   joyVoice.interrupt();
+}
+
+/** Sblocca audio iOS — chiamare sync nel tap prima di await di rete. */
+export function unlockJoyAudioFromUserGesture(): void {
+  joyVoice.unlockFromUserGesture();
 }
 
 export { buildSpokenSummary, prepareJoyUtterance, sanitizeSpokenText } from "./spoken-text";
