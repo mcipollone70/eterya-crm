@@ -113,6 +113,8 @@ export function createVoicePreviewPlayer(onChange: (d: VoicePreviewDiagnostics) 
   let audio: HTMLAudioElement | null = null;
   let objectUrl: string | null = null;
   let generation = 0;
+  let unlockSrcPending = false;
+  let unlockGeneration = 0;
   let diagnostics: VoicePreviewDiagnostics = {
     volume: 1,
     muted: false,
@@ -144,6 +146,11 @@ export function createVoicePreviewPlayer(onChange: (d: VoicePreviewDiagnostics) 
       audio.setAttribute("playsinline", "true");
       audio.setAttribute("webkit-playsinline", "true");
       (audio as HTMLAudioElement & { playsInline?: boolean }).playsInline = true;
+      if (typeof document !== "undefined") {
+        audio.setAttribute("data-eterya-joy-preview", "1");
+        audio.style.display = "none";
+        document.body.appendChild(audio);
+      }
     }
     audio.muted = false;
     audio.volume = 1;
@@ -162,20 +169,27 @@ export function createVoicePreviewPlayer(onChange: (d: VoicePreviewDiagnostics) 
   const SILENT_WAV =
     "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=";
 
+  const IPHONE_BLOCKED =
+    "Audio bloccato da iPhone. Tocca di nuovo Ascolta.";
+
   /**
    * Chiama play() in modo sincrono rispetto al click, prima di qualsiasi await di rete.
    * Evita blocco autoplay sul secondo play() dopo fetch TTS.
+   * Non fare pause() dopo che il src TTS è già stato impostato.
    */
   const unlockInUserGesture = () => {
     const el = getAudio();
     el.muted = false;
     el.volume = 1;
     el.playbackRate = 1;
+    const unlockId = ++unlockGeneration;
+    unlockSrcPending = true;
     try {
       el.src = SILENT_WAV;
       const p = el.play();
       void p
         .then(() => {
+          if (unlockId !== unlockGeneration || !unlockSrcPending) return;
           try {
             el.pause();
             el.currentTime = 0;
@@ -194,6 +208,7 @@ export function createVoicePreviewPlayer(onChange: (d: VoicePreviewDiagnostics) 
   /** Ferma solo l'anteprima pannello — non tocca joyVoice. */
   const stopPreview = () => {
     generation += 1;
+    unlockSrcPending = false;
     if (audio) {
       audio.onended = null;
       audio.onerror = null;
@@ -267,10 +282,13 @@ export function createVoicePreviewPlayer(onChange: (d: VoicePreviewDiagnostics) 
       });
     } catch (err) {
       if (gen !== generation) return;
+      const name = err instanceof Error ? err.name : "";
       const msg =
-        err instanceof Error
-          ? err.message
-          : "audio.play() rejected (autoplay / policy).";
+        name === "NotAllowedError" || name === "AbortError"
+          ? IPHONE_BLOCKED
+          : err instanceof Error
+            ? err.message
+            : "audio.play() rejected (autoplay / policy).";
       patch({
         playbackState: "error",
         statusLabel: `Errore: ${msg}`,
@@ -503,14 +521,24 @@ export function createVoicePreviewPlayer(onChange: (d: VoicePreviewDiagnostics) 
         }
 
         const blob = new Blob([buffer], {
-          type: contentType || "audio/mpeg",
+          type: "audio/mpeg",
         });
+        // Claim elemento prima del src TTS (niente pause da unlock.then).
+        unlockSrcPending = false;
+        unlockGeneration += 1;
         revokeUrl();
         const url = URL.createObjectURL(blob);
         objectUrl = url;
 
         const el = getAudio();
         bindPlaybackHandlers(el, gen);
+        try {
+          el.pause();
+        } catch {
+          // ignore
+        }
+        el.muted = false;
+        el.volume = 1;
         el.src = url;
         el.load();
 
@@ -553,6 +581,13 @@ export function createVoicePreviewPlayer(onChange: (d: VoicePreviewDiagnostics) 
 
     dispose() {
       stopPreview();
+      if (audio) {
+        try {
+          audio.remove();
+        } catch {
+          // ignore
+        }
+      }
       audio = null;
     },
   };

@@ -116,7 +116,17 @@ export function JoyVoiceControls({
         </p>
       ) : null}
       {warning && !error ? (
-        <p className="text-[11px] text-amber-800">{warning}</p>
+        <p className="text-[11px] text-amber-800" data-testid="joy-voice-tts-warning">
+          {warning}
+        </p>
+      ) : null}
+      {diagnostics.playError && !error ? (
+        <p
+          className="text-[11px] font-medium text-rose-700"
+          data-testid="joy-voice-play-error"
+        >
+          {diagnostics.playError}
+        </p>
       ) : null}
 
       {showLiveDiag ? (

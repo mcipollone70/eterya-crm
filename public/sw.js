@@ -1,8 +1,13 @@
 /* Eterya CRM — service worker minimale (solo asset statici).
- * NON cache: HTML autenticato, API (incluso TTS), Supabase, Server Actions,
- * token/sessioni, PII, tile mappa, audio Joy, RSC/flight, Google Maps, optimize/tour.
+ * NON cache / network-only (nessun respondWith):
+ * - POST/PUT/PATCH/DELETE (TTS Joy = POST /api/joy-ai/tts)
+ * - /api/* (incluso audio generato), Server Actions, sessioni, auth
+ * - HTML navigations, Accept: audio/*, blob audio path
+ * - Supabase, tile mappa, Google Maps, RSC/flight
+ * Cache-first SOLO per icons/_next/static/font/css versionati.
+ * Bump CACHE_NAME + clear old caches on activate.
  */
-const CACHE_NAME = "eterya-crm-static-v3";
+const CACHE_NAME = "eterya-crm-static-v4";
 
 const PRECACHE_URLS = [
   "/icons/eterya-crm-192.png",

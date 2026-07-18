@@ -1,0 +1,62 @@
+{
+  "environment": "Playwright WebKit iPhone 14 Pro viewport — NOT a physical iPhone",
+  "swSourceChecks": {
+    "cacheVersionV4": true,
+    "apiNeverCache": true,
+    "nonGetNeverCache": true,
+    "audioAcceptNeverCache": true
+  },
+  "runtime": {
+    "taps": [
+      {
+        "t": 1784378638851,
+        "line": "unlock soft-fail",
+        "error": "The operation is not supported."
+      },
+      {
+        "t": 1784378639875,
+        "line": "first play fail",
+        "status": 200,
+        "contentType": "audio/mpeg",
+        "blobSize": 427,
+        "volume": 1,
+        "muted": false,
+        "readyState": 0,
+        "playError": "NotSupportedError: The operation is not supported."
+      },
+      {
+        "t": 1784378640110,
+        "line": "unlock soft-fail",
+        "error": "The operation is not supported."
+      },
+      {
+        "t": 1784378641123,
+        "line": "second play fail",
+        "status": 200,
+        "contentType": "audio/mpeg",
+        "blobSize": 427,
+        "volume": 1,
+        "muted": false,
+        "readyState": 0,
+        "playError": "NotSupportedError: The operation is not supported."
+      }
+    ],
+    "ttsRequests": 2,
+    "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.4 Mobile/15E148 Safari/604.1",
+    "standalone": false
+  },
+  "gates": {
+    "ttsStatus200": true,
+    "contentTypeMpeg": true,
+    "blobNonEmpty": true,
+    "mutedFalse": true,
+    "volumeOne": true,
+    "playNoNotAllowedError": true,
+    "secondPlayNoNotAllowed": true,
+    "playAttemptCompleted": true,
+    "secondPlayAttemptCompleted": true,
+    "swExcludesApi": true,
+    "ttsRequestCount": true
+  },
+  "note": "Deploy + real iPhone PWA still required for audible verification. Headless WebKit may reject synthetic MP3 codec (NotSupportedError) while still validating TTS MIME/blob/unlock path."
+}

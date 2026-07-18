@@ -39,16 +39,56 @@ const TTS_UNAVAILABLE_MSG = "Voce naturale non disponibile — errore TTS";
 const SILENT_WAV =
   "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=";
 
-const VOICE_DIAG =
-  typeof process !== "undefined" && process.env.NODE_ENV !== "production";
+const IPHONE_AUDIO_BLOCKED_MSG =
+  "Audio bloccato da iPhone. Tocca di nuovo Ascolta.";
 
+/** Log temporanei diagnosi iPhone (niente chiavi/token). */
 function logVoiceDiag(message: string, payload?: Record<string, unknown>) {
-  if (!VOICE_DIAG) return;
   if (payload) {
     console.info(`[joy/voice] ${message}`, payload);
   } else {
     console.info(`[joy/voice] ${message}`);
   }
+}
+
+function mapPlayError(err: unknown): string {
+  const name =
+    err instanceof DOMException
+      ? err.name
+      : err instanceof Error
+        ? err.name
+        : "";
+  if (
+    name === "NotAllowedError" ||
+    name === "AbortError" ||
+    /notallowed|user.?gesture|interact/i.test(
+      err instanceof Error ? err.message : String(err)
+    )
+  ) {
+    return IPHONE_AUDIO_BLOCKED_MSG;
+  }
+  if (name === "NotSupportedError") {
+    return "Formato audio non supportato su questo dispositivo.";
+  }
+  if (err instanceof Error && err.message) {
+    return err.message;
+  }
+  return IPHONE_AUDIO_BLOCKED_MSG;
+}
+
+function isAudioMpegMime(contentType: string | null): boolean {
+  const mime = (contentType || "").split(";")[0]?.trim().toLowerCase() || "";
+  return mime === "audio/mpeg" || mime === "audio/mp3";
+}
+
+function looksLikeHtmlOrJsonMime(contentType: string | null): boolean {
+  const mime = (contentType || "").split(";")[0]?.trim().toLowerCase() || "";
+  return (
+    mime.includes("json") ||
+    mime.includes("text/html") ||
+    mime.includes("text/plain") ||
+    mime.startsWith("application/")
+  );
 }
 
 function isStandalonePwa(): boolean {
@@ -143,6 +183,9 @@ class JoyVoiceQueue {
   private inFlightKey: string | null = null;
   private inFlightPromise: Promise<"played" | "failed" | "aborted"> | null = null;
   private unlocked = false;
+  /** true solo mentre l'elemento ha ancora il WAV di unlock (evita pause sul TTS). */
+  private unlockSrcPending = false;
+  private unlockGeneration = 0;
 
   constructor() {
     if (typeof window !== "undefined") {
@@ -210,6 +253,7 @@ class JoyVoiceQueue {
   /**
    * Da chiamare in modo sincrono nel click/tap (prima di qualsiasi await di rete).
    * Sblocca l'HTMLAudioElement per iOS/Android PWA.
+   * NON mettere pause() in un then() che possa arrivare dopo il src TTS.
    */
   unlockFromUserGesture(): void {
     if (typeof window === "undefined") return;
@@ -217,12 +261,21 @@ class JoyVoiceQueue {
     el.muted = false;
     el.volume = 1;
     el.playbackRate = 1;
+    const unlockId = ++this.unlockGeneration;
+    this.unlockSrcPending = true;
     try {
       el.src = SILENT_WAV;
       const playPromise = el.play();
       void playPromise
         .then(() => {
           this.unlocked = true;
+          // Solo se siamo ancora nella fase unlock (nessun blob TTS impostato).
+          if (
+            unlockId !== this.unlockGeneration ||
+            !this.unlockSrcPending
+          ) {
+            return;
+          }
           try {
             el.pause();
             el.currentTime = 0;
@@ -232,11 +285,15 @@ class JoyVoiceQueue {
           logVoiceDiag("audio unlocked", {
             userAgent: navigator.userAgent.slice(0, 120),
             standalone: isStandalonePwa(),
+            volume: el.volume,
+            muted: el.muted,
+            readyState: el.readyState,
           });
         })
         .catch((err) => {
           logVoiceDiag("unlock play() rejected", {
             error: err instanceof Error ? err.message : String(err),
+            name: err instanceof Error ? err.name : undefined,
             standalone: isStandalonePwa(),
           });
         });
@@ -364,6 +421,14 @@ class JoyVoiceQueue {
       el.setAttribute("webkit-playsinline", "true");
       // Safari iOS
       (el as HTMLAudioElement & { playsInline?: boolean }).playsInline = true;
+      el.muted = false;
+      el.volume = 1;
+      // Alcuni WebKit richiedono l'elemento nel DOM per playsInline / unlock.
+      if (typeof document !== "undefined") {
+        el.setAttribute("data-eterya-joy-voice", "1");
+        el.style.display = "none";
+        document.body.appendChild(el);
+      }
       this.audio = el;
     }
     this.audio.muted = false;
@@ -373,11 +438,15 @@ class JoyVoiceQueue {
   }
 
   private failNaturalVoice(message: string): void {
-    this.error = TTS_UNAVAILABLE_MSG;
+    const blocked =
+      message === IPHONE_AUDIO_BLOCKED_MSG ||
+      /bloccato da iPhone|NotAllowed|autoplay/i.test(message);
+    this.error = blocked ? IPHONE_AUDIO_BLOCKED_MSG : TTS_UNAVAILABLE_MSG;
     this.warning = message;
     this.diagnostics = {
       ...this.diagnostics,
       fallbackActive: false,
+      playError: blocked ? IPHONE_AUDIO_BLOCKED_MSG : message,
     };
     this.setState("error", "none");
     this.emit();
@@ -541,22 +610,55 @@ class JoyVoiceQueue {
         return "failed";
       }
 
+      if (looksLikeHtmlOrJsonMime(contentType)) {
+        this.warning =
+          "Risposta TTS non audio (HTML/JSON). Nessuna riproduzione.";
+        this.diagnostics = {
+          ...this.diagnostics,
+          playError: this.warning,
+        };
+        logVoiceDiag("tts wrong mime (html/json)", {
+          status: response.status,
+          contentType,
+        });
+        return "failed";
+      }
+
+      if (!isAudioMpegMime(contentType)) {
+        this.warning = `MIME TTS non supportato (${contentType}). Atteso audio/mpeg.`;
+        this.diagnostics = {
+          ...this.diagnostics,
+          playError: this.warning,
+        };
+        logVoiceDiag("tts wrong mime", {
+          status: response.status,
+          contentType,
+        });
+        return "failed";
+      }
+
       const arrayBuffer = await response.arrayBuffer();
       if (gen !== this.generation) {
         return "aborted";
       }
 
-      const mime = contentType.split(";")[0]?.trim() || "audio/mpeg";
+      const mime = "audio/mpeg";
       const blob = new Blob([arrayBuffer], { type: mime });
 
       logVoiceDiag("tts blob", {
         bytes: blob.size,
         mime,
         unlocked: this.unlocked,
+        unlockSrcPending: this.unlockSrcPending,
       });
 
       if (!blob || blob.size < 32) {
         this.warning = "Audio TTS vuoto o non valido.";
+        this.diagnostics = {
+          ...this.diagnostics,
+          playError: this.warning,
+          audioSizeBytes: blob?.size ?? 0,
+        };
         return "failed";
       }
 
@@ -606,13 +708,17 @@ class JoyVoiceQueue {
   }
 
   /**
-   * Stesso HTMLAudioElement della unlock: set src → load → await play().
+   * Stesso HTMLAudioElement della unlock: set src → load → await canplay → play().
    * Mai creare un nuovo Audio() dopo il fetch (rompe la catena iOS).
    */
   private playBlob(blob: Blob, gen: number): Promise<boolean> {
     return new Promise((resolve) => {
       this.playResolve = resolve;
       this.openAiCommitted = false;
+
+      // Claim dell'elemento: qualsiasi unlock.then() non deve più fare pause().
+      this.unlockSrcPending = false;
+      this.unlockGeneration += 1;
 
       const previousUrl = this.objectUrl;
       const url = URL.createObjectURL(blob);
@@ -629,6 +735,7 @@ class JoyVoiceQueue {
         settled = true;
         audio.onended = null;
         audio.onerror = null;
+        audio.oncanplay = null;
         audio.oncanplaythrough = null;
         audio.ondurationchange = null;
         if (this.playResolve === resolve) {
@@ -673,6 +780,7 @@ class JoyVoiceQueue {
           return;
         }
         playStarted = true;
+        audio.oncanplay = null;
         audio.oncanplaythrough = null;
         updateDuration();
         this.setState("ready", "openai");
@@ -683,6 +791,17 @@ class JoyVoiceQueue {
         } catch {
           // ignore
         }
+        logVoiceDiag("play() attempt", {
+          volume: audio.volume,
+          muted: audio.muted,
+          readyState: audio.readyState,
+          duration: audio.duration,
+          bytes: blob.size,
+          mime: blob.type,
+          unlocked: this.unlocked,
+          standalone: isStandalonePwa(),
+          userAgent: navigator.userAgent.slice(0, 120),
+        });
         void audio.play().then(
           () => {
             if (gen !== this.generation) {
@@ -699,15 +818,13 @@ class JoyVoiceQueue {
             logVoiceDiag("play() ok", {
               volume: audio.volume,
               muted: audio.muted,
+              readyState: audio.readyState,
               bytes: blob.size,
               mime: blob.type,
             });
           },
           (err) => {
-            const msg =
-              err instanceof Error
-                ? err.message
-                : "audio.play() rejected (autoplay / policy).";
+            const msg = mapPlayError(err);
             this.warning = msg;
             this.diagnostics = {
               ...this.diagnostics,
@@ -716,8 +833,10 @@ class JoyVoiceQueue {
             this.emit();
             logVoiceDiag("play() rejected", {
               error: msg,
+              name: err instanceof Error ? err.name : undefined,
               volume: audio.volume,
               muted: audio.muted,
+              readyState: audio.readyState,
               unlocked: this.unlocked,
               standalone: isStandalonePwa(),
             });
@@ -752,14 +871,17 @@ class JoyVoiceQueue {
         finish(false);
       };
 
+      // canplay (non solo canplaythrough) — più affidabile su iOS dopo blob URL.
+      audio.oncanplay = () => startPlayback();
       audio.oncanplaythrough = () => startPlayback();
 
+      // Fallback se gli eventi media non arrivano (WebKit a volte sticky).
       window.setTimeout(() => {
         if (settled || playStarted || gen !== this.generation) return;
-        if (audio.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) {
+        if (audio.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
           startPlayback();
         }
-      }, 400);
+      }, 250);
 
       window.setTimeout(() => {
         if (settled || playStarted || gen !== this.generation) return;
@@ -775,6 +897,11 @@ class JoyVoiceQueue {
         }
       }, 8000);
 
+      try {
+        audio.pause();
+      } catch {
+        // ignore
+      }
       audio.src = url;
       audio.load();
     });
@@ -784,9 +911,11 @@ class JoyVoiceQueue {
     keepCache?: boolean;
     keepAudioElement?: boolean;
   }): void {
+    this.unlockSrcPending = false;
     if (this.audio) {
       this.audio.onended = null;
       this.audio.onerror = null;
+      this.audio.oncanplay = null;
       this.audio.oncanplaythrough = null;
       this.audio.ondurationchange = null;
       try {
@@ -798,6 +927,11 @@ class JoyVoiceQueue {
         try {
           this.audio.removeAttribute("src");
           this.audio.load();
+        } catch {
+          // ignore
+        }
+        try {
+          this.audio.remove();
         } catch {
           // ignore
         }
@@ -840,7 +974,7 @@ class JoyVoiceQueue {
   }
 }
 
-const globalKey = "__eteryaJoyVoiceQueueV4";
+const globalKey = "__eteryaJoyVoiceQueueV5";
 
 function getQueue(): JoyVoiceQueue {
   if (typeof window === "undefined") {
