@@ -11,6 +11,21 @@ const PUBLIC_ROUTES = ["/login", "/auth/callback"];
 /** Route pubbliche accessibili anche con sessione attiva (es. recupero password). */
 const PUBLIC_ROUTES_ALLOWING_AUTHENTICATED = ["/login/reset-password", "/auth/callback"];
 
+/**
+ * Asset PWA sempre pubblici (anche con sessione attiva).
+ * Devono restare raggiungibili senza redirect a login/dashboard.
+ */
+function isPwaAssetRoute(pathname: string): boolean {
+  return (
+    pathname === "/manifest.webmanifest" ||
+    pathname === "/manifest.json" ||
+    pathname === "/sw.js" ||
+    pathname === "/icon" ||
+    pathname === "/apple-icon" ||
+    pathname.startsWith("/icons/")
+  );
+}
+
 function isPublicRoute(pathname: string): boolean {
   return PUBLIC_ROUTES.some(
     (route) => pathname === route || pathname.startsWith(`${route}/`)
@@ -64,6 +79,11 @@ function isAdminRoute(pathname: string): boolean {
  */
 export async function updateSession(request: NextRequest): Promise<NextResponse> {
   const { pathname } = request.nextUrl;
+
+  if (isPwaAssetRoute(pathname)) {
+    return NextResponse.next({ request });
+  }
+
   const env = getSupabasePublicEnv();
 
   if (!env) {

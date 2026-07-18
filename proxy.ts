@@ -15,8 +15,8 @@ export const config = {
      * Applica a ogni richiesta tranne:
      * - _next/static (file statici)
      * - _next/image (ottimizzazione immagini)
-     * - favicon.ico e file immagine
+     * - favicon.ico, asset PWA (manifest/sw) e file immagine
      */
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|manifest\\.webmanifest|sw\\.js|icons/|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };

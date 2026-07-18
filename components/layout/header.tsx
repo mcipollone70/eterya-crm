@@ -25,7 +25,7 @@ export function Header({ onMenuClick, onSearchClick, userEmail }: HeaderProps) {
   }).format(new Date());
 
   return (
-    <header className="flex h-16 shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 lg:px-6">
+    <header className="flex h-16 shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 pt-[env(safe-area-inset-top,0px)] lg:px-6">
       <div className="flex min-w-0 items-center gap-3">
         <button
           type="button"
