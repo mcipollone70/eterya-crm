@@ -104,6 +104,10 @@ export async function saveVisitTour(
     detourKm: stop.detourKm,
     companyId: stop.company.id,
     companyName: stop.company.name,
+    // Persist coords in JSON (no schema change) so mobile can open Google Maps
+    // without an async company refetch before the user tap.
+    latitude: stop.company.latitude,
+    longitude: stop.company.longitude,
   }));
 
   const tourName =

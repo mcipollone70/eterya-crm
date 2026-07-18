@@ -43,35 +43,45 @@ function parseStoredStops(value: unknown): VisitTourStoredStop[] {
     return [];
   }
 
-  return value
-    .map((item) => {
-      if (!item || typeof item !== "object") {
-        return null;
-      }
+  const stops: VisitTourStoredStop[] = [];
 
-      const row = item as Record<string, unknown>;
-      const id = String(row.id ?? row.companyId ?? "");
-      const companyId = String(row.companyId ?? row.id ?? "");
+  for (const item of value) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
 
-      if (!id || !companyId) {
-        return null;
-      }
+    const row = item as Record<string, unknown>;
+    const id = String(row.id ?? row.companyId ?? "");
+    const companyId = String(row.companyId ?? row.id ?? "");
 
-      return {
-        id,
-        order: Number(row.order ?? 0),
-        locked: Boolean(row.locked),
-        score: Number(row.score ?? 0),
-        reason: String(row.reason ?? ""),
-        deviationKm: Number(row.deviationKm ?? 0),
-        legDistanceKm: Number(row.legDistanceKm ?? 0),
-        detourKm: Number(row.detourKm ?? 0),
-        companyId,
-        companyName: String(row.companyName ?? ""),
-      };
-    })
-    .filter((stop): stop is VisitTourStoredStop => stop !== null)
-    .sort((left, right) => left.order - right.order);
+    if (!id || !companyId) {
+      continue;
+    }
+
+    const latitude = Number(row.latitude);
+    const longitude = Number(row.longitude);
+    const stop: VisitTourStoredStop = {
+      id,
+      order: Number(row.order ?? 0),
+      locked: Boolean(row.locked),
+      score: Number(row.score ?? 0),
+      reason: String(row.reason ?? ""),
+      deviationKm: Number(row.deviationKm ?? 0),
+      legDistanceKm: Number(row.legDistanceKm ?? 0),
+      detourKm: Number(row.detourKm ?? 0),
+      companyId,
+      companyName: String(row.companyName ?? ""),
+    };
+
+    if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+      stop.latitude = latitude;
+      stop.longitude = longitude;
+    }
+
+    stops.push(stop);
+  }
+
+  return stops.sort((left, right) => left.order - right.order);
 }
 
 function parseConstraints(value: unknown): VisitTourConstraints {
@@ -108,7 +118,15 @@ export function restoreVisitTourStops(
 
   for (const stored of storedStops) {
     const company = companyById.get(stored.companyId);
-    if (!company) {
+    const storedLat = stored.latitude;
+    const storedLng = stored.longitude;
+    const hasStoredCoords =
+      typeof storedLat === "number" &&
+      Number.isFinite(storedLat) &&
+      typeof storedLng === "number" &&
+      Number.isFinite(storedLng);
+
+    if (!company && !hasStoredCoords) {
       continue;
     }
 
@@ -122,18 +140,18 @@ export function restoreVisitTourStops(
       legDistanceKm: stored.legDistanceKm,
       detourKm: stored.detourKm,
       company: {
-        id: company.id,
-        name: company.name,
-        city: company.city ?? null,
-        province: company.province ?? null,
-        phone: company.phone ?? null,
-        commercial_status: company.commercial_status,
-        status: company.status,
-        latitude: company.latitude,
-        longitude: company.longitude,
-        revenue: company.revenue ?? null,
-        lastVisitAt: company.lastVisitAt,
-        import_payload: company.import_payload,
+        id: company?.id ?? stored.companyId,
+        name: company?.name ?? stored.companyName,
+        city: company?.city ?? null,
+        province: company?.province ?? null,
+        phone: company?.phone ?? null,
+        commercial_status: company?.commercial_status ?? "prospect",
+        status: company?.status ?? "active",
+        latitude: company?.latitude ?? storedLat!,
+        longitude: company?.longitude ?? storedLng!,
+        revenue: company?.revenue ?? null,
+        lastVisitAt: company?.lastVisitAt ?? null,
+        import_payload: company?.import_payload ?? null,
       },
     });
   }

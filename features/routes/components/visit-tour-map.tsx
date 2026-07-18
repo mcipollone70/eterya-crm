@@ -99,6 +99,47 @@ function MapClickDismiss({ onDismiss }: { onDismiss?: () => void }) {
   return null;
 }
 
+function MapSizeInvalidator() {
+  const map = useMap();
+
+  useEffect(() => {
+    let cancelled = false;
+    const timeouts: number[] = [];
+
+    const refresh = () => {
+      if (cancelled) return;
+      try {
+        map.invalidateSize({ animate: false });
+      } catch {
+        // ignore
+      }
+    };
+
+    map.whenReady(refresh);
+    timeouts.push(window.setTimeout(refresh, 50));
+    timeouts.push(window.setTimeout(refresh, 300));
+
+    const onResize = () => refresh();
+    const onPageShow = () => refresh();
+    window.addEventListener("resize", onResize);
+    window.addEventListener("orientationchange", onResize);
+    window.addEventListener("pageshow", onPageShow);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") refresh();
+    });
+
+    return () => {
+      cancelled = true;
+      for (const id of timeouts) window.clearTimeout(id);
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("orientationchange", onResize);
+      window.removeEventListener("pageshow", onPageShow);
+    };
+  }, [map]);
+
+  return null;
+}
+
 export function VisitTourMap({
   routeCoordinates,
   destination,
@@ -133,7 +174,9 @@ export function VisitTourMap({
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        crossOrigin="anonymous"
       />
+      <MapSizeInvalidator />
       <FitTourBounds
         routeCoordinates={routeCoordinates}
         destination={destination}

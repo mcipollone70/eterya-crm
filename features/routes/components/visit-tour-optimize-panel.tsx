@@ -11,6 +11,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { formatDistanceKm } from "@/features/maps/utils/geo-distance";
+import { FALLBACK_MAP_CENTER } from "@/features/maps/constants/map-config";
 import { formatDurationMinutes } from "@/lib/last-visit/format";
 import {
   createManualStop,
@@ -38,7 +39,10 @@ import type {
   VisitTourOptimizePlan,
   VisitTourOptimizeStop,
 } from "../types/visit-tour";
-import { buildGoogleMapsTourUrl } from "../utils/google-maps-tour-url";
+import {
+  buildGoogleMapsDestinationUrl,
+  tryBuildGoogleMapsTourUrl,
+} from "../utils/google-maps-tour-url";
 import { toGeoPoint } from "../utils/find-route-candidates";
 import { useVisitTourCompanies } from "./visit-tour-companies-provider";
 import { VisitTourCompanySelect } from "./visit-tour-company-select";
@@ -74,6 +78,12 @@ function requestCurrentLocation(): Promise<GeoPoint> {
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
     );
   });
+}
+
+function assertValidPoint(point: GeoPoint, label: string): void {
+  if (!Number.isFinite(point.lat) || !Number.isFinite(point.lng) || Math.abs(point.lat) > 90 || Math.abs(point.lng) > 180) {
+    throw new Error(`${label}: coordinate non valide (${String(point.lat)}, ${String(point.lng)}).`);
+  }
 }
 
 function normalizeStopsOrder(stops: VisitTourOptimizeStop[]): VisitTourOptimizeStop[] {
@@ -155,8 +165,18 @@ export function VisitTourOptimizePanel({
     companyId?: string;
   }> => {
     if (originType === "current") {
-      const point = await requestCurrentLocation();
-      return { point, label: "Posizione corrente" };
+      try {
+        const point = await requestCurrentLocation();
+        assertValidPoint(point, "Posizione corrente");
+        return { point, label: "Posizione corrente" };
+      } catch {
+        // iPhone: permesso negato non deve bloccare l'ottimizzazione.
+        const point = {
+          lat: FALLBACK_MAP_CENTER[0],
+          lng: FALLBACK_MAP_CENTER[1],
+        };
+        return { point, label: "Area Latina (GPS non disponibile)" };
+      }
     }
 
     if (originType === "company") {
@@ -164,8 +184,10 @@ export function VisitTourOptimizePanel({
       if (!company) {
         throw new Error("Seleziona il punto di partenza.");
       }
+      const point = toGeoPoint(company);
+      assertValidPoint(point, company.name);
       return {
-        point: toGeoPoint(company),
+        point,
         label: company.name,
         companyId: company.id,
       };
@@ -174,6 +196,7 @@ export function VisitTourOptimizePanel({
     if (!origin) {
       throw new Error("Geocodifica prima il punto di partenza.");
     }
+    assertValidPoint(origin, "Partenza");
 
     return { point: origin, label: originLabel };
   }, [companyById, origin, originCompanyId, originLabel, originType]);
@@ -184,10 +207,12 @@ export function VisitTourOptimizePanel({
       if (!company) {
         throw new Error("Seleziona il punto di arrivo.");
       }
+      const point = toGeoPoint(company);
+      assertValidPoint(point, company.name);
       return {
         type: "company",
         label: company.name,
-        point: toGeoPoint(company),
+        point,
         companyId: company.id,
       };
     }
@@ -195,6 +220,7 @@ export function VisitTourOptimizePanel({
     if (!destination) {
       throw new Error("Geocodifica prima il punto di arrivo.");
     }
+    assertValidPoint(destination.point, "Arrivo");
 
     return destination;
   }, [companyById, destination, destinationCompanyId, destinationType]);
@@ -227,16 +253,35 @@ export function VisitTourOptimizePanel({
           const scopedCompanies =
             corridorCompanies.length > 0 ? corridorCompanies : companies;
 
+          const invalidStops = scopedCompanies.filter(
+            (company) =>
+              !Number.isFinite(company.latitude) || !Number.isFinite(company.longitude)
+          );
+          if (invalidStops.length > 0 && scopedCompanies.length === invalidStops.length) {
+            throw new Error(
+              "Nessuna azienda con coordinate valide nell'area. Controlla geocoding o amplia l'area."
+            );
+          }
+
           const nextPlan = optimizeVisitTour({
             origin: originResolved.point,
             destination: destinationResolved.point,
-            companies: scopedCompanies,
+            companies: scopedCompanies.filter(
+              (company) =>
+                Number.isFinite(company.latitude) && Number.isFinite(company.longitude)
+            ),
             context,
             constraints,
             existingStops: recalculate ? stops : [],
             originCompanyId: originResolved.companyId,
             destinationCompanyId: destinationResolved.companyId,
           });
+
+          if (nextPlan.stops.length === 0) {
+            throw new Error(
+              "Ottimizzazione completata ma nessuna tappa selezionata. Aggiungi tappe manualmente o allarga i vincoli."
+            );
+          }
 
           syncPlan(nextPlan.stops, nextPlan, originResolved.point, destinationResolved.point);
           setMessage(
@@ -487,7 +532,7 @@ export function VisitTourOptimizePanel({
 
   const googleMapsTourUrl =
     origin && destination
-      ? buildGoogleMapsTourUrl(
+      ? tryBuildGoogleMapsTourUrl(
           origin,
           destination.point,
           stops.map((stop) => ({
@@ -497,8 +542,22 @@ export function VisitTourOptimizePanel({
         )
       : null;
 
+  const nextStop = stops[0] ?? null;
+  const nextStopNavUrl = nextStop
+    ? (() => {
+        try {
+          return buildGoogleMapsDestinationUrl({
+            lat: nextStop.company.latitude,
+            lng: nextStop.company.longitude,
+          });
+        } catch {
+          return null;
+        }
+      })()
+    : null;
+
   return (
-    <aside className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <aside className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom,0px))] shadow-sm">
       <div>
         <h3 className="text-sm font-semibold text-slate-900">Ottimizza giro</h3>
         <p className="mt-1 text-xs text-slate-500">
@@ -677,7 +736,8 @@ export function VisitTourOptimizePanel({
           type="button"
           onClick={() => runOptimize(false)}
           disabled={isPending}
-          className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 text-sm font-medium text-white hover:bg-indigo-700 disabled:bg-slate-300"
+          data-testid="optimize-tour-button"
+          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 text-sm font-medium text-white hover:bg-indigo-700 disabled:bg-slate-300"
         >
           {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
           Ottimizza giro
@@ -686,7 +746,7 @@ export function VisitTourOptimizePanel({
           type="button"
           onClick={() => runOptimize(true)}
           disabled={isPending || stops.length === 0}
-          className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-4 text-sm font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-4 text-sm font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
         >
           <RefreshCw className="h-4 w-4" />
           Ricalcola giro
@@ -776,12 +836,13 @@ export function VisitTourOptimizePanel({
         />
       </label>
 
-      <div className="grid gap-2">
+      <div className="sticky bottom-20 z-20 grid gap-2 bg-white/95 py-2 backdrop-blur-sm lg:static lg:bottom-auto lg:bg-transparent lg:py-0 lg:backdrop-blur-none">
         <button
           type="button"
           onClick={handleSaveTour}
           disabled={isPending || !plan || stops.length === 0}
-          className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 text-sm font-medium text-white hover:bg-emerald-700 disabled:bg-slate-300"
+          data-testid="save-tour-button"
+          className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 text-sm font-medium text-white hover:bg-emerald-700 disabled:bg-slate-300"
         >
           <Save className="h-4 w-4" />
           Salva giro
@@ -792,10 +853,25 @@ export function VisitTourOptimizePanel({
             href={googleMapsTourUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-4 text-sm font-medium text-indigo-700 hover:bg-indigo-100"
+            data-testid="google-maps-tour-link"
+            className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-4 text-sm font-medium text-indigo-700 hover:bg-indigo-100"
           >
             <ExternalLink className="h-4 w-4" />
-            Apri su Google Maps
+            Apri in Google Maps
+          </a>
+        )}
+
+        {nextStopNavUrl && (
+          <a
+            href={nextStopNavUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            data-testid="google-maps-next-stop-link"
+            className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-medium text-slate-800 hover:bg-slate-50"
+          >
+            <Navigation className="h-4 w-4" />
+            Avvia prossima tappa
+            {nextStop ? `: ${nextStop.company.name}` : ""}
           </a>
         )}
       </div>

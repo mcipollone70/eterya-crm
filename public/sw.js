@@ -1,8 +1,8 @@
 /* Eterya CRM — service worker minimale (solo asset statici).
  * NON cache: HTML autenticato, API (incluso TTS), Supabase, Server Actions,
- * token/sessioni, PII, tile mappa, audio Joy, RSC/flight.
+ * token/sessioni, PII, tile mappa, audio Joy, RSC/flight, Google Maps, optimize/tour.
  */
-const CACHE_NAME = "eterya-crm-static-v2";
+const CACHE_NAME = "eterya-crm-static-v3";
 
 const PRECACHE_URLS = [
   "/icons/eterya-crm-192.png",
@@ -41,18 +41,22 @@ function isNeverCacheRequest(request, url) {
   if (pathname.startsWith("/api/")) return true;
   if (pathname.startsWith("/auth/")) return true;
   if (pathname.startsWith("/login")) return true;
+  if (pathname.startsWith("/maps")) return true;
+  if (pathname.startsWith("/giro-visite") || pathname.startsWith("/routes")) return true;
 
   // Next.js RSC / flight / server actions markers
   if (request.headers.has("rsc")) return true;
   if (request.headers.has("next-action")) return true;
   if (request.headers.get("next-router-state-tree")) return true;
 
-  // Cross-origin (Supabase, OSM tiles, OpenAI, Google, …)
+  // Cross-origin (Supabase, OSM tiles, OpenAI, Google Maps, …)
   if (url.origin !== self.location.origin) return true;
 
-  // Difesa in profondità: audio / tile path-like
+  // Difesa in profondità: audio / tile path-like / maps providers
   if (/\.(?:mp3|wav|ogg|m4a|aac)(?:\?|$)/i.test(pathname)) return true;
   if (/tile\.openstreetmap|\/tiles?\//i.test(url.href)) return true;
+  if (/google\.(?:com|it).*\/maps/i.test(url.href)) return true;
+  if (/maps\.googleapis\.com|maps\.gstatic\.com/i.test(url.href)) return true;
 
   return false;
 }
@@ -87,6 +91,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // Network-only for never-cache: do not call respondWith → browser default fetch.
   if (isNeverCacheRequest(request, url)) {
     return;
   }

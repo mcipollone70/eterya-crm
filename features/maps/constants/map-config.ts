@@ -37,8 +37,13 @@ export const MAP_BOUNDS_DEBOUNCE_MS = 400;
 
 export const MAP_VIEWPORT_STORAGE_KEY = "eterya-map-viewport";
 
+/** Centro Italia (viewport iniziale se nessun viewport salvato). */
 export const DEFAULT_MAP_CENTER: [number, number] = [41.8719, 12.5674];
 export const DEFAULT_MAP_ZOOM = 6;
+
+/** Fallback quando la geolocalizzazione è negata (area operativa Latina / LT). */
+export const FALLBACK_MAP_CENTER: [number, number] = [41.4677, 12.9037];
+export const FALLBACK_MAP_ZOOM = 11;
 
 export const NEARBY_RADIUS_OPTIONS_KM = [2, 5, 10, 20, 50] as const;
 export type NearbyRadiusKm = (typeof NEARBY_RADIUS_OPTIONS_KM)[number];

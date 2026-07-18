@@ -139,6 +139,9 @@ export interface VisitTourStoredStop {
   detourKm: number;
   companyId: string;
   companyName: string;
+  /** Coordinate persistite nel JSON stops (opzionali su giri legacy). */
+  latitude?: number;
+  longitude?: number;
 }
 
 export interface VisitTourListItem {
@@ -154,6 +157,11 @@ export interface VisitTourListItem {
   estimatedMinutes: number | null;
   status: VisitTourSaveStatus;
   updatedAt: string;
+  /**
+   * URL HTTPS Google Maps pronto per `<a href>` (tap utente).
+   * Null se coordinate incomplete (giri legacy senza lat/lng sulle tappe).
+   */
+  googleMapsUrl: string | null;
 }
 
 export interface VisitTourListFilters {

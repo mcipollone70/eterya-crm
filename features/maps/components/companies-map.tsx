@@ -15,6 +15,7 @@ import { PageHeader } from "@/components/ui";
 import {
   DEFAULT_MAP_CENTER,
   DEFAULT_MAP_ZOOM,
+  FALLBACK_MAP_CENTER,
   MAP_VIEWPORT_STORAGE_KEY,
 } from "../constants/map-config";
 import type { MapFiltersState, MapViewportState, UserLocation } from "../types/map";
@@ -103,11 +104,14 @@ function logMapDiag(message: string, payload?: Record<string, unknown>) {
   }
 }
 
-/**
- * Leaflet su mobile/PWA: se il contenitore ha width/height 0 all'init,
- * tile e marker restano invisibili finché non si chiama invalidateSize().
- */
-function MapSizeInvalidator({ containerRef }: { containerRef: RefObject<HTMLDivElement | null> }) {
+function MapSizeInvalidator({
+  containerRef,
+  layoutKey,
+}: {
+  containerRef: RefObject<HTMLDivElement | null>;
+  /** Cambia quando tab/filtri/layout mobile cambiano — forza invalidateSize. */
+  layoutKey?: string | number;
+}) {
   const map = useMap();
 
   useEffect(() => {
@@ -134,12 +138,14 @@ function MapSizeInvalidator({ containerRef }: { containerRef: RefObject<HTMLDivE
       logMapDiag(`invalidateSize (${reason})`, {
         containerWidth: size.w,
         containerHeight: size.h,
+        mapSize: map.getSize(),
         zoom: map.getZoom(),
         center: map.getCenter(),
+        tilePaneChildren:
+          map.getPane("tilePane")?.querySelectorAll("img").length ?? 0,
         standalone:
           typeof window !== "undefined" &&
           (window.matchMedia("(display-mode: standalone)").matches ||
-            // iOS Safari PWA
             ("standalone" in navigator &&
               Boolean((navigator as Navigator & { standalone?: boolean }).standalone))),
       });
@@ -148,6 +154,7 @@ function MapSizeInvalidator({ containerRef }: { containerRef: RefObject<HTMLDivE
     map.whenReady(() => refresh("whenReady"));
     timeouts.push(window.setTimeout(() => refresh("mount+50ms"), 50));
     timeouts.push(window.setTimeout(() => refresh("mount+300ms"), 300));
+    timeouts.push(window.setTimeout(() => refresh("layoutKey"), 100));
 
     const onResize = () => refresh("resize");
     const onOrientation = () => refresh("orientationchange");
@@ -156,10 +163,12 @@ function MapSizeInvalidator({ containerRef }: { containerRef: RefObject<HTMLDivE
         refresh("visibilitychange");
       }
     };
+    const onPageShow = () => refresh("pageshow");
 
     window.addEventListener("resize", onResize);
     window.addEventListener("orientationchange", onOrientation);
     document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pageshow", onPageShow);
 
     const el = containerRef.current;
     let observer: ResizeObserver | null = null;
@@ -168,7 +177,7 @@ function MapSizeInvalidator({ containerRef }: { containerRef: RefObject<HTMLDivE
       observer.observe(el);
     }
 
-            map.on("tileerror", () => {
+    map.on("tileerror", () => {
       logMapDiag("tileerror", { note: "OSM tile failed to load" });
     });
 
@@ -178,10 +187,11 @@ function MapSizeInvalidator({ containerRef }: { containerRef: RefObject<HTMLDivE
       window.removeEventListener("resize", onResize);
       window.removeEventListener("orientationchange", onOrientation);
       document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pageshow", onPageShow);
       observer?.disconnect();
       map.off("tileerror");
     };
-  }, [containerRef, map]);
+  }, [containerRef, layoutKey, map]);
 
   return null;
 }
@@ -309,6 +319,7 @@ export function CompaniesMap({ provinces, brands }: CompaniesMapProps) {
   const [userLocation, setUserLocation] = useState<UserLocation | null>(null);
   const [isLocating, setIsLocating] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
+  const [mobileTab, setMobileTab] = useState<"map" | "list">("map");
   const [initialViewport] = useState<MapViewportState>(() => {
     return readStoredViewport() ?? {
       lat: DEFAULT_MAP_CENTER[0],
@@ -399,9 +410,36 @@ export function CompaniesMap({ provinces, brands }: CompaniesMapProps) {
   useEffect(() => {
     requestBrowserLocation(handleLocationFound, (message) => {
       logMapDiag("geolocation denied/unavailable (non-blocking)", { message });
+      // Fallback area Latina: mappa e marker restano usabili senza GPS.
+      void loadForCenter(
+        { lat: FALLBACK_MAP_CENTER[0], lng: FALLBACK_MAP_CENTER[1] },
+        filtersRef.current,
+        undefined,
+        true
+      );
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only
   }, []);
+
+  useEffect(() => {
+    if (mobileTab !== "map") {
+      return;
+    }
+    const timeouts = [
+      window.setTimeout(() => {
+        const el = mapShellRef.current;
+        if (!el) return;
+        logMapDiag("mobile tab map visible", {
+          clientWidth: el.clientWidth,
+          clientHeight: el.clientHeight,
+          rect: el.getBoundingClientRect().toJSON?.() ?? el.getBoundingClientRect(),
+        });
+      }, 80),
+    ];
+    return () => {
+      for (const id of timeouts) window.clearTimeout(id);
+    };
+  }, [mobileTab]);
 
   useEffect(() => {
     logMapDiag("companies/markers update", {
@@ -419,9 +457,49 @@ export function CompaniesMap({ provinces, brands }: CompaniesMapProps) {
     <div className="space-y-4">
       <PageHeader title="Mappa" subtitle={subtitle} />
 
-      {/* Mobile: altezza esplicita (dvh); non solo height:100% senza parent height. */}
+      {/* Mobile: tab Mappa/Lista — cartografia non resta sotto filtri lunghi. */}
+      <div
+        className="flex gap-2 lg:hidden"
+        role="tablist"
+        aria-label="Vista mappa"
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mobileTab === "map"}
+          onClick={() => setMobileTab("map")}
+          className={`min-h-11 flex-1 rounded-lg px-3 text-sm font-medium ${
+            mobileTab === "map"
+              ? "bg-slate-900 text-white"
+              : "bg-slate-100 text-slate-700"
+          }`}
+          data-testid="map-tab-map"
+        >
+          Mappa
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mobileTab === "list"}
+          onClick={() => setMobileTab("list")}
+          className={`min-h-11 flex-1 rounded-lg px-3 text-sm font-medium ${
+            mobileTab === "list"
+              ? "bg-slate-900 text-white"
+              : "bg-slate-100 text-slate-700"
+          }`}
+          data-testid="map-tab-list"
+        >
+          Filtri e elenco
+        </button>
+      </div>
+
+      {/* Mobile: altezza esplicita (dvh − header − bottom nav − safe area). Desktop invariato. */}
       <div className="flex flex-col gap-4 lg:h-[calc(100dvh-12rem)] lg:min-h-0 lg:flex-row">
-        <div className="flex w-full flex-col gap-4 lg:w-72 lg:shrink-0 lg:overflow-y-auto">
+        <div
+          className={`w-full flex-col gap-4 lg:flex lg:w-72 lg:shrink-0 lg:overflow-y-auto ${
+            mobileTab === "list" ? "flex" : "hidden lg:flex"
+          }`}
+        >
           <MapSidebarFilters
             provinces={provinces}
             brands={brands}
@@ -441,7 +519,9 @@ export function CompaniesMap({ provinces, brands }: CompaniesMapProps) {
 
         <div
           ref={mapShellRef}
-          className="relative h-[min(62dvh,calc(100dvh-13rem))] min-h-[280px] w-full flex-1 overflow-hidden rounded-xl border border-slate-200 shadow-sm lg:h-auto lg:min-h-0"
+          className={`relative w-full flex-1 overflow-hidden rounded-xl border border-slate-200 shadow-sm lg:block lg:h-auto lg:min-h-0 ${
+            mobileTab === "map" ? "block" : "hidden lg:block"
+          } h-[calc(100dvh-11.5rem-env(safe-area-inset-bottom,0px))] min-h-[280px] max-h-[calc(100dvh-9rem)]`}
           data-testid="companies-map-shell"
         >
           <MapContainer
@@ -456,7 +536,7 @@ export function CompaniesMap({ provinces, brands }: CompaniesMapProps) {
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
               crossOrigin="anonymous"
             />
-            <MapSizeInvalidator containerRef={mapShellRef} />
+            <MapSizeInvalidator containerRef={mapShellRef} layoutKey={mobileTab} />
             <MapViewportPersistence />
             <MapViewportLoader filters={filters} />
             <MapLocateController

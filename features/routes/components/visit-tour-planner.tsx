@@ -15,7 +15,7 @@ import {
   clearJoyTourProposal,
   loadJoyTourProposal,
 } from "@/features/joy/chat/utils/joy-tour-proposal-storage";
-import { DEFAULT_MAP_CENTER, DEFAULT_MAP_ZOOM } from "@/features/maps/constants/map-config";
+import { DEFAULT_MAP_CENTER, FALLBACK_MAP_CENTER, DEFAULT_MAP_ZOOM } from "@/features/maps/constants/map-config";
 import { OpportunityRadarPanel } from "@/features/radar/components/opportunity-radar-panel";
 import type { RadarCompanySource } from "@/features/radar/types";
 import { createManualStop } from "@/lib/visit-tour/optimize";
@@ -49,6 +49,7 @@ import type {
 import { findCompaniesAlongRoute, toGeoPoint } from "../utils/find-route-candidates";
 import {
   buildGoogleMapsTourUrlDetailed,
+  tryBuildGoogleMapsTourUrl,
 } from "../utils/google-maps-tour-url";
 import { applyVisitTourPlannerFilters } from "../utils/visit-tour-filters";
 import { optimizeNearestNeighborOrder } from "../utils/visit-tour-nearest-neighbor";
@@ -192,7 +193,7 @@ export function VisitTourPlanner({ agents }: VisitTourPlannerProps) {
             ? locationError.message
             : "Impossibile ottenere la posizione corrente."
         );
-        const [lat, lng] = DEFAULT_MAP_CENTER;
+        const [lat, lng] = FALLBACK_MAP_CENTER;
         loadForCenter({ lat, lng }, VISIT_TOUR_INITIAL_RADIUS_KM, true);
       })
       .finally(() => {
@@ -576,14 +577,30 @@ export function VisitTourPlanner({ agents }: VisitTourPlannerProps) {
 
   const googleMapsTour =
     origin && destination
-      ? buildGoogleMapsTourUrlDetailed(
-          origin,
-          destination.point,
-          selectedWaypoints.map((company) => ({
-            lat: company.latitude,
-            lng: company.longitude,
-          }))
-        )
+      ? (() => {
+          try {
+            return buildGoogleMapsTourUrlDetailed(
+              origin,
+              destination.point,
+              selectedWaypoints.map((company) => ({
+                lat: company.latitude,
+                lng: company.longitude,
+              }))
+            );
+          } catch {
+            const url = tryBuildGoogleMapsTourUrl(
+              origin,
+              destination.point,
+              selectedWaypoints.map((company) => ({
+                lat: company.latitude,
+                lng: company.longitude,
+              }))
+            );
+            return url
+              ? { url, waypointCount: selectedWaypoints.length, truncated: false, warning: null }
+              : null;
+          }
+        })()
       : null;
 
   const handleOptimizePlanChange = useCallback(
@@ -983,10 +1000,11 @@ export function VisitTourPlanner({ agents }: VisitTourPlannerProps) {
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={() => setMapsWarning(googleMapsTour.warning)}
-                    className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-4 text-sm font-medium text-indigo-700 hover:bg-indigo-100"
+                    data-testid="google-maps-corridor-link"
+                    className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-4 text-sm font-medium text-indigo-700 hover:bg-indigo-100"
                   >
                     <ExternalLink className="h-4 w-4" />
-                    Apri su Google Maps
+                    Apri in Google Maps
                   </a>
                 )}
               </div>
@@ -1014,11 +1032,15 @@ export function VisitTourPlanner({ agents }: VisitTourPlannerProps) {
           </>
         )}
 
-        <div className="relative min-h-[520px] overflow-hidden rounded-xl border border-slate-200 shadow-sm">
+        <div
+          className="relative min-h-[320px] overflow-hidden rounded-xl border border-slate-200 shadow-sm h-[min(52dvh,calc(100dvh-14rem))] lg:min-h-[520px] lg:h-auto"
+          data-testid="visit-tour-map-shell"
+        >
           <MapContainer
             center={DEFAULT_MAP_CENTER}
             zoom={DEFAULT_MAP_ZOOM}
-            className="h-full min-h-[520px] w-full"
+            className="absolute inset-0 z-0 h-full w-full lg:static lg:min-h-[520px]"
+            style={{ height: "100%", width: "100%" }}
             scrollWheelZoom
           >
             <VisitTourMap

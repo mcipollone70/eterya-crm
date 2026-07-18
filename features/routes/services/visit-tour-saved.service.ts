@@ -10,6 +10,7 @@ import type {
   VisitTourListItem,
   VisitTourSaveStatus,
 } from "../types/visit-tour";
+import { tryBuildGoogleMapsTourUrl } from "../utils/google-maps-tour-url";
 import { buildDefaultTourName } from "../utils/visit-tour-restore";
 import {
   isMissingVisitTourNameColumn,
@@ -55,6 +56,49 @@ function parseOriginDestinationLabels(
   };
 }
 
+function buildListGoogleMapsUrl(row: VisitTourRow): string | null {
+  const origin = row.origin as { lat?: number; lng?: number } | null;
+  const destination = row.destination as { lat?: number; lng?: number } | null;
+  if (
+    !origin ||
+    !destination ||
+    !Number.isFinite(origin.lat) ||
+    !Number.isFinite(origin.lng) ||
+    !Number.isFinite(destination.lat) ||
+    !Number.isFinite(destination.lng)
+  ) {
+    return null;
+  }
+
+  const waypoints = Array.isArray(row.stops)
+    ? row.stops
+        .map((stop) => {
+          if (!stop || typeof stop !== "object") {
+            return null;
+          }
+          const rowStop = stop as { latitude?: number; longitude?: number };
+          const lat = Number(rowStop.latitude);
+          const lng = Number(rowStop.longitude);
+          if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+            return null;
+          }
+          return { lat, lng };
+        })
+        .filter((point): point is { lat: number; lng: number } => point !== null)
+    : [];
+
+  // Legacy tours without stop coords cannot open Maps from the list without async fetch.
+  if (Array.isArray(row.stops) && row.stops.length > 0 && waypoints.length === 0) {
+    return null;
+  }
+
+  return tryBuildGoogleMapsTourUrl(
+    { lat: Number(origin.lat), lng: Number(origin.lng) },
+    { lat: Number(destination.lat), lng: Number(destination.lng) },
+    waypoints
+  );
+}
+
 function mapListItem(row: VisitTourRow): VisitTourListItem {
   const agentLabel =
     row.users?.full_name?.trim() || row.users?.email || "Agente sconosciuto";
@@ -76,6 +120,7 @@ function mapListItem(row: VisitTourRow): VisitTourListItem {
     estimatedMinutes: row.estimated_minutes,
     status: row.status,
     updatedAt: row.updated_at,
+    googleMapsUrl: buildListGoogleMapsUrl(row),
   };
 }
 

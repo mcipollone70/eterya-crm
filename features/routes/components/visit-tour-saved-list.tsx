@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, useTransition } from "react";
 import {
   Calendar,
   Copy,
+  ExternalLink,
   FolderOpen,
   Loader2,
   Pencil,
@@ -17,7 +18,6 @@ import { formatDurationMinutes } from "@/lib/last-visit/format";
 import {
   deleteVisitTourAction,
   duplicateVisitTourAction,
-  fetchVisitTourCompaniesByIdsAction,
   listVisitToursAction,
   loadVisitTourAction,
   renameVisitTourAction,
@@ -29,7 +29,6 @@ import type {
   VisitTourListSortKey,
   VisitTourLoadedState,
 } from "../types/visit-tour";
-import { buildGoogleMapsTourUrl } from "../utils/google-maps-tour-url";
 
 interface VisitTourSavedListProps {
   agents: Array<{ id: string; label: string }>;
@@ -122,73 +121,6 @@ export function VisitTourSavedList({
     [loadTours]
   );
 
-  const handleStartTour = useCallback(
-    (tourId: string) => {
-      setMessage(null);
-      setError(null);
-
-      startTransition(async () => {
-        const result = await loadVisitTourAction(tourId);
-        if (!result.success || !result.tour) {
-          setError(result.message);
-          return;
-        }
-
-        const waypoints = result.tour.stops
-          .map((stop) => {
-            const lat = stop.company.latitude;
-            const lng = stop.company.longitude;
-            if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-              return null;
-            }
-            return { lat, lng };
-          })
-          .filter((point): point is { lat: number; lng: number } => point !== null);
-
-        if (waypoints.length === 0) {
-          const ids = result.tour.stops.map((stop) => stop.id);
-          const companiesResult = await fetchVisitTourCompaniesByIdsAction(ids);
-          if (companiesResult.error || companiesResult.data.length === 0) {
-            setError("Nessuna tappa con coordinate disponibile per avviare il giro.");
-            return;
-          }
-
-          const companyById = new Map(companiesResult.data.map((company) => [company.id, company]));
-          const resolvedWaypoints = result.tour.stops
-            .map((stop) => {
-              const company = companyById.get(stop.id);
-              if (!company) {
-                return null;
-              }
-              return { lat: company.latitude, lng: company.longitude };
-            })
-            .filter((point): point is { lat: number; lng: number } => point !== null);
-
-          if (resolvedWaypoints.length === 0) {
-            setError("Nessuna tappa con coordinate disponibile per avviare il giro.");
-            return;
-          }
-
-          const url = buildGoogleMapsTourUrl(
-            result.tour.origin,
-            result.tour.destination.point,
-            resolvedWaypoints
-          );
-          window.open(url, "_blank", "noopener,noreferrer");
-          return;
-        }
-
-        const url = buildGoogleMapsTourUrl(
-          result.tour.origin,
-          result.tour.destination.point,
-          waypoints
-        );
-        window.open(url, "_blank", "noopener,noreferrer");
-      });
-    },
-    []
-  );
-
   const handleStartInProgress = useCallback(
     (tourId: string) => {
       setMessage(null);
@@ -201,12 +133,13 @@ export function VisitTourSavedList({
           return;
         }
 
-        setMessage(result.message);
+        setMessage(
+          `${result.message} Usa «Apri in Google Maps» (link diretto) per avviare la navigazione.`
+        );
         loadTours();
-        handleStartTour(tourId);
       });
     },
-    [handleStartTour, loadTours]
+    [loadTours]
   );
 
   const handleDuplicate = useCallback(
@@ -457,12 +390,12 @@ export function VisitTourSavedList({
                   </p>
                 </div>
 
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-2 pb-[max(0.25rem,env(safe-area-inset-bottom,0px))]">
                   <button
                     type="button"
                     onClick={() => handleOpenTour(tour.id)}
                     disabled={isPending}
-                    className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-indigo-600 px-3 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+                    className="inline-flex min-h-11 items-center gap-1.5 rounded-lg bg-indigo-600 px-3 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
                   >
                     <FolderOpen className="h-3.5 w-3.5" />
                     Apri
@@ -471,17 +404,33 @@ export function VisitTourSavedList({
                     type="button"
                     onClick={() => handleStartInProgress(tour.id)}
                     disabled={isPending || tour.status === "completed"}
-                    className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 text-xs font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+                    className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 text-xs font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
                   >
                     <Play className="h-3.5 w-3.5" />
                     Avvia
                   </button>
+                  {tour.googleMapsUrl ? (
+                    <a
+                      href={tour.googleMapsUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      data-testid={`google-maps-tour-${tour.id}`}
+                      className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-medium text-emerald-800 hover:bg-emerald-100"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                      Apri in Google Maps
+                    </a>
+                  ) : (
+                    <span className="inline-flex min-h-11 items-center rounded-lg border border-dashed border-slate-200 px-3 text-xs text-slate-500">
+                      Maps: apri il giro e usa il link (giri legacy)
+                    </span>
+                  )}
                   {tour.status !== "completed" && (
                     <button
                       type="button"
                       onClick={() => handleCompleteTour(tour.id)}
                       disabled={isPending}
-                      className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+                      className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
                     >
                       Completa
                     </button>
@@ -490,7 +439,7 @@ export function VisitTourSavedList({
                     type="button"
                     onClick={() => handleDuplicate(tour.id)}
                     disabled={isPending}
-                    className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                    className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                   >
                     <Copy className="h-3.5 w-3.5" />
                     Duplica
@@ -499,7 +448,7 @@ export function VisitTourSavedList({
                     type="button"
                     onClick={() => handleDelete(tour)}
                     disabled={isPending}
-                    className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 text-xs font-medium text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+                    className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 text-xs font-medium text-rose-700 hover:bg-rose-100 disabled:opacity-50"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                     Elimina
