@@ -5,7 +5,7 @@ import { COMMERCIAL_STATUS_MARKER_COLORS } from "@/features/maps/constants/map-c
 
 export function VisitTourMapLegend() {
   return (
-    <div className="pointer-events-none absolute bottom-3 left-3 z-[500] max-w-[220px] rounded-lg border border-slate-200 bg-white/95 p-3 text-xs shadow-sm">
+    <div className="pointer-events-none absolute bottom-3 left-3 z-[500] hidden max-w-[220px] rounded-lg border border-slate-200 bg-white/95 p-3 text-xs shadow-sm lg:block">
       <p className="mb-2 font-semibold text-slate-900">Legenda</p>
       <ul className="space-y-1.5 text-slate-700">
         <li className="flex items-center gap-2">

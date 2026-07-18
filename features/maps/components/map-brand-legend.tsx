@@ -8,7 +8,7 @@ import {
 /** Legenda compatta Brand marker (overlay mappa). */
 export function MapBrandLegend() {
   return (
-    <div className="pointer-events-none absolute bottom-3 left-3 z-[500] max-w-[220px] rounded-lg border border-slate-200 bg-white/95 px-3 py-2 text-xs text-slate-700 shadow-sm backdrop-blur-sm">
+    <div className="pointer-events-none absolute bottom-3 left-3 z-[500] hidden max-w-[220px] rounded-lg border border-slate-200 bg-white/95 px-3 py-2 text-xs text-slate-700 shadow-sm backdrop-blur-sm lg:block">
       <p className="mb-1.5 font-semibold text-slate-900">Brand</p>
       <ul className="space-y-1">
         {MAP_BRAND_LEGEND_ITEMS.map((item) => (

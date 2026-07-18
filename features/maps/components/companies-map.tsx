@@ -23,6 +23,7 @@ import { DEFAULT_MAP_FILTERS } from "../types/map";
 import { filterMapCompanies, formatMapPageSubtitle } from "../utils/map-filters";
 import { boundsRequestKey, filtersKey } from "../utils/map-bounds";
 import { MapBrandLegend } from "./map-brand-legend";
+import { MapMobileLegendControl } from "./map-mobile-legend-control";
 import { MapSidebarFilters } from "./map-sidebar-filters";
 import { MarkerClusterLayer } from "./marker-cluster-layer";
 import { OpportunityRadarPanel } from "@/features/radar/components/opportunity-radar-panel";
@@ -547,6 +548,7 @@ export function CompaniesMap({ provinces, brands }: CompaniesMapProps) {
             <MarkerClusterLayer companies={filteredCompanies} />
           </MapContainer>
           <MapBrandLegend />
+          <MapMobileLegendControl />
         </div>
       </div>
     </div>

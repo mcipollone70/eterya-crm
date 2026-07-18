@@ -58,6 +58,7 @@ import { VisitTourCandidatesList } from "./visit-tour-candidates-list";
 import { VisitTourCorridorStopsList } from "./visit-tour-corridor-stops-list";
 import { useVisitTourCompanies } from "./visit-tour-companies-provider";
 import { VisitTourMap } from "./visit-tour-map";
+import { MapMobileLegendControl } from "@/features/maps/components/map-mobile-legend-control";
 import { VisitTourMapLegend } from "./visit-tour-map-legend";
 import { VisitTourMapPopup } from "./visit-tour-map-popup";
 import { VisitTourOptimizePanel } from "./visit-tour-optimize-panel";
@@ -1069,6 +1070,7 @@ export function VisitTourPlanner({ agents }: VisitTourPlannerProps) {
             />
           </MapContainer>
           <VisitTourMapLegend />
+          <MapMobileLegendControl />
           {mapPopupCompany && (
             <VisitTourMapPopup
               company={mapPopupCompany}
