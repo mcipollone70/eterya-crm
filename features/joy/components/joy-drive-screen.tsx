@@ -57,6 +57,7 @@ import {
   setJoyDayPosition,
 } from "../os/client";
 import { JoySessionStatusBar } from "./joy-session-status-bar";
+import { JoyGuideModeScreen } from "../voice-mode/components/joy-guide-mode-screen";
 
 const MORNING_PROMPT = "Prepara la mia giornata";
 
@@ -169,6 +170,7 @@ interface JoyDriveScreenProps {
 
 export function JoyDriveScreen({ userDisplayName }: JoyDriveScreenProps) {
   const router = useRouter();
+  const [guideMode, setGuideMode] = useState(false);
   const [view, setView] = useState<"home" | "session">("home");
   const [activeAction, setActiveAction] = useState<DriveHomeAction | null>(null);
   const [messages, setMessages] = useState<JoyChatMessage[]>([]);
@@ -959,6 +961,15 @@ export function JoyDriveScreen({ userDisplayName }: JoyDriveScreenProps) {
     []
   );
 
+  if (guideMode) {
+    return (
+      <JoyGuideModeScreen
+        userDisplayName={userDisplayName}
+        onExit={() => setGuideMode(false)}
+      />
+    );
+  }
+
   if (view === "home") {
     return (
       <div className="fixed inset-0 z-50 flex flex-col bg-slate-950 text-white">
@@ -995,7 +1006,7 @@ export function JoyDriveScreen({ userDisplayName }: JoyDriveScreenProps) {
           </div>
         </header>
 
-        <div className="flex flex-1 flex-col justify-center gap-3 px-4 py-4 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+        <div className="flex flex-1 flex-col justify-center gap-3 px-4 py-4 pb-[max(5.5rem,calc(env(safe-area-inset-bottom)+4.5rem))]">
           {!isOnline ? (
             <p className="rounded-xl border border-amber-400/40 bg-amber-500/15 px-3 py-2 text-center text-xs text-amber-100">
               Offline — Joy richiede connessione per parlare col CRM. Nessuna azione salvata.
@@ -1005,6 +1016,15 @@ export function JoyDriveScreen({ userDisplayName }: JoyDriveScreenProps) {
               CRM = motore dati · Joy = interfaccia. Nessun salvataggio senza conferma.
             </p>
           )}
+          <button
+            type="button"
+            data-testid="joy-start-guide-mode"
+            onClick={() => setGuideMode(true)}
+            className="flex min-h-[4.5rem] w-full items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 px-5 text-lg font-semibold shadow-lg transition active:scale-[0.98]"
+          >
+            <Mic className="h-6 w-6" />
+            Avvia modalità guida
+          </button>
           {PRIMARY_DRIVE_ACTIONS.map((action) => {
             const Icon = action.icon;
             return (

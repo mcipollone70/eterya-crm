@@ -42,8 +42,8 @@ export async function JoyAiPage({
           subtitle="AI Sales Operating System"
         />
         <Link href="/joy-ai/drive" className="shrink-0 sm:pb-1">
-          <Button type="button" variant="outline" className="min-h-11 w-full gap-2 sm:w-auto">
-            Joy Drive (voce)
+          <Button type="button" variant="primary" className="min-h-11 w-full gap-2 sm:w-auto">
+            Avvia modalità guida
           </Button>
         </Link>
       </div>

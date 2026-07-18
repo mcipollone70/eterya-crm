@@ -3,8 +3,13 @@ import { EmptyState, PageHeader } from "@/components/ui";
 import { getCurrentUser, getCurrentUserProfile } from "@/features/auth/session";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { JoyDriveScreen } from "./components/joy-drive-screen";
+import { JoyGuideModeScreen } from "./voice-mode/components/joy-guide-mode-screen";
 
-export async function JoyDrivePage() {
+export async function JoyDrivePage({
+  guideMode = false,
+}: {
+  guideMode?: boolean;
+} = {}) {
   if (!isSupabaseConfigured()) {
     return (
       <div className="space-y-6">
@@ -24,6 +29,10 @@ export async function JoyDrivePage() {
   const [user, profile] = await Promise.all([getCurrentUser(), getCurrentUserProfile()]);
   const userDisplayName =
     profile?.fullName?.trim() || user?.email?.split("@")[0] || "Tu";
+
+  if (guideMode) {
+    return <JoyGuideModeScreen userDisplayName={userDisplayName} />;
+  }
 
   return <JoyDriveScreen userDisplayName={userDisplayName} />;
 }

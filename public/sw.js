@@ -7,7 +7,7 @@
  * Cache-first SOLO per icons/_next/static/font/css versionati.
  * Bump CACHE_NAME + clear old caches on activate.
  */
-const CACHE_NAME = "eterya-crm-static-v4";
+const CACHE_NAME = "eterya-crm-static-v5";
 
 const PRECACHE_URLS = [
   "/icons/eterya-crm-192.png",
