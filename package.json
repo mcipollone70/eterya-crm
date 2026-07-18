@@ -10,7 +10,9 @@
     "test:import": "npx --yes tsx --test features/companies/utils/__tests__/company-import-brand.test.ts",
     "test:brands": "npx --yes tsx --test features/brands/utils/__tests__/brand-shared.test.ts features/brands/utils/__tests__/brand-pagination.test.ts features/maps/utils/__tests__/map-brand-markers.test.ts features/maps/utils/__tests__/map-company-brands-aggregate.test.ts",
     "test:maps-urls": "npx --yes tsx --test features/routes/utils/__tests__/google-maps-tour-url.test.ts features/routes/utils/__tests__/visit-tour-latina-sim.test.ts",
+    "test:joy-voice": "npx --yes tsx --test features/joy/voice-mode/__tests__/voice-intent.test.ts",
     "test:iphone-webkit": "npx --yes tsx scripts/iphone-webkit-map-audit.ts",
+    "test:iphone-webkit-joy": "npx --yes tsx scripts/iphone-webkit-joy-guide-mode.ts",
     "audit:multibrand": "npx --yes tsx scripts/audit-multibrand.ts",
     "typecheck": "tsc --noEmit"
   },
