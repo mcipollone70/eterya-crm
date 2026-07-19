@@ -1,13 +1,13 @@
 /* Eterya CRM — service worker minimale (solo asset statici).
  * NON cache / network-only (nessun respondWith):
- * - POST/PUT/PATCH/DELETE (TTS Joy = POST /api/joy-ai/tts)
- * - /api/* (incluso audio generato), Server Actions, sessioni, auth
- * - HTML navigations, Accept: audio/*, blob audio path
+ * - POST/PUT/PATCH/DELETE (TTS Joy = POST /api/joy-ai/tts, STT = POST /api/joy-ai/transcribe)
+ * - /api/* (incluso audio generato e multipart STT), Server Actions, sessioni, auth
+ * - HTML navigations, Accept: audio/*, blob audio path, multipart/form-data
  * - Supabase, tile mappa, Google Maps, RSC/flight
  * Cache-first SOLO per icons/_next/static/font/css versionati.
  * Bump CACHE_NAME + clear old caches on activate.
  */
-const CACHE_NAME = "eterya-crm-static-v5";
+const CACHE_NAME = "eterya-crm-static-v6";
 
 const PRECACHE_URLS = [
   "/icons/eterya-crm-192.png",
@@ -40,10 +40,18 @@ function isNeverCacheRequest(request, url) {
   if (accept.includes("text/html")) return true;
   if (accept.includes("audio/")) return true;
 
+  const contentType = request.headers.get("content-type") || "";
+  if (contentType.includes("multipart/form-data")) return true;
+  if (contentType.includes("audio/")) return true;
+
   const { pathname } = url;
 
-  // API / auth / login — network only (TTS, sessioni, Server Actions via fetch)
+  // API / auth / login — network only (TTS, STT, sessioni, Server Actions via fetch)
   if (pathname.startsWith("/api/")) return true;
+  if (pathname.startsWith("/api/joy-ai/")) return true;
+  if (pathname === "/api/joy-ai/transcribe" || pathname.startsWith("/api/joy-ai/transcribe")) {
+    return true;
+  }
   if (pathname.startsWith("/auth/")) return true;
   if (pathname.startsWith("/login")) return true;
   if (pathname.startsWith("/maps")) return true;
@@ -58,7 +66,7 @@ function isNeverCacheRequest(request, url) {
   if (url.origin !== self.location.origin) return true;
 
   // Difesa in profondità: audio / tile path-like / maps providers
-  if (/\.(?:mp3|wav|ogg|m4a|aac)(?:\?|$)/i.test(pathname)) return true;
+  if (/\.(?:mp3|wav|ogg|m4a|aac|webm)(?:\?|$)/i.test(pathname)) return true;
   if (/tile\.openstreetmap|\/tiles?\//i.test(url.href)) return true;
   if (/google\.(?:com|it).*\/maps/i.test(url.href)) return true;
   if (/maps\.googleapis\.com|maps\.gstatic\.com/i.test(url.href)) return true;

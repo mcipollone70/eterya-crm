@@ -11,14 +11,14 @@ import {
   Loader2,
   MapPin,
   Mic,
-  MicOff,
   MoreHorizontal,
   Route,
   X,
   Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui";
-import { useSpeechRecognition } from "@/features/voice/hooks/use-speech-recognition";
+import { useJoyVoiceCapture } from "@/features/voice/hooks/use-joy-voice-capture";
+import { formatDebugTime } from "@/features/voice/utils/joy-voice-debug";
 import {
   buildSpokenSummary,
   joyVoice,
@@ -202,16 +202,19 @@ export function JoyDriveScreen({ userDisplayName }: JoyDriveScreenProps) {
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
-  const voiceBufferRef = useRef("");
   const conversationModeRef = useRef(false);
   const awaitingCompanyRef = useRef(false);
   const isStreamingRef = useRef(false);
   const speakingRef = useRef(false);
-  const wantListeningRef = useRef(false);
   const sendMessageRef = useRef<((text: string) => Promise<void>) | null>(null);
   const confirmCopilotRef = useRef<((messageId: string) => Promise<void>) | null>(null);
   const cancelCopilotRef = useRef<((messageId: string) => void) | null>(null);
   const lastLocationRef = useRef<{ lat: number; lng: number } | null>(null);
+  const voiceCaptureRef = useRef<{
+    markExecuting: () => void;
+    markExecuted: (ok: boolean, detail?: string) => void;
+    cancelCapture: () => void;
+  } | null>(null);
 
   useEffect(() => {
     const onOnline = () => setIsOnline(true);
@@ -239,49 +242,83 @@ export function JoyDriveScreen({ userDisplayName }: JoyDriveScreenProps) {
     });
   }, []);
 
+  const handleVoiceTranscript = useCallback((transcript: string) => {
+    const text = transcript.trim();
+    if (!text) return;
+
+    // Barge-in: interrompe TTS se arriva un comando vocale.
+    if (
+      speakingRef.current ||
+      joyVoice.getState() === "speaking" ||
+      joyVoice.getState() === "preparing" ||
+      joyVoice.getState() === "ready"
+    ) {
+      stopSpeaking();
+      speakingRef.current = false;
+    }
+    if (isStreamingRef.current) {
+      return;
+    }
+
+    setConversationMode(true);
+    conversationModeRef.current = true;
+
+    if (awaitingCompanyRef.current && text.length > 2) {
+      awaitingCompanyRef.current = false;
+      setAwaitingCompanyName(false);
+      voiceCaptureRef.current?.markExecuting();
+      void sendMessageRef.current?.(`Apri ${text}`);
+      return;
+    }
+
+    // Same submit path as written Invia — pass local transcript, not stale state.
+    voiceCaptureRef.current?.markExecuting();
+    void sendMessageRef.current?.(text);
+  }, []);
+
+  const voice = useJoyVoiceCapture({
+    lang: "it-IT",
+    onTranscriptReady: handleVoiceTranscript,
+  });
+
   const {
+    cancelCapture,
+    markExecuted,
+    markExecuting,
+    setPhaseIdle,
+    startCapture,
+    stopCapture,
+    retryCapture,
+    correctHeard,
+    phase: voicePhase,
+    phaseLabel: voicePhaseLabel,
+    heardText: voiceHeardText,
+    error: voiceError,
+    audioStats: voiceAudioStats,
+    preferRecorder: voicePreferRecorder,
+    isBusy: voiceIsBusy,
+    debugEnabled: voiceDebugEnabled,
+    debugEvents: voiceDebugEvents,
+    debugStartAt: voiceDebugStartAt,
     isSupported: speechSupported,
     isListening,
-    interimTranscript,
-    error: speechError,
-    startListening,
-    stopListening,
-  } = useSpeechRecognition({
-    lang: "it-IT",
-    onFinalChunk: (chunk) => {
-      // Barge-in: interrompe TTS se l'utente parla durante la sintesi.
-      if (speakingRef.current || joyVoice.getState() === "speaking" || joyVoice.getState() === "preparing" || joyVoice.getState() === "ready") {
-        stopSpeaking();
-        speakingRef.current = false;
-      }
-      if (isStreamingRef.current) {
-        return;
-      }
+  } = voice;
 
-      voiceBufferRef.current = `${voiceBufferRef.current} ${chunk}`.trim();
-
-      if (awaitingCompanyRef.current && voiceBufferRef.current.length > 2) {
-        const name = voiceBufferRef.current;
-        voiceBufferRef.current = "";
-        awaitingCompanyRef.current = false;
-        setAwaitingCompanyName(false);
-        void sendMessageRef.current?.(`Apri ${name}`);
-        return;
-      }
-
-      if (conversationModeRef.current && voiceBufferRef.current.length > 8) {
-        const text = voiceBufferRef.current;
-        voiceBufferRef.current = "";
-        void sendMessageRef.current?.(text);
-      }
-    },
-  });
+  useEffect(() => {
+    voiceCaptureRef.current = {
+      markExecuting,
+      markExecuted,
+      cancelCapture,
+    };
+  }, [cancelCapture, markExecuted, markExecuting]);
 
   const sessionState: JoySessionState = (() => {
     if (pendingConfirm) return "confirming";
-    if (isStreaming) return "thinking";
+    if (isStreaming || voicePhase === "executing") return "thinking";
     if (sessionOverride) return sessionOverride;
-    if (conversationMode || isListening) return "listening";
+    if (conversationMode || isListening || voicePhase === "transcribing") {
+      return "listening";
+    }
     if (hasCompletedAction) return "completed";
     return "idle";
   })();
@@ -301,14 +338,14 @@ export function JoyDriveScreen({ userDisplayName }: JoyDriveScreenProps) {
   }, [isStreaming]);
 
   useEffect(() => {
-    if (!speechError) {
+    if (!voiceError) {
       return;
     }
     const timer = window.setTimeout(() => {
-      setToast({ message: speechError, variant: "error" });
+      setToast({ message: voiceError, variant: "error" });
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [speechError]);
+  }, [voiceError]);
 
   useEffect(() => {
     const container = scrollRef.current;
@@ -322,20 +359,17 @@ export function JoyDriveScreen({ userDisplayName }: JoyDriveScreenProps) {
     return () => {
       stopSpeaking();
       abortRef.current?.abort();
+      voiceCaptureRef.current?.cancelCapture();
     };
   }, []);
 
   const resumeListeningSoon = useCallback(() => {
-    if (!wantListeningRef.current || !speechSupported) {
-      return;
+    // Push-to-talk: dopo TTS l'utente tocca di nuovo «Parla» (affidabile su iPhone).
+    if (conversationModeRef.current) {
+      setSessionOverride("listening");
+      setPhaseIdle();
     }
-    window.setTimeout(() => {
-      if (wantListeningRef.current && !speakingRef.current && !isStreamingRef.current) {
-        startListening();
-        setSessionOverride("listening");
-      }
-    }, 400);
-  }, [speechSupported, startListening]);
+  }, [setPhaseIdle]);
 
   const speakAndResume = useCallback(
     async (content: string, options?: { confirming?: boolean }) => {
@@ -349,7 +383,7 @@ export function JoyDriveScreen({ userDisplayName }: JoyDriveScreenProps) {
       }
 
       speakingRef.current = true;
-      stopListening();
+      cancelCapture();
       try {
         await speakItalian(summary, { displayText: content });
       } finally {
@@ -357,25 +391,8 @@ export function JoyDriveScreen({ userDisplayName }: JoyDriveScreenProps) {
         resumeListeningSoon();
       }
     },
-    [resumeListeningSoon, stopListening]
+    [cancelCapture, resumeListeningSoon]
   );
-
-  // Keep mic alive while Drive conversation / search listening is requested.
-  // Also during conferma proposta: comandi mid-tour (salta, maps, …) restano vocali.
-  useEffect(() => {
-    if (!wantListeningRef.current || !speechSupported) {
-      return;
-    }
-    if (isListening || isStreaming || speakingRef.current) {
-      return;
-    }
-    const timer = window.setTimeout(() => {
-      if (wantListeningRef.current && !speakingRef.current && !isStreamingRef.current) {
-        startListening();
-      }
-    }, 600);
-    return () => window.clearTimeout(timer);
-  }, [isListening, isStreaming, pendingConfirm, speechSupported, startListening, sessionState]);
 
   const sendMessage = useCallback(
     async (text: string) => {
@@ -395,14 +412,14 @@ export function JoyDriveScreen({ userDisplayName }: JoyDriveScreenProps) {
       }
 
       if (/fine\s+sessione|chiudi\s+(sessione|conversazione)|fine\s+conversazione/i.test(trimmed)) {
-        wantListeningRef.current = false;
         setConversationMode(false);
-        stopListening();
+        cancelCapture();
         stopSpeaking();
         setSessionOverride("idle");
         setView("home");
         setActiveAction(null);
         setAwaitingCompanyName(false);
+        markExecuted(true, "fine-sessione");
         return;
       }
 
@@ -476,7 +493,7 @@ export function JoyDriveScreen({ userDisplayName }: JoyDriveScreenProps) {
       setIsStreaming(true);
       setStreamingMessageId(placeholderId);
       setSessionOverride("thinking");
-      stopListening();
+      cancelCapture();
 
       try {
         const location =
@@ -540,15 +557,12 @@ export function JoyDriveScreen({ userDisplayName }: JoyDriveScreenProps) {
 
         const confirming = result.message.pendingAction?.status === "pending";
         if (confirming) {
-          // Drive: mantieni ascolto per «conferma»/«annulla» e comandi mid-tour.
-          wantListeningRef.current = true;
           setConversationMode(true);
           conversationModeRef.current = true;
           setSessionOverride("confirming");
         } else if (result.sessionState === "proposing") {
           setSessionOverride("proposing");
           if (activeAction === "plan_day" || conversationModeRef.current) {
-            wantListeningRef.current = true;
             setConversationMode(true);
             conversationModeRef.current = true;
           }
@@ -560,6 +574,9 @@ export function JoyDriveScreen({ userDisplayName }: JoyDriveScreenProps) {
 
         if (result.error) {
           setToast({ message: result.error, variant: "error" });
+          markExecuted(false, result.error);
+        } else {
+          markExecuted(true);
         }
 
         await speakAndResume(result.message.content, { confirming });
@@ -576,6 +593,7 @@ export function JoyDriveScreen({ userDisplayName }: JoyDriveScreenProps) {
         );
         setToast({ message, variant: "error" });
         setSessionOverride(conversationModeRef.current ? "listening" : "idle");
+        markExecuted(false, message);
         resumeListeningSoon();
       } finally {
         setIsStreaming(false);
@@ -586,11 +604,12 @@ export function JoyDriveScreen({ userDisplayName }: JoyDriveScreenProps) {
     [
       activeAction,
       applyMemoryPatch,
+      cancelCapture,
+      markExecuted,
       memory,
       messages,
       resumeListeningSoon,
       speakAndResume,
-      stopListening,
     ]
   );
 
@@ -644,7 +663,6 @@ export function JoyDriveScreen({ userDisplayName }: JoyDriveScreenProps) {
       setView("session");
       setConversationMode(true);
       conversationModeRef.current = true;
-      wantListeningRef.current = true;
       setSessionOverride("thinking");
       void sendMessageRef.current?.(prompt!);
     }, 700);
@@ -658,60 +676,50 @@ export function JoyDriveScreen({ userDisplayName }: JoyDriveScreenProps) {
       unlockJoyAudioFromUserGesture();
       stopSpeaking();
       abortRef.current?.abort();
+      cancelCapture();
       setMessages([]);
       setActiveAction(action);
       setView("session");
       setAwaitingCompanyName(false);
       awaitingCompanyRef.current = false;
-      voiceBufferRef.current = "";
 
       if (action === "talk") {
         setConversationMode(true);
         conversationModeRef.current = true;
-        wantListeningRef.current = true;
         setSessionOverride("listening");
         setMessages([
           newMessage(
             "assistant",
-            "Sono in ascolto. Dimmi cosa ti serve. Per chiudere: «fine sessione»."
+            "Sono in ascolto. Tocca «Parla», di' il comando, poi «Termina». Per chiudere: «fine sessione»."
           ),
         ]);
         speakingRef.current = true;
-        stopListening();
         try {
-          await speakItalian("Sono in ascolto. Dimmi cosa ti serve.");
+          await speakItalian("Sono in ascolto. Tocca Parla e dimmi cosa ti serve.");
         } finally {
           speakingRef.current = false;
-        }
-        if (speechSupported) {
-          startListening();
         }
         return;
       }
 
       setConversationMode(true);
       conversationModeRef.current = true;
-      wantListeningRef.current = false;
-      stopListening();
+      cancelCapture();
       setSessionOverride("thinking");
 
       if (action === "register_visit") {
         setMessages([
           newMessage(
             "assistant",
-            "Dimmi l'esito della visita (es. «Joy registra visita da Rossi, interessati a VEPA, richiama venerdì»). Bozza modificabile — nessun salvataggio senza conferma."
+            "Dimmi l'esito della visita (es. «Joy registra visita da Rossi, interessati a VEPA, richiama venerdì»). Tocca Parla · Termina. Nessun salvataggio senza conferma."
           ),
         ]);
-        wantListeningRef.current = true;
         setSessionOverride("listening");
         speakingRef.current = true;
         try {
-          await speakItalian("Dimmi l'esito della visita.");
+          await speakItalian("Dimmi l'esito della visita. Tocca Parla.");
         } finally {
           speakingRef.current = false;
-        }
-        if (speechSupported) {
-          startListening();
         }
         return;
       }
@@ -739,16 +747,15 @@ export function JoyDriveScreen({ userDisplayName }: JoyDriveScreenProps) {
 
       void sendMessage(prompt);
     },
-    [sendMessage, speechSupported, startListening, stopListening]
+    [cancelCapture, sendMessage]
   );
 
   const handleBackHome = () => {
-    wantListeningRef.current = false;
     setConversationMode(false);
     conversationModeRef.current = false;
     setAwaitingCompanyName(false);
     awaitingCompanyRef.current = false;
-    stopListening();
+    cancelCapture();
     stopSpeaking();
     abortRef.current?.abort();
     setSessionOverride("idle");
@@ -838,7 +845,6 @@ export function JoyDriveScreen({ userDisplayName }: JoyDriveScreenProps) {
             return;
           }
           if (conversationModeRef.current || activeAction === "talk") {
-            wantListeningRef.current = true;
             setConversationMode(true);
             resumeListeningSoon();
           }
@@ -889,7 +895,6 @@ export function JoyDriveScreen({ userDisplayName }: JoyDriveScreenProps) {
       );
       void speakItalian("Azione annullata.");
       if (conversationModeRef.current || activeAction === "talk") {
-        wantListeningRef.current = true;
         setSessionOverride("listening");
         resumeListeningSoon();
       } else {
@@ -909,17 +914,15 @@ export function JoyDriveScreen({ userDisplayName }: JoyDriveScreenProps) {
       handleCancelCopilot(messageId);
       setConversationMode(true);
       conversationModeRef.current = true;
-      wantListeningRef.current = true;
-      voiceBufferRef.current = "Modifica il giro: ";
       setSessionOverride("listening");
       setMessages((current) => [
         ...current,
         newMessage(
           "assistant",
-          "Dimmi come modificare la proposta. Esempio: «max 4 visite entro le 16»."
+          "Dimmi come modificare la proposta. Tocca Parla · Termina. Esempio: «max 4 visite entro le 16»."
         ),
       ]);
-      void speakItalian("Dimmi come modificare la proposta.");
+      void speakItalian("Dimmi come modificare la proposta. Tocca Parla.");
       resumeListeningSoon();
     },
     [handleCancelCopilot, resumeListeningSoon]
@@ -1091,9 +1094,13 @@ export function JoyDriveScreen({ userDisplayName }: JoyDriveScreenProps) {
 
         {!speechSupported ? (
           <p className="px-4 pb-4 text-center text-xs text-amber-200">
-            Microfono non supportato su questo browser. Usa Chrome o Edge su smartphone.
+            Microfono non disponibile. Puoi comunque scrivere i comandi in sessione.
           </p>
-        ) : null}
+        ) : (
+          <p className="px-4 pb-4 text-center text-xs text-slate-400">
+            Su iPhone: Parla → parla → Termina (trascrizione server). Desktop: Web Speech con fallback.
+          </p>
+        )}
       </div>
     );
   }
@@ -1112,30 +1119,6 @@ export function JoyDriveScreen({ userDisplayName }: JoyDriveScreenProps) {
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
-              {speechSupported ? (
-                <Button
-                  type="button"
-                  variant={isListening ? "primary" : "outline"}
-                  size="sm"
-                  className="min-h-11 min-w-11 rounded-xl"
-                  onClick={() => {
-                    if (isListening) {
-                      wantListeningRef.current = false;
-                      stopListening();
-                      setSessionOverride("idle");
-                      return;
-                    }
-                    wantListeningRef.current = true;
-                    setConversationMode(true);
-                    conversationModeRef.current = true;
-                    startListening();
-                    setSessionOverride("listening");
-                  }}
-                  title={isListening ? "Pausa microfono" : "Riprendi ascolto"}
-                >
-                  {isListening ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
-                </Button>
-              ) : null}
               <Button
                 type="button"
                 variant="outline"
@@ -1160,8 +1143,128 @@ export function JoyDriveScreen({ userDisplayName }: JoyDriveScreenProps) {
           <div className="mt-2">
             <JoyVoiceControls compact />
           </div>
-          {interimTranscript ? (
-            <p className="mt-2 text-xs text-indigo-700">Ascolto: {interimTranscript}</p>
+          <div className="mt-2 rounded-xl border border-indigo-100 bg-indigo-50/80 px-3 py-2">
+            <p className="text-xs font-semibold text-indigo-800">{voicePhaseLabel}</p>
+            {voiceHeardText ? (
+              <p className="mt-1 text-sm text-slate-800">
+                Hai detto: <span className="font-medium">{voiceHeardText}</span>
+              </p>
+            ) : null}
+            {voiceError ? (
+              <p className="mt-1 text-xs text-rose-700">{voiceError}</p>
+            ) : null}
+            {voicePhase === "listening" || voiceAudioStats.chunkCount > 0 ? (
+              <p className="mt-1 text-[11px] text-slate-500">
+                Audio: {voiceAudioStats.chunkCount} chunk · {voiceAudioStats.blobSize}B
+                {voiceAudioStats.blobType ? ` · ${voiceAudioStats.blobType}` : ""}
+                {voiceAudioStats.durationMs
+                  ? ` · ${(voiceAudioStats.durationMs / 1000).toFixed(1)}s`
+                  : ""}
+                {voicePreferRecorder ? " · STT server" : " · Web Speech→STT"}
+              </p>
+            ) : null}
+            <div className="mt-2 flex flex-wrap gap-2">
+              {voicePhase === "listening" ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  className="min-h-11 rounded-xl px-4"
+                  onClick={() => {
+                    unlockJoyAudioFromUserGesture();
+                    void stopCapture();
+                  }}
+                >
+                  Termina
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  size="sm"
+                  className="min-h-11 rounded-xl px-4"
+                  disabled={voiceIsBusy || isStreaming}
+                  onClick={() => {
+                    unlockJoyAudioFromUserGesture();
+                    setConversationMode(true);
+                    conversationModeRef.current = true;
+                    setSessionOverride("listening");
+                    void startCapture();
+                  }}
+                >
+                  <Mic className="h-4 w-4" />
+                  Parla
+                </Button>
+              )}
+              {voicePhase === "error" ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="min-h-11 rounded-xl px-3"
+                  onClick={() => {
+                    unlockJoyAudioFromUserGesture();
+                    retryCapture();
+                  }}
+                >
+                  Riprova
+                </Button>
+              ) : null}
+              {voiceHeardText &&
+              (voicePhase === "heard" ||
+                voicePhase === "recognized" ||
+                voicePhase === "idle" ||
+                voicePhase === "error") ? (
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="min-h-11 rounded-xl px-3"
+                    onClick={() => {
+                      setTextDraft(voiceHeardText);
+                      correctHeard(voiceHeardText);
+                    }}
+                  >
+                    Correggi
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="min-h-11 rounded-xl px-3"
+                    disabled={isStreaming}
+                    onClick={() => {
+                      const text = voiceHeardText.trim();
+                      if (!text) return;
+                      markExecuting();
+                      void sendMessage(text);
+                    }}
+                  >
+                    Invia testo trascritto
+                  </Button>
+                </>
+              ) : null}
+            </div>
+          </div>
+          {voiceDebugEnabled ? (
+            <div
+              data-testid="joy-voice-debug-timeline"
+              className="mt-2 max-h-40 overflow-y-auto rounded-lg border border-slate-200 bg-slate-900 px-2 py-1.5 font-mono text-[10px] leading-relaxed text-emerald-300"
+            >
+              <p className="mb-1 text-amber-200">debug=1 voice timeline</p>
+              {voiceDebugEvents.length === 0 ? (
+                <p className="text-slate-400">— tap Parla —</p>
+              ) : (
+                voiceDebugEvents.map((event) => (
+                  <p key={event.id}>
+                    {formatDebugTime(event.at, voiceDebugStartAt)} {event.phase}{" "}
+                    <span className="text-slate-400">{event.outcome}</span>
+                    {event.detail ? (
+                      <span className="text-slate-500"> · {event.detail}</span>
+                    ) : null}
+                  </p>
+                ))
+              )}
+            </div>
           ) : null}
           {!isOnline ? (
             <p className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1.5 text-xs text-amber-900">
@@ -1170,7 +1273,7 @@ export function JoyDriveScreen({ userDisplayName }: JoyDriveScreenProps) {
           ) : null}
           {pendingConfirm ? (
             <p className="mt-2 text-xs font-medium text-emerald-700">
-              Di&apos; «conferma» o «annulla» — oppure tocca i pulsanti.
+              Di&apos; «conferma» o «annulla» (Parla · Termina) — oppure tocca i pulsanti.
             </p>
           ) : null}
         </header>
@@ -1218,7 +1321,7 @@ export function JoyDriveScreen({ userDisplayName }: JoyDriveScreenProps) {
               onChange={(event) => setTextDraft(event.target.value)}
               placeholder={
                 speechSupported
-                  ? "Scrivi se il microfono non basta…"
+                  ? "Scrivi oppure usa Parla · Termina…"
                   : "Scrivi il comando (microfono non disponibile)"
               }
               className="min-h-11 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-900 outline-none ring-indigo-500 focus:ring-2"
@@ -1234,9 +1337,13 @@ export function JoyDriveScreen({ userDisplayName }: JoyDriveScreenProps) {
           </p>
           {!speechSupported ? (
             <p className="mt-1 text-center text-[11px] text-amber-700">
-              Microfono non supportato: usa la tastiera. Preferisci Chrome o Edge su smartphone.
+              Microfono non disponibile: usa la tastiera.
             </p>
-          ) : null}
+          ) : (
+            <p className="mt-1 text-center text-[11px] text-slate-500">
+              Tocca Parla, parla, poi Termina — stesso invio del testo scritto.
+            </p>
+          )}
           {activeAction === "talk" ? (
             <p className="mt-1 text-center text-[11px] text-slate-400">
               Di «fine sessione» per tornare al menu

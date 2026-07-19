@@ -9,16 +9,35 @@ import {
 
 interface UseSpeechRecognitionOptions {
   lang?: string;
+  continuous?: boolean;
+  interimResults?: boolean;
   onFinalChunk?: (text: string) => void;
+  onError?: (error: string) => void;
 }
 
 export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) {
-  const { lang = "it-IT", onFinalChunk } = options;
+  const {
+    lang = "it-IT",
+    continuous = true,
+    interimResults = true,
+    onFinalChunk,
+    onError,
+  } = options;
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
   const [isSupported] = useState(() => isSpeechRecognitionSupported());
   const [isListening, setIsListening] = useState(false);
   const [interimTranscript, setInterimTranscript] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const onFinalChunkRef = useRef(onFinalChunk);
+  const onErrorRef = useRef(onError);
+
+  useEffect(() => {
+    onFinalChunkRef.current = onFinalChunk;
+  }, [onFinalChunk]);
+
+  useEffect(() => {
+    onErrorRef.current = onError;
+  }, [onError]);
 
   const stopListening = useCallback(() => {
     recognitionRef.current?.stop();
@@ -32,13 +51,15 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
 
     const Ctor = getSpeechRecognitionConstructor();
     if (!Ctor) {
-      setError("Riconoscimento vocale non supportato su questo browser.");
+      const message = "Riconoscimento vocale non supportato su questo browser.";
+      setError(message);
+      onErrorRef.current?.(message);
       return;
     }
 
     const recognition = new Ctor();
-    recognition.continuous = true;
-    recognition.interimResults = true;
+    recognition.continuous = continuous;
+    recognition.interimResults = interimResults;
     recognition.lang = lang;
 
     recognition.onresult = (event) => {
@@ -50,7 +71,7 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
           continue;
         }
         if (result.isFinal) {
-          onFinalChunk?.(text.trim());
+          onFinalChunkRef.current?.(text.trim());
         } else {
           interim += text;
         }
@@ -60,11 +81,12 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
 
     recognition.onerror = (event) => {
       if (event.error !== "aborted") {
-        setError(
+        const message =
           event.error === "not-allowed"
             ? "Permesso microfono negato."
-            : `Errore riconoscimento vocale: ${event.error}`
-        );
+            : `Errore riconoscimento vocale: ${event.error}`;
+        setError(message);
+        onErrorRef.current?.(event.error);
       }
       setIsListening(false);
       setInterimTranscript("");
@@ -81,10 +103,12 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions = {}) 
       recognition.start();
       setIsListening(true);
     } catch {
-      setError("Impossibile avviare il microfono.");
+      const message = "Impossibile avviare il microfono.";
+      setError(message);
+      onErrorRef.current?.("start-failed");
       setIsListening(false);
     }
-  }, [lang, onFinalChunk]);
+  }, [continuous, interimResults, lang]);
 
   const toggleListening = useCallback(() => {
     if (isListening) {
